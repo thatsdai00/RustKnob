@@ -332,6 +332,7 @@ pub fn render(buf: &mut [u32], pw: usize, ph: usize, rect: (usize, usize, usize,
 
 /// How far below the capsule the lyric line reaches (logical units): the redraw area grows by this much.
 pub const LYRIC_BAND: f32 = 34.0;
+const LYRIC_TRAVEL: f32 = 15.0; // how far a line slides while it changes
 
 /// The lyric line under the pinned capsule, outside it: white with a soft shadow so it reads on any background,
 /// at most 90% of the capsule's width (a longer line is scaled down to fit). Lines cross-fade as they change.
@@ -344,8 +345,10 @@ fn lyric_pass(buf: &mut [u32], pw: usize, ph: usize, rect: (usize, usize, usize,
     }
     let e = sstep(0.0, 1.0, v.lyric_swap);
     if v.lyric_swap < 1.0 {
-        lyric_line(buf, pw, ph, rect, s, v.lyric_old, base * (1.0 - sstep(0.0, 0.7, v.lyric_swap)), e * 3.0);
-        lyric_line(buf, pw, ph, rect, s, v.lyric, base * sstep(0.3, 1.0, v.lyric_swap), -(1.0 - e) * 3.0);
+        // the old line leaves upward, the new one rises in from below; both are cut off at the band's edges
+        let new = 1.0 - (1.0 - v.lyric_swap).powi(3);
+        lyric_line(buf, pw, ph, rect, s, v.lyric_old, base, -e * LYRIC_TRAVEL);
+        lyric_line(buf, pw, ph, rect, s, v.lyric, base, (1.0 - new) * LYRIC_TRAVEL);
     } else {
         lyric_line(buf, pw, ph, rect, s, v.lyric, base, 0.0);
     }
@@ -377,7 +380,15 @@ fn lyric_line(buf: &mut [u32], pw: usize, ph: usize, rect: (usize, usize, usize,
         *px = out(24) << 24 | out(16) << 16 | out(8) << 8 | out(0);
     };
     let d = 1.6 * unit.max(1.0);
+    // the band under the capsule: a line fades out where it meets either edge
+    let (band_top, band_bottom) = ((TOP + s.h) * unit, (TOP + s.h + LYRIC_BAND) * unit);
+    let edge = 6.0 * unit;
     for y in rows {
+        let m = sstep(band_top, band_top + edge, y as f32 + 0.5) * sstep(band_bottom, band_bottom - edge, y as f32 + 0.5);
+        if m <= 0.0 {
+            continue;
+        }
+        let alpha = alpha * m;
         for x in cols.clone() {
             let (fx, fy) = (x as f32 + 0.5, y as f32 + 0.5);
             let text = cover(fx, fy);
