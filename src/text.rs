@@ -1,6 +1,6 @@
 // Text as alpha bitmaps: rasterized once with GDI (Segoe UI, grayscale AA), then sampled by the renderer.
 
-use windows::core::{w, PCWSTR};
+use windows::core::PCWSTR;
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Gdi::*;
 
@@ -39,7 +39,7 @@ impl TextBmp {
 /// One memory DC and the fonts made so far, per thread: creating them is most of the cost of a small text.
 struct Gdi {
     dc: HDC,
-    fonts: Vec<((i32, i32), HFONT)>,
+    fonts: Vec<((i32, i32, &'static str), HFONT)>,
 }
 
 thread_local! {
@@ -47,8 +47,8 @@ thread_local! {
 }
 
 impl Gdi {
-    unsafe fn font(&mut self, height: i32, weight: i32) -> HFONT {
-        if let Some((_, f)) = self.fonts.iter().find(|(k, _)| *k == (height, weight)) {
+    unsafe fn font(&mut self, height: i32, weight: i32, face: &'static str) -> HFONT {
+        if let Some((_, f)) = self.fonts.iter().find(|(k, _)| *k == (height, weight, face)) {
             return *f;
         }
         let font = CreateFontW(
@@ -65,15 +65,20 @@ impl Gdi {
             CLIP_DEFAULT_PRECIS.0 as u32,
             ANTIALIASED_QUALITY.0 as u32,
             0,
-            PCWSTR(w!("Segoe UI").as_ptr()),
+            PCWSTR(windows::core::HSTRING::from(face).as_ptr()),
         );
-        self.fonts.push(((height, weight), font));
+        self.fonts.push(((height, weight, face), font));
         font
     }
 }
 
 /// `height` is the font height in raster px (negative = character height), `weight` 400 / 700.
 pub fn raster(s: &str, height: i32, weight: i32) -> Option<TextBmp> {
+    raster_face(s, height, weight, "Segoe UI")
+}
+
+/// Same in another font face (the README pictures use a lighter one for large type).
+pub fn raster_face(s: &str, height: i32, weight: i32, face: &'static str) -> Option<TextBmp> {
     let wide: Vec<u16> = s.encode_utf16().collect();
     if wide.is_empty() {
         return None;
@@ -82,12 +87,12 @@ pub fn raster(s: &str, height: i32, weight: i32) -> Option<TextBmp> {
         let mut cell = cell.borrow_mut();
         let gdi = cell.get_or_insert_with(|| Gdi { dc: CreateCompatibleDC(None), fonts: Vec::new() });
         let dc = gdi.dc;
-        let font = gdi.font(height, weight);
+        let font = gdi.font(height, weight, face);
         let old_font = SelectObject(dc, font);
         let mut sz = SIZE::default();
         let _ = GetTextExtentPoint32W(dc, &wide, &mut sz);
         let pad = 4i32;
-        let (bw, bh) = ((sz.cx + pad * 2).clamp(8, 9000), sz.cy.clamp(8, 200));
+        let (bw, bh) = ((sz.cx + pad * 2).clamp(8, 9000), sz.cy.clamp(8, 480));
 
         let bi = BITMAPINFO {
             bmiHeader: BITMAPINFOHEADER {
