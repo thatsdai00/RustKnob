@@ -1,0 +1,192 @@
+// UI texts in English and Turkish. The language is a setting ("auto" follows Windows).
+
+use windows::Win32::Globalization::GetUserDefaultUILanguage;
+
+use crate::ui;
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum Lang {
+    En,
+    Tr,
+}
+
+pub struct Strings {
+    pub labels: [&'static str; ui::ROWS],
+    pub tap_to_type: &'static str,
+    pub builtin_sound: &'static str,
+    pub auto: &'static str,
+    pub dark: &'static str,
+    pub light: &'static str,
+    pub english: &'static str,
+    pub turkish: &'static str,
+    pub tray_settings: &'static str,
+    pub tray_history: &'static str,
+    pub tray_quit: &'static str,
+    pub tray_uninstall: &'static str,
+    pub hotkey_busy: &'static str,
+    pub sound_files: &'static str,
+    pub all_files: &'static str,
+    pub uninstall_ask: &'static str,
+    pub uninstalled: &'static str,
+    pub drop_hint: &'static str,
+    pub snip_hint: &'static str,
+    pub snip_copied: &'static str,
+    pub snip_pasted: &'static str,
+    pub copied_clipboard: &'static str,
+    pub upload_failed: &'static str,
+    pub links_word: &'static str,
+    pub history_title: &'static str,
+    pub history_empty: &'static str,
+    pub copied: &'static str,
+    pub setup_title: &'static str,
+    pub setup_sub: &'static str,
+    pub setup_autostart: &'static str,
+    pub setup_autoupdate: &'static str,
+    pub updated_title: &'static str,
+    pub setup_install: &'static str,
+    pub setup_update_sub: &'static str,
+    pub setup_update: &'static str,
+    pub setup_portable: &'static str,
+}
+
+static EN: Strings = Strings {
+    labels: [
+        "Click sound",
+        "Song notifications",
+        "Device notifications",
+        "Volume keys",
+        "Low power (30 FPS)",
+        "Sound after upload",
+        "Screenshot (Win+Shift+S)",
+        "Pin media",
+        "Pin over full-screen apps",
+        "Update automatically",
+        "Start with Windows",
+        "Wheel step (%)",
+        "ntfy topic",
+        "ntfy server",
+        "ntfy token",
+        "Notification sound",
+        "Notification volume (%)",
+        "Language",
+        "Theme",
+        "Quit",
+    ],
+    tap_to_type: "click to type",
+    builtin_sound: "Built-in chime (click to choose)",
+    auto: "Auto",
+    dark: "Dark",
+    light: "Light",
+    english: "English",
+    turkish: "Türkçe",
+    tray_settings: "Settings",
+    tray_history: "Link history",
+    tray_quit: "Quit",
+    tray_uninstall: "Uninstall",
+    hotkey_busy: "The hotkey could not be registered (another program may be using it). Change \"hotkey\" in rustknob.ini.",
+    sound_files: "Sound files (mp3, wav)",
+    all_files: "All files",
+    uninstall_ask: "Remove RustKnob from this PC?",
+    uninstalled: "RustKnob was removed.",
+    drop_hint: "Drop to upload",
+    snip_hint: "Drag to select   ·   Esc to cancel",
+    snip_copied: "Screenshot copied",
+    snip_pasted: "Pasted from clipboard",
+    copied_clipboard: "Link copied to clipboard",
+    upload_failed: "Upload failed",
+    links_word: "links",
+    history_title: "Link history",
+    history_empty: "No uploads yet",
+    copied: "Copied",
+    setup_title: "RustKnob",
+    setup_sub: "Setup",
+    setup_autostart: "Start with Windows",
+    setup_autoupdate: "Update automatically",
+    updated_title: "RustKnob updated",
+    setup_install: "Install",
+    setup_update_sub: "Update",
+    setup_update: "Update",
+    setup_portable: "Just run",
+};
+
+static TR: Strings = Strings {
+    labels: [
+        "Tık sesi",
+        "Şarkı bildirimi",
+        "Cihaz bildirimi",
+        "Ses tuşları",
+        "Düşük güç (30 FPS)",
+        "Yükleme sonrası ses",
+        "Ekran görüntüsü (Win+Shift+S)",
+        "Medyayı sabitle",
+        "Tam ekranda da sabitle",
+        "Otomatik güncelle",
+        "Windows ile başlat",
+        "Tekerlek adımı (%)",
+        "ntfy konusu",
+        "ntfy sunucusu",
+        "ntfy anahtarı",
+        "Bildirim sesi",
+        "Bildirim ses seviyesi (%)",
+        "Dil",
+        "Tema",
+        "Çıkış",
+    ],
+    tap_to_type: "yazmak için tıkla",
+    builtin_sound: "Yerleşik çan sesi (seçmek için tıkla)",
+    auto: "Otomatik",
+    dark: "Koyu",
+    light: "Açık",
+    english: "English",
+    turkish: "Türkçe",
+    tray_settings: "Ayarlar",
+    tray_history: "Link geçmişi",
+    tray_quit: "Çıkış",
+    tray_uninstall: "Kaldır",
+    hotkey_busy: "Kısayol kaydedilemedi (başka bir program kullanıyor olabilir). rustknob.ini içindeki \"hotkey\" değerini değiştir.",
+    sound_files: "Ses dosyaları (mp3, wav)",
+    all_files: "Tüm dosyalar",
+    uninstall_ask: "RustKnob bu bilgisayardan kaldırılsın mı?",
+    uninstalled: "RustKnob kaldırıldı.",
+    drop_hint: "Yüklemek için bırak",
+    snip_hint: "Seçmek için sürükle   ·   İptal: Esc",
+    snip_copied: "Ekran görüntüsü kopyalandı",
+    snip_pasted: "Panodan yapıştırıldı",
+    copied_clipboard: "Bağlantı panoya kopyalandı",
+    upload_failed: "Yükleme başarısız",
+    links_word: "bağlantı",
+    history_title: "Link geçmişi",
+    history_empty: "Henüz yükleme yok",
+    copied: "Kopyalandı",
+    setup_title: "RustKnob",
+    setup_sub: "Kurulum",
+    setup_autostart: "Windows ile başlat",
+    setup_autoupdate: "Otomatik güncelle",
+    updated_title: "RustKnob güncellendi",
+    setup_install: "Kur",
+    setup_update_sub: "Güncelleme",
+    setup_update: "Güncelle",
+    setup_portable: "Sadece çalıştır",
+};
+
+pub fn strings(lang: Lang) -> &'static Strings {
+    match lang {
+        Lang::En => &EN,
+        Lang::Tr => &TR,
+    }
+}
+
+/// The Windows display language: Turkish when it is Turkish, English for everything else.
+fn system_lang() -> Lang {
+    let primary = unsafe { GetUserDefaultUILanguage() } & 0x3ff;
+    if primary == 0x1f { Lang::Tr } else { Lang::En }
+}
+
+/// `setting` is "auto", "en" or "tr".
+pub fn resolve(setting: &str) -> Lang {
+    match setting {
+        "en" => Lang::En,
+        "tr" => Lang::Tr,
+        _ => system_lang(),
+    }
+}
