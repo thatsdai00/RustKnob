@@ -14,6 +14,7 @@ mod history;
 mod hook;
 mod install;
 mod json;
+mod lyrics;
 mod menu;
 mod i18n;
 mod island;

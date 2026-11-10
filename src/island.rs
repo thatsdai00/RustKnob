@@ -47,6 +47,10 @@ const PIN_PAUSE_MS: u32 = 2500; // how long the pinned capsule stays after the m
 /// How far from the pinned capsule (logical units: scales with the screen) it starts to fade.
 const PIN_FADE_REACH: f32 = 150.0;
 const PIN_FADE_RATE: f32 = 9.0; // how quickly it follows (per second)
+const T_LYRIC: usize = 11; // which lyric line is it? (only while the pinned capsule plays with lyrics on)
+const LYRIC_MS: u32 = 100;
+const LYRIC_SWAP_SECS: f32 = 0.34; // one lyric line giving way to the next
+const LYRIC_AHEAD: f32 = 0.25; // a line shows slightly early: drawing and the player's clock both lag
 const SONG_SWAP_SECS: f32 = 0.55; // the pinned capsule changing from one song to the next
 const VIZ_FRAME_MS: u32 = 33; // the visualizer moves at about 30 frames per second
 const T_HIDE: usize = 2;
@@ -204,6 +208,11 @@ struct State {
     pending_update: Option<(String, std::path::PathBuf)>, // a downloaded release waiting for a quiet moment
     song_prev: Option<Arc<Song>>, // the song the pinned capsule is changing away from
     song_swap: f32,               // 0..1 through that change
+    lyric: Option<Arc<TextBmp>>,     // the current lyric line (None: the title shows)
+    lyric_old: Option<Arc<TextBmp>>, // the line it is replacing, while that animates
+    lyric_swap: f32,                 // 0..1 through that change
+    lyric_idx: Option<usize>,        // index of the current line in the song's lyrics
+    lyric_key: String,               // the song those belong to
     pin_suspended: bool,                 // a full-screen app is in front: the pinned capsule steps aside
     viz: [f32; 5],                       // bar heights 0..1
     steady_drawn: bool,                  // the last frame was a full draw of a settled capsule
@@ -300,6 +309,11 @@ pub unsafe fn init(cfg: Config, hwnd: HWND) {
         pending_update: None,
         song_prev: None,
         song_swap: 1.0,
+        lyric: None,
+        lyric_old: None,
+        lyric_swap: 1.0,
+        lyric_idx: None,
+        lyric_key: String::new(),
         pin_suspended: false,
         viz: [0.0; 5],
         steady_drawn: false,
@@ -325,6 +339,7 @@ pub unsafe fn init(cfg: Config, hwnd: HWND) {
     };
     STATE.store(Box::into_raw(Box::new(state)), SeqCst);
     media::set_pin(st().cfg.pin_media);
+    media::set_lyrics(st().cfg.pin_lyrics);
     media::start(hwnd.0 as isize, WM_APP_SONG, WM_APP_PIN);
     ntfy::start(&st().cfg, hwnd.0 as isize, WM_APP_NTFY);
     if !tray::add(hwnd) {
@@ -498,7 +513,7 @@ impl State {
 
     fn toggle_targets(&self) -> [f32; ui::TOGGLES] {
         let c = &self.cfg;
-        [c.click_sound, c.notify_song, c.notify_device, c.volume_keys, c.low_power, c.upload_sound, c.screenshot, c.pin_media, c.pin_fullscreen, c.auto_update, self.autostart].map(|b| f32::from(u8::from(b)))
+        [c.click_sound, c.notify_song, c.notify_device, c.volume_keys, c.low_power, c.upload_sound, c.screenshot, c.pin_media, c.pin_fullscreen, c.pin_lyrics, c.auto_update, self.autostart].map(|b| f32::from(u8::from(b)))
     }
 
     /// Screen-space rectangle of the shape at its target (for the mouse hook).
@@ -924,6 +939,7 @@ unsafe fn pin_refresh(hwnd: HWND) {
     if !s.cfg.pin_media {
         spectrum::stop();
         let _ = KillTimer(hwnd, T_PIN_POLL);
+        let _ = KillTimer(hwnd, T_LYRIC);
         (s.pin_suspended, s.viz) = (false, [0.0; 5]);
         if s.kind == Kind::Pinned && s.live() {
             begin_close(hwnd);
@@ -938,6 +954,14 @@ unsafe fn pin_refresh(hwnd: HWND) {
                 (s.song_prev, s.song_swap) = (old.clone(), 0.0);
             }
         }
+    }
+    if old.as_ref().map(|o| &o.key) != s.song.as_ref().map(|n| &n.key) {
+        lyric_reset(s); // the lines belong to the song that was playing
+    }
+    if s.cfg.pin_lyrics && media::playing() && s.song.is_some() {
+        SetTimer(hwnd, T_LYRIC, LYRIC_MS, None);
+    } else {
+        let _ = KillTimer(hwnd, T_LYRIC);
     }
     if media::playing() && s.song.is_some() {
         SetTimer(hwnd, T_PIN_POLL, PIN_POLL_MS, None);
@@ -966,6 +990,36 @@ unsafe fn pin_refresh(hwnd: HWND) {
             frames(hwnd);
         }
     }
+}
+
+/// Forgets the lyric line on show (another song, or the lyrics were switched off).
+fn lyric_reset(s: &mut State) {
+    (s.lyric, s.lyric_old, s.lyric_swap, s.lyric_idx) = (None, None, 1.0, None);
+    s.lyric_key.clear();
+    s.steady_drawn = false;
+}
+
+/// Looks at the clock: when the song has moved on to another lyric line, it takes the place of the title.
+unsafe fn lyric_tick(hwnd: HWND) {
+    let s = st();
+    if !s.cfg.pin_lyrics || s.kind != Kind::Pinned || !s.live() || s.song_prev.is_some() {
+        return;
+    }
+    let Some(key) = s.song.as_ref().map(|x| x.key.clone()) else { return };
+    let line = media::position().zip(crate::lyrics::get(&key)).and_then(|(t, l)| l.line_at(t + LYRIC_AHEAD).map(|(i, text)| (i, text.trim().to_string())));
+    let idx = line.as_ref().map(|(i, _)| *i);
+    if idx == s.lyric_idx && s.lyric_key == key {
+        return;
+    }
+    s.lyric_key = key;
+    s.lyric_idx = idx;
+    let bmp = line.filter(|(_, t)| !t.is_empty()).and_then(|(_, t)| text::raster(&t, -64, 700)).map(Arc::new);
+    if bmp.is_none() && s.lyric.is_none() {
+        return; // still the title: nothing to change
+    }
+    s.lyric_old = s.lyric.take();
+    (s.lyric, s.lyric_swap, s.marq, s.steady_drawn) = (bmp, 0.0, 0.0, false);
+    frames(hwnd);
 }
 
 /// A full-screen app in front hides the pinned capsule (unless "pin over full-screen apps" is on); it comes
@@ -1242,7 +1296,7 @@ unsafe fn settings_click(hwnd: HWND, screen: POINT) {
             media::set_pin(s.cfg.pin_media);
             pin_refresh(hwnd);
         }
-        ui::Hit::Toggle(9) => {
+        ui::Hit::Toggle(10) => {
             s.cfg.auto_update ^= true;
             if s.cfg.auto_update && install::running_installed() {
                 SetTimer(hwnd, T_UPDATE, 3000, None); // look right away
@@ -1251,6 +1305,12 @@ unsafe fn settings_click(hwnd: HWND, screen: POINT) {
         ui::Hit::Toggle(8) => {
             s.cfg.pin_fullscreen ^= true;
             pin_poll(hwnd); // in or out of full-screen apps right away
+        }
+        ui::Hit::Toggle(9) => {
+            s.cfg.pin_lyrics ^= true;
+            media::set_lyrics(s.cfg.pin_lyrics);
+            lyric_reset(s);
+            pin_refresh(hwnd);
         }
         ui::Hit::Toggle(ui::TOGGLE_AUTOSTART) => {
             s.autostart ^= true;
@@ -1690,6 +1750,12 @@ unsafe fn tick(hwnd: HWND) {
             s.pin_fade = s.pin_fade_goal;
         }
     }
+    if s.lyric_swap < 1.0 {
+        s.lyric_swap = (s.lyric_swap + dt / LYRIC_SWAP_SECS).min(1.0);
+        if s.lyric_swap >= 1.0 {
+            s.lyric_old = None;
+        }
+    }
     if s.song_prev.is_some() {
         s.song_swap = (s.song_swap + dt / SONG_SWAP_SECS).min(1.0);
         if s.song_swap >= 1.0 {
@@ -1830,6 +1896,7 @@ unsafe fn tick(hwnd: HWND) {
         && s.unit == s.unit_goal
         && s.hs == grow
         && s.song_prev.is_none()
+        && s.lyric_swap >= 1.0
         && s.pin_fade == s.pin_fade_goal
         && s.toggles == targets;
     if settled {
@@ -1936,7 +2003,7 @@ fn draw(rows: Option<(f32, f32)>, cols: Option<(f32, f32)>) {
         check: s.notice.is_some() && s.notice_icon == 2,
         drop_hint: s.drop_hint.as_ref(),
         pin: shows(Kind::Pinned).then(|| {
-            render::PinView { song: s.song.as_deref(), prev: s.song_prev.as_deref(), swap: s.song_swap, bars: s.viz }
+            render::PinView { song: s.song.as_deref(), prev: s.song_prev.as_deref(), swap: s.song_swap, bars: s.viz, lyric: s.lyric.as_deref(), lyric_old: s.lyric_old.as_deref(), lyric_swap: s.lyric_swap }
         }),
         sub: s.sub(),
         song: if s.kind == Kind::Knob { s.song.as_deref() } else { s.shown_song() },
@@ -2080,6 +2147,7 @@ pub unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPAR
             }
             T_DRAG => drag_poll(hwnd),
             T_PIN_POLL => pin_poll(hwnd),
+            T_LYRIC => lyric_tick(hwnd),
             T_UPDATE => update_tick(hwnd),
             T_UPDATE_APPLY => update_apply(hwnd),
             T_DROP_END => {

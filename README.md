@@ -66,7 +66,7 @@ RustKnob checks this repository's [releases](https://github.com/thatsdai00/RustK
 |---|---|
 | **Volume** | Double-click the middle mouse button (or `Ctrl+Alt+K`). Scroll: the capsule turns into a round **knob**, and the page behind does not scroll. Volume keys use it instead of Windows' popup. |
 | **Media** | Song changes show title and artist. Mouse back/forward, left click and right click over the capsule control playback; the side buttons work in a wider area around it. |
-| **Pin media** | The capsule stays while music plays, like a Live Activity: cover, title, artist, and a **real spectrum visualizer** that takes the cover's color. Song changes animate. It fades when the pointer comes near, and steps aside for full-screen apps unless you say otherwise. |
+| **Pin media** | The capsule stays while music plays, like a Live Activity: cover, title, artist, and a **real spectrum visualizer** that takes the cover's color. Song changes animate. Optional **synced lyrics** from [LRCLIB](https://lrclib.net) take the title's place line by line. It fades when the pointer comes near, and steps aside for full-screen apps unless you say otherwise. |
 | **Uploads** | Drag a file toward the top of the screen and drop it on the capsule. It uploads to fuckingfast.net with progress and speed, and the link is copied. `Ctrl+Alt+H` opens the history. |
 | **Screenshots** | `Win+Shift+S` freezes and dims the screen. Drag a rectangle: it is copied, shrinks into the island, and `Ctrl+V` later tells you where it was pasted. `Esc` or right click cancels. |
 | **Notifications** | Listens to a [ntfy](https://ntfy.sh) topic and shows messages with their own sound and volume. Device changes show the device name. |
@@ -95,7 +95,7 @@ RustKnob checks this repository's [releases](https://github.com/thatsdai00/RustK
 
 ## Privacy
 
-RustKnob talks to the network only for what you ask: uploads (fuckingfast.net), the ntfy topic you set, and the update check (GitHub). Settings live in `rustknob.ini` (next to the exe, or in `%APPDATA%\RustKnob`), the link history in `%LOCALAPPDATA%\RustKnob`. Nothing else leaves your PC.
+RustKnob talks to the network only for what you ask: uploads (fuckingfast.net), the ntfy topic you set, the update check (GitHub), and, with *Synced lyrics* on, the song's title and artist sent to lrclib.net. Settings live in `rustknob.ini` (next to the exe, or in `%APPDATA%\RustKnob`), the link history in `%LOCALAPPDATA%\RustKnob`. Nothing else leaves your PC.
 
 ## Build
 
@@ -127,7 +127,7 @@ Needs Rust and the Visual Studio C++ build tools. `package.ps1` writes `dist/Rus
 |---|---|
 | **Ses** | Orta tuşa çift tık (veya `Ctrl+Alt+K`), tekerlekle yuvarlak düğmeye dönüşür. |
 | **Medya** | Yeni şarkıda başlık ve sanatçı; fare tuşlarıyla şarkı yönetimi. |
-| **Medyayı sabitle** | Kapak, şarkı, sanatçı ve gerçek spektrum görselleştirici; renkler kapaktan gelir. |
+| **Medyayı sabitle** | Kapak, şarkı, sanatçı ve gerçek spektrum görselleştirici; renkler kapaktan gelir. İsteğe bağlı senkron şarkı sözleri ([LRCLIB](https://lrclib.net)) satır satır başlığın yerine geçer. |
 | **Yükleme** | Dosyayı sürükleyip kapsüle bırak: fuckingfast.net'e yüklenir, link kopyalanır (`Ctrl+Alt+H` geçmiş). |
 | **Ekran görüntüsü** | `Win+Shift+S`: seç, panoya kopyalansın, kapsüle uçsun; `Ctrl+V`'de nereye yapıştırıldığını söyler. |
 | **Bildirimler** | [ntfy](https://ntfy.sh) konusunu dinler. |

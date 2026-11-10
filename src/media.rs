@@ -5,7 +5,7 @@
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use windows::Foundation::{EventRegistrationToken, TypedEventHandler};
 use windows::Graphics::Imaging::{BitmapAlphaMode, BitmapBounds, BitmapDecoder, BitmapInterpolationMode, BitmapPixelFormat, BitmapTransform, ColorManagementMode, ExifOrientationMode};
@@ -36,6 +36,31 @@ pub struct Art {
 static PIN_ON: AtomicBool = AtomicBool::new(false);
 static PLAYING: AtomicBool = AtomicBool::new(false);
 static WAKE: Mutex<Option<Sender<()>>> = Mutex::new(None);
+/// Synced lyrics wanted (only looked up while the media is pinned as well).
+static LYRICS_ON: AtomicBool = AtomicBool::new(false);
+/// Where the song was at the last timeline update: seconds, when that was read, and whether it was playing.
+static TIMELINE: Mutex<Option<(f32, Instant, bool)>> = Mutex::new(None);
+
+/// Turns the lyrics lookup on or off.
+pub fn set_lyrics(on: bool) {
+    if LYRICS_ON.swap(on, Ordering::Relaxed) != on && on {
+        wake();
+    }
+}
+
+fn wake() {
+    if let Ok(g) = WAKE.lock() {
+        if let Some(tx) = g.as_ref() {
+            let _ = tx.send(());
+        }
+    }
+}
+
+/// How far into the song it is right now, in seconds (the player's last report, carried on by the clock).
+pub fn position() -> Option<f32> {
+    let (pos, at, playing) = (*TIMELINE.lock().ok()?)?;
+    Some(if playing { pos + at.elapsed().as_secs_f32() } else { pos })
+}
 
 pub fn playing() -> bool {
     PLAYING.load(Ordering::Relaxed)
@@ -44,11 +69,7 @@ pub fn playing() -> bool {
 /// Turns the cover art (and the messages the pinned capsule lives on) on or off.
 pub fn set_pin(on: bool) {
     if PIN_ON.swap(on, Ordering::Relaxed) != on && on {
-        if let Ok(g) = WAKE.lock() {
-            if let Some(tx) = g.as_ref() {
-                let _ = tx.send(()); // read the current song again, this time with its cover
-            }
-        }
+        wake(); // read the current song again, this time with its cover
     }
 }
 
@@ -84,7 +105,8 @@ struct Listener {
     last_key: String,
     first: bool,
     app: String,
-    sub: Option<(GlobalSystemMediaTransportControlsSession, EventRegistrationToken, EventRegistrationToken)>,
+    sub: Option<(GlobalSystemMediaTransportControlsSession, EventRegistrationToken, EventRegistrationToken, EventRegistrationToken)>,
+    lyric_key: String, // the song the lyrics were last asked for
 }
 
 fn run(hwnd: isize, song_msg: u32, pin_msg: u32) -> windows::core::Result<()> {
@@ -103,7 +125,7 @@ fn run(hwnd: isize, song_msg: u32, pin_msg: u32) -> windows::core::Result<()> {
     if let Ok(mut g) = WAKE.lock() {
         *g = Some(tx.clone());
     }
-    let mut l = Listener { mgr, tx, hwnd, song_msg, pin_msg, has_art: false, last_key: String::new(), first: true, app: String::new(), sub: None };
+    let mut l = Listener { mgr, tx, hwnd, song_msg, pin_msg, has_art: false, last_key: String::new(), first: true, app: String::new(), sub: None, lyric_key: String::new() };
     let _ = l.update();
     while rx.recv().is_ok() {
         std::thread::sleep(Duration::from_millis(350)); // coalesce bursts
@@ -126,9 +148,10 @@ impl Listener {
         };
         let app = ses.SourceAppUserModelId()?.to_string();
         if app != self.app || self.sub.is_none() {
-            if let Some((old, t1, t2)) = self.sub.take() {
+            if let Some((old, t1, t2, t3)) = self.sub.take() {
                 let _ = old.RemoveMediaPropertiesChanged(t1);
                 let _ = old.RemovePlaybackInfoChanged(t2);
+                let _ = old.RemoveTimelinePropertiesChanged(t3);
             }
             let (tx1, tx2) = (self.tx.clone(), self.tx.clone());
             let t1 = ses.MediaPropertiesChanged(&TypedEventHandler::new(move |_, _| {
@@ -139,7 +162,14 @@ impl Listener {
                 let _ = tx2.send(());
                 Ok(())
             }))?;
-            self.sub = Some((ses.clone(), t1, t2));
+            let tx3 = self.tx.clone();
+            let t3 = ses.TimelinePropertiesChanged(&TypedEventHandler::new(move |_, _| {
+                if LYRICS_ON.load(Ordering::Relaxed) {
+                    let _ = tx3.send(()); // a seek: the lyrics follow
+                }
+                Ok(())
+            }))?;
+            self.sub = Some((ses.clone(), t1, t2, t3));
             self.app = app;
         }
 
@@ -155,6 +185,25 @@ impl Listener {
         }
         let playing = ses.GetPlaybackInfo()?.PlaybackStatus()? == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing;
         let was_playing = PLAYING.swap(playing, Ordering::Relaxed);
+        let lyrics = LYRICS_ON.load(Ordering::Relaxed) && PIN_ON.load(Ordering::Relaxed);
+        let mut duration = None;
+        if lyrics {
+            if let Ok(tl) = ses.GetTimelineProperties() {
+                let secs = |d: windows::Foundation::TimeSpan| d.Duration as f64 / 1e7;
+                let mut pos = tl.Position().map_or(0.0, secs);
+                if playing {
+                    // the report is some time old: carry it on (DateTime and FILETIME both count 100 ns from 1601)
+                    let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_nanos() / 100) as i128 + 116_444_736_000_000_000;
+                    let age = tl.LastUpdatedTime().map_or(0.0, |t| (now - t.UniversalTime as i128) as f64 / 1e7);
+                    pos += age.clamp(0.0, 600.0);
+                }
+                if let Ok(mut g) = TIMELINE.lock() {
+                    *g = Some((pos as f32, Instant::now(), playing));
+                }
+                let len = secs(tl.EndTime().unwrap_or_default()) - secs(tl.StartTime().unwrap_or_default());
+                duration = (len > 1.0).then_some(len.round() as u32);
+            }
+        }
         if title.is_empty() && artist.is_empty() {
             set_song(None);
             self.last_key.clear();
@@ -163,6 +212,10 @@ impl Listener {
             return Ok(());
         }
         let key = format!("{artist}|{title}");
+        if lyrics && !title.is_empty() && key != self.lyric_key {
+            self.lyric_key = key.clone();
+            crate::lyrics::fetch(key.clone(), title.clone(), artist.clone(), duration);
+        }
         let changed = key != self.last_key;
         let wants_art = PIN_ON.load(Ordering::Relaxed);
         if !changed && !(wants_art && !self.has_art) {

@@ -106,7 +106,7 @@ unsafe fn sha256(data: &[u8]) -> Option<String> {
 }
 
 /// GET `url` (redirects are followed), at most `limit` bytes; None on any failure or a status other than 200.
-unsafe fn get(url: &str, limit: usize) -> Option<Vec<u8>> {
+pub unsafe fn get(url: &str, limit: usize) -> Option<Vec<u8>> {
     let rest = url.strip_prefix("https://")?;
     let (host, target) = match rest.find('/') {
         Some(i) => (&rest[..i], &rest[i..]),
