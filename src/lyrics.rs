@@ -53,9 +53,15 @@ unsafe fn lookup(title: &str, artist: &str, duration: Option<u32>) -> Option<Str
     }
     // the player's title often carries extras ("- Remastered", "(feat. ...)"): search for the plain one
     let plain = json::url_encode(clean_title(title));
-    let search = format!("{base}/search?track_name={plain}&artist_name={a}");
-    let body = String::from_utf8(update::get(&search, 4 << 20)?).ok()?;
-    synced(&body)
+    // then looser: the artist spelled differently (several artists, "&") matters less than the title
+    let first_artist = json::url_encode(artist.split([',', '&']).next().unwrap_or(artist).trim());
+    for query in [format!("track_name={plain}&artist_name={a}"), format!("q={plain}%20{first_artist}"), format!("q={plain}")] {
+        let Some(body) = update::get(&format!("{base}/search?{query}"), 4 << 20).and_then(|b| String::from_utf8(b).ok()) else { continue };
+        if let Some(found) = synced(&body) {
+            return Some(found);
+        }
+    }
+    None
 }
 
 /// The first non-null `syncedLyrics` string in a response (one object, or a list of them).

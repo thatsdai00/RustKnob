@@ -553,30 +553,30 @@ fn pinned_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) {
         }
 
         // title (bold) over artist, centered between the cover and the visualizer; with lyrics the current line
-        // takes the title's place and "title - artist" the artist's, and lines slide up as they change
+        // fills the middle alone and lines cross-fade as they change
         let lyric_mode = v.prev.is_none() && (v.lyric.is_some() || (v.lyric_swap < 1.0 && v.lyric_old.is_some()));
         if let (Some(song), true) = (song, lyric_mode) {
             let (left, view, unit) = (52.0, s.w - 52.0 - 50.0, 1.0 / aa);
             let e = sstep(0.0, 1.0, v.lyric_swap);
-            fn slot<'t>(song: &'t Song, lyric: Option<&'t TextBmp>) -> (&'t TextBmp, Option<&'t TextBmp>) {
-                match lyric {
-                    Some(l) => (l, Some(&song.line)),
-                    None => (&song.big, song.small.as_ref()),
-                }
-            }
             let mut draw = |lyric: Option<&TextBmp>, alpha: f32, dy: f32| {
                 if alpha <= 0.003 {
                     return;
                 }
-                let (top, bottom) = slot(song, lyric);
-                p.over(accent, ca * alpha * text_mid(top, tx, ry + 7.0 + dy, left, view, s.marq, unit));
-                if let Some(b) = bottom {
-                    p.over(dim, ca * alpha * 0.95 * text_mid(b, tx, ry - 9.0 + dy, left, view, s.marq, unit));
+                match lyric {
+                    // a lyric line fills the middle on its own
+                    Some(l) => p.over(accent, ca * alpha * text_mid(l, tx, ry + dy, left, view, s.marq, unit)),
+                    None => match &song.small {
+                        Some(small) => {
+                            p.over(accent, ca * alpha * text_mid(&song.big, tx, ry + 7.0 + dy, left, view, s.marq, unit));
+                            p.over(dim, ca * alpha * 0.95 * text_mid(small, tx, ry - 9.0 + dy, left, view, s.marq, unit));
+                        }
+                        None => p.over(accent, ca * alpha * text_mid(&song.big, tx, ry + dy, left, view, s.marq, unit)),
+                    },
                 }
             };
             if v.lyric_swap < 1.0 {
-                draw(v.lyric_old, 1.0 - sstep(0.0, 0.6, v.lyric_swap), e * 7.0);
-                draw(v.lyric, sstep(0.25, 1.0, v.lyric_swap), -(1.0 - e) * 7.0);
+                draw(v.lyric_old, 1.0 - sstep(0.0, 0.7, v.lyric_swap), e * 3.0);
+                draw(v.lyric, sstep(0.3, 1.0, v.lyric_swap), -(1.0 - e) * 3.0);
             } else {
                 draw(v.lyric, 1.0, 0.0);
             }

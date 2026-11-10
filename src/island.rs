@@ -49,7 +49,7 @@ const PIN_FADE_REACH: f32 = 150.0;
 const PIN_FADE_RATE: f32 = 9.0; // how quickly it follows (per second)
 const T_LYRIC: usize = 11; // which lyric line is it? (only while the pinned capsule plays with lyrics on)
 const LYRIC_MS: u32 = 100;
-const LYRIC_SWAP_SECS: f32 = 0.34; // one lyric line giving way to the next
+const LYRIC_SWAP_SECS: f32 = 0.28; // one lyric line giving way to the next
 const LYRIC_AHEAD: f32 = 0.25; // a line shows slightly early: drawing and the player's clock both lag
 const SONG_SWAP_SECS: f32 = 0.55; // the pinned capsule changing from one song to the next
 const VIZ_FRAME_MS: u32 = 33; // the visualizer moves at about 30 frames per second
@@ -973,7 +973,7 @@ unsafe fn pin_refresh(hwnd: HWND) {
         if !s.visible || s.closing {
             open(hwnd, Kind::Pinned, false, None);
         } else if s.kind == Kind::Pinned {
-            (s.marq, s.steady_drawn) = (0.0, false);
+            s.steady_drawn = false;
             hide_after(hwnd, None);
             s.apply_targets();
             frames(hwnd);
@@ -996,7 +996,23 @@ unsafe fn pin_refresh(hwnd: HWND) {
 fn lyric_reset(s: &mut State) {
     (s.lyric, s.lyric_old, s.lyric_swap, s.lyric_idx) = (None, None, 1.0, None);
     s.lyric_key.clear();
+    s.marq = 0.0;
     s.steady_drawn = false;
+}
+
+/// A lyric line as a bitmap: the biggest size at which it fits between the cover and the visualizer.
+fn fit_line(text: &str) -> Option<TextBmp> {
+    let room = ui::PINNED.0 - 52.0 - 50.0 - 6.0;
+    let mut last = None;
+    for h in [-60, -54, -48, -43, -38] {
+        let bmp = text::raster(text, h, 700)?;
+        let fits = bmp.size().0 <= room;
+        last = Some(bmp);
+        if fits {
+            break;
+        }
+    }
+    last
 }
 
 /// Looks at the clock: when the song has moved on to another lyric line, it takes the place of the title.
@@ -1013,7 +1029,7 @@ unsafe fn lyric_tick(hwnd: HWND) {
     }
     s.lyric_key = key;
     s.lyric_idx = idx;
-    let bmp = line.filter(|(_, t)| !t.is_empty()).and_then(|(_, t)| text::raster(&t, -64, 700)).map(Arc::new);
+    let bmp = line.filter(|(_, t)| !t.is_empty()).and_then(|(_, t)| fit_line(&t)).map(Arc::new);
     if bmp.is_none() && s.lyric.is_none() {
         return; // still the title: nothing to change
     }
