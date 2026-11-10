@@ -6,17 +6,45 @@ use std::sync::{Arc, Mutex};
 use crate::json;
 use crate::update;
 
+/// One word of a line, timed (seconds) and located in the line's text (byte range).
+pub struct Word {
+    pub start: f32,
+    pub end: f32,
+    pub from: usize,
+    pub to: usize,
+}
+
+pub struct Line {
+    pub start: f32,
+    pub text: String,
+    pub words: Vec<Word>, // empty: only the line is timed
+}
+
 pub struct Lyrics {
     pub key: String,
-    lines: Vec<(f32, String)>, // sorted by time; empty when the song has none
+    lines: Vec<Line>, // sorted by time; empty when the song has none
 }
 
 impl Lyrics {
-    /// The line sounding at `t` seconds: its index and its text (possibly empty: an instrumental break).
-    pub fn line_at(&self, t: f32) -> Option<(usize, &str)> {
-        let n = self.lines.partition_point(|(at, _)| *at <= t);
-        (n > 0).then(|| (n - 1, self.lines[n - 1].1.as_str()))
+    /// The line sounding at `t` seconds: its index and the line (its text may be empty: an instrumental break).
+    pub fn line_at(&self, t: f32) -> Option<(usize, &Line)> {
+        let n = self.lines.partition_point(|l| l.start <= t);
+        (n > 0).then(|| (n - 1, &self.lines[n - 1]))
     }
+}
+
+/// Where the sung part of a line ends at `t`: `points` are rising (time, x) pairs made from a line's words.
+pub fn fill_x(points: &[(f32, f32)], t: f32) -> f32 {
+    let (Some(first), Some(last)) = (points.first(), points.last()) else { return 0.0 };
+    if t <= first.0 {
+        return first.1;
+    }
+    if t >= last.0 {
+        return last.1;
+    }
+    let n = points.partition_point(|p| p.0 <= t);
+    let ((t0, x0), (t1, x1)) = (points[n - 1], points[n]);
+    x0 + (x1 - x0) * ((t - t0) / (t1 - t0).max(1e-4))
 }
 
 static CURRENT: Mutex<Option<Arc<Lyrics>>> = Mutex::new(None);
@@ -32,7 +60,10 @@ pub fn fetch(key: String, title: String, artist: String, duration: Option<u32>) 
         *g = None;
     }
     std::thread::spawn(move || {
-        let lines = unsafe { lookup(&title, &artist, duration) }.map(|t| parse(&t)).unwrap_or_default();
+        // LiriQo first (word-timed lyrics from Apple Music and others), LRCLIB when it has nothing
+        let lines = unsafe { liriqo(&title, &artist, duration) }
+            .or_else(|| unsafe { lookup(&title, &artist, duration) }.map(|t| parse(&t)))
+            .unwrap_or_default();
         if let Ok(mut g) = CURRENT.lock() {
             *g = Some(Arc::new(Lyrics { key, lines }));
         }
@@ -141,7 +172,7 @@ fn clean_title(title: &str) -> &str {
 }
 
 /// "[mm:ss.xx]" stamps (a line may have several) in front of the text.
-fn parse(text: &str) -> Vec<(f32, String)> {
+fn parse(text: &str) -> Vec<Line> {
     let mut out = Vec::new();
     // "[offset:+500]": the lines come that many milliseconds earlier (negative: later)
     let offset = text.lines().find_map(|l| l.trim().strip_prefix("[offset:")?.split(']').next()?.trim().parse::<f32>().ok()).unwrap_or(0.0) / 1000.0;
@@ -159,9 +190,211 @@ fn parse(text: &str) -> Vec<(f32, String)> {
             }
         }
         for t in stamps {
-            out.push((t - offset, rest.to_string()));
+            out.push(Line { start: t - offset, text: rest.to_string(), words: Vec::new() });
         }
     }
-    out.sort_by(|a, b| a.0.total_cmp(&b.0));
+    out.sort_by(|a, b| a.start.total_cmp(&b.start));
     out
+}
+
+// ---- LiriQo (https://github.com/AlFarrizi-Studio/LiriQo): one endpoint over Apple Music, Musixmatch, QQ, ... ----
+
+/// The best timed lyrics it knows: word- or syllable-timed ones when there are any, else its first line-timed set.
+unsafe fn liriqo(title: &str, artist: &str, duration: Option<u32>) -> Option<Vec<Line>> {
+    let mut url = format!("https://api.liriqo-alfarrizi.my.id/v1/lyrics?title={}&artist={}", json::url_encode(title), json::url_encode(artist));
+    if let Some(d) = duration.filter(|d| *d > 0) {
+        url.push_str(&format!("&duration={d}"));
+    }
+    let body = String::from_utf8(update::get(&url, 8 << 20)?).ok()?;
+    let root = J::parse(&body)?;
+    let mut best: Option<(bool, Vec<Line>)> = None;
+    for track in root.get("tracks")?.arr() {
+        let lines = liriqo_lines(track);
+        if lines.is_empty() {
+            continue;
+        }
+        let wordy = lines.iter().filter(|l| !l.words.is_empty()).count() * 2 >= lines.len();
+        if best.as_ref().is_none_or(|(w, _)| wordy && !*w) {
+            best = Some((wordy, lines));
+        }
+    }
+    best.map(|(_, lines)| lines)
+}
+
+fn liriqo_lines(track: &J) -> Vec<Line> {
+    let mut out = Vec::new();
+    for l in track.get("timed").map_or(&[][..], |t| t.arr()) {
+        let (Some(text), Some(start)) = (l.get("text").and_then(J::str), l.get("start").and_then(J::num)) else { continue };
+        let instrumental = matches!(l.get("isInstrumental"), Some(J::Bool(true)));
+        let text = if instrumental { "" } else { text.trim() };
+        let mut words = Vec::new();
+        let mut pos = 0;
+        for w in l.get("words").map_or(&[][..], |w| w.arr()) {
+            let word = w.get("text").and_then(J::str).unwrap_or("").trim();
+            if word.is_empty() {
+                continue;
+            }
+            // each word is found in the line's own text, after the one before it
+            let Some(at) = text[pos..].find(word) else {
+                words.clear();
+                break;
+            };
+            let (from, to) = (pos + at, pos + at + word.len());
+            pos = to;
+            let s = w.get("start").and_then(J::num).unwrap_or(0.0) as f32 / 1000.0;
+            let e = w.get("end").and_then(J::num).unwrap_or(0.0) as f32 / 1000.0;
+            words.push(Word { start: s, end: e.max(s), from, to });
+        }
+        out.push(Line { start: start as f32 / 1000.0, text: text.to_string(), words });
+    }
+    out.sort_by(|a, b| a.start.total_cmp(&b.start));
+    out
+}
+
+/// Just enough JSON to read the response.
+enum J {
+    Null,
+    Bool(bool),
+    Num(f64),
+    Str(String),
+    Arr(Vec<J>),
+    Obj(Vec<(String, J)>),
+}
+
+impl J {
+    fn parse(text: &str) -> Option<J> {
+        Reader { s: text.as_bytes(), i: 0 }.value()
+    }
+    fn get(&self, key: &str) -> Option<&J> {
+        match self {
+            J::Obj(v) => v.iter().find(|(k, _)| k == key).map(|(_, v)| v),
+            _ => None,
+        }
+    }
+    fn str(&self) -> Option<&str> {
+        if let J::Str(s) = self { Some(s) } else { None }
+    }
+    fn num(&self) -> Option<f64> {
+        if let J::Num(n) = self { Some(*n) } else { None }
+    }
+    fn arr(&self) -> &[J] {
+        if let J::Arr(v) = self { v } else { &[] }
+    }
+}
+
+struct Reader<'a> {
+    s: &'a [u8],
+    i: usize,
+}
+
+impl Reader<'_> {
+    fn peek(&mut self) -> Option<u8> {
+        while self.s.get(self.i)?.is_ascii_whitespace() {
+            self.i += 1;
+        }
+        self.s.get(self.i).copied()
+    }
+
+    fn value(&mut self) -> Option<J> {
+        match self.peek()? {
+            b'{' => {
+                self.i += 1;
+                let mut v = Vec::new();
+                loop {
+                    match self.peek()? {
+                        b'}' => break,
+                        b',' => self.i += 1,
+                        _ => {
+                            let k = self.string()?;
+                            if self.peek()? != b':' {
+                                return None;
+                            }
+                            self.i += 1;
+                            v.push((k, self.value()?));
+                        }
+                    }
+                }
+                self.i += 1;
+                Some(J::Obj(v))
+            }
+            b'[' => {
+                self.i += 1;
+                let mut v = Vec::new();
+                loop {
+                    match self.peek()? {
+                        b']' => break,
+                        b',' => self.i += 1,
+                        _ => v.push(self.value()?),
+                    }
+                }
+                self.i += 1;
+                Some(J::Arr(v))
+            }
+            b'"' => self.string().map(J::Str),
+            b't' => {
+                self.i += 4;
+                Some(J::Bool(true))
+            }
+            b'f' => {
+                self.i += 5;
+                Some(J::Bool(false))
+            }
+            b'n' => {
+                self.i += 4;
+                Some(J::Null)
+            }
+            _ => {
+                let start = self.i;
+                while self.s.get(self.i).is_some_and(|c| matches!(c, b'0'..=b'9' | b'-' | b'+' | b'.' | b'e' | b'E')) {
+                    self.i += 1;
+                }
+                std::str::from_utf8(&self.s[start..self.i]).ok()?.parse().ok().map(J::Num)
+            }
+        }
+    }
+
+    fn string(&mut self) -> Option<String> {
+        if self.peek()? != b'"' {
+            return None;
+        }
+        self.i += 1;
+        let mut out = Vec::new();
+        loop {
+            let c = *self.s.get(self.i)?;
+            self.i += 1;
+            match c {
+                b'"' => break,
+                b'\\' => {
+                    let e = *self.s.get(self.i)?;
+                    self.i += 1;
+                    match e {
+                        b'n' => out.push(b'\n'),
+                        b't' => out.push(b'\t'),
+                        b'r' => out.push(b'\r'),
+                        b'b' => out.push(8),
+                        b'f' => out.push(12),
+                        b'u' => {
+                            let mut cp = self.hex4()?;
+                            if (0xD800..0xDC00).contains(&cp) && self.s.get(self.i) == Some(&b'\\') && self.s.get(self.i + 1) == Some(&b'u') {
+                                self.i += 2;
+                                let low = self.hex4()?;
+                                cp = 0x10000 + ((cp - 0xD800) << 10) + (low.wrapping_sub(0xDC00) & 0x3FF);
+                            }
+                            let mut buf = [0u8; 4];
+                            out.extend_from_slice(char::from_u32(cp).unwrap_or('\u{FFFD}').encode_utf8(&mut buf).as_bytes());
+                        }
+                        other => out.push(other),
+                    }
+                }
+                other => out.push(other),
+            }
+        }
+        Some(String::from_utf8_lossy(&out).into_owned())
+    }
+
+    fn hex4(&mut self) -> Option<u32> {
+        let h = std::str::from_utf8(self.s.get(self.i..self.i + 4)?).ok()?;
+        self.i += 4;
+        u32::from_str_radix(h, 16).ok()
+    }
 }

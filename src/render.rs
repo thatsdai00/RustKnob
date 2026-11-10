@@ -31,6 +31,7 @@ pub struct PinView<'a> {
     pub lyric: Option<&'a TextBmp>,     // the current lyric line; it takes the title's place (None: title and artist)
     pub lyric_old: Option<&'a TextBmp>, // the line it replaces, while `lyric_swap` < 1 (None: the title)
     pub lyric_swap: f32,                // 0..1 through that change
+    pub lyric_fill: Option<f32>,        // word-timed line: how far it has been sung (raster px from its left edge)
     pub tall: bool,                     // the capsule is the tall one: a row for the lyric line under the title and artist
 }
 
@@ -191,7 +192,9 @@ const LYRIC_TRAVEL: f32 = 15.0;
 
 /// A line centered in the box that starts `left` units from the shape's left edge and is `view` wide; a longer
 /// line is scaled down to fit (the lyric lines: they should show whole).
-fn text_fit(tb: &TextBmp, tx: f32, ty: f32, left: f32, view: f32, unit: f32) -> f32 {
+/// `fill` (raster px from the bitmap's left): the part of a word-timed line that has been sung is lit, the rest dim,
+/// with a soft edge between them that moves along with the singer.
+fn text_fit(tb: &TextBmp, tx: f32, ty: f32, left: f32, view: f32, unit: f32, fill: Option<f32>) -> f32 {
     let (wl, hl) = tb.size();
     let k = (view / wl).min(1.0);
     let x = tx - left - (view - wl * k) / 2.0;
@@ -201,10 +204,18 @@ fn text_fit(tb: &TextBmp, tx: f32, ty: f32, left: f32, view: f32, unit: f32) -> 
     let o = 0.25 / unit; // 2x2 supersampling
     let mut acc = 0.0;
     for (ox, oy) in [(-o, -o), (o, -o), (-o, o), (o, o)] {
-        acc += tb.sample((x + ox) / k * TEXT_R, ((ty + oy) / k + hl / 2.0) * TEXT_R);
+        let u = (x + ox) / k * TEXT_R;
+        let lit = match fill {
+            Some(f) => 0.36 + 0.64 * sstep(f + LYRIC_EDGE, f - LYRIC_EDGE, u),
+            None => 1.0,
+        };
+        acc += tb.sample(u, ((ty + oy) / k + hl / 2.0) * TEXT_R) * lit;
     }
     (acc / 4.0).powf(0.85)
 }
+
+/// Half the width (raster px) of the soft edge between the sung and the unsung part of a line.
+const LYRIC_EDGE: f32 = 34.0;
 
 /// Same, centered on `dx = 0` (the knob's rows).
 fn text_center(tb: &TextBmp, dx: f32, ty: f32, view: f32, marq: f32, unit: f32) -> f32 {
@@ -595,16 +606,16 @@ fn pinned_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) {
         if mask > 0.0 {
             let rise = 1.0 - (1.0 - v.lyric_swap.clamp(0.0, 1.0)).powi(3);
             let leave = sstep(0.0, 1.0, v.lyric_swap);
-            let mut line = |tb: Option<&TextBmp>, off: f32| {
+            let mut line = |tb: Option<&TextBmp>, off: f32, fill: Option<f32>| {
                 if let Some(tb) = tb {
-                    p.over(accent_now, ca * mask * text_fit(tb, tx, ty - (60.0 + off), left, view, unit));
+                    p.over(accent_now, ca * mask * text_fit(tb, tx, ty - (60.0 + off), left, view, unit, fill));
                 }
             };
             if v.lyric_swap < 1.0 {
-                line(v.lyric_old, -leave * LYRIC_TRAVEL);
-                line(v.lyric, (1.0 - rise) * LYRIC_TRAVEL);
+                line(v.lyric_old, -leave * LYRIC_TRAVEL, None);
+                line(v.lyric, (1.0 - rise) * LYRIC_TRAVEL, v.lyric_fill);
             } else {
-                line(v.lyric, 0.0);
+                line(v.lyric, 0.0, v.lyric_fill);
             }
         }
     }

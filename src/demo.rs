@@ -545,7 +545,7 @@ pub fn run(dir: &str) {
     let song_blue = song("Daft Punk", "Instant Crush", Some(cover([40.0, 90.0, 220.0], [12.0, 18.0, 60.0], [130.0, 190.0, 255.0])));
     let pinned = |s: &Song, bars: [f32; 5], unit: f32| {
         let mut sc = capsule(ui::PINNED, Kind::Pinned, unit);
-        sc.pin = Some(PinView { song: Some(s), prev: None, swap: 1.0, bars, lyric: None, lyric_old: None, lyric_swap: 1.0, tall: false });
+        sc.pin = Some(PinView { song: Some(s), prev: None, swap: 1.0, bars, lyric: None, lyric_old: None, lyric_swap: 1.0, lyric_fill: None, tall: false });
         shoot(&sc)
     };
 
@@ -616,12 +616,12 @@ pub fn run(dir: &str) {
     let lyric = raster("Sing it with me now", -64, 700).unwrap();
     let p2 = {
         let mut sc = capsule(ui::PINNED_TALL, Kind::Pinned, 2.4);
-        sc.pin = Some(PinView { song: Some(&song_blue), prev: None, swap: 1.0, bars: [0.55, 0.85, 0.4, 0.75, 0.5], lyric: Some(&lyric), lyric_old: None, lyric_swap: 1.0, tall: true });
+        sc.pin = Some(PinView { song: Some(&song_blue), prev: None, swap: 1.0, bars: [0.55, 0.85, 0.4, 0.75, 0.5], lyric: Some(&lyric), lyric_old: None, lyric_swap: 1.0, lyric_fill: Some(lyric.size().0 * crate::text::TEXT_R * 0.55), tall: true });
         shoot(&sc)
     };
     save(
         "card-media",
-        &card("Your music, always there.", "Pin the media. Cover, a real spectrum visualizer and synced lyrics from LRCLIB. The colors follow the cover.", red, |c, cx, cy| {
+        &card("Your music, always there.", "Pin the media. Cover, a real spectrum visualizer and word-by-word synced lyrics. The colors follow the cover.", red, |c, cx, cy| {
             show(c, &p1, cx, cy - 190.0);
             show(c, &p2, cx, cy + 20.0);
         }),
@@ -750,9 +750,9 @@ pub fn run(dir: &str) {
         let bars = std::array::from_fn(|i| 0.15 + 0.85 * (0.5 + 0.5 * (t * (5.0 + i as f32 * 1.7) + i as f32 * 1.3).sin()) * (0.55 + 0.45 * (t * 2.1 + i as f32).sin().abs()));
         let mut sc = capsule(ui::PINNED, Kind::Pinned, 4.2);
         sc.pin = Some(if k <= 0.0 {
-            PinView { song: Some(from), prev: None, swap: 1.0, bars, lyric: None, lyric_old: None, lyric_swap: 1.0, tall: false }
+            PinView { song: Some(from), prev: None, swap: 1.0, bars, lyric: None, lyric_old: None, lyric_swap: 1.0, lyric_fill: None, tall: false }
         } else {
-            PinView { song: Some(to), prev: if k < 1.0 { Some(from) } else { None }, swap: k, bars, lyric: None, lyric_old: None, lyric_swap: 1.0, tall: false }
+            PinView { song: Some(to), prev: if k < 1.0 { Some(from) } else { None }, swap: k, bars, lyric: None, lyric_old: None, lyric_swap: 1.0, lyric_fill: None, tall: false }
         });
         let img = shoot_in(&sc, aw, ah);
         let mut c = Canvas::solid(aw, ah, [0.04, 0.04, 0.05]);

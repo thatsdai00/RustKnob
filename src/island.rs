@@ -211,6 +211,8 @@ struct State {
     lyric_old: Option<Arc<TextBmp>>, // the line it is replacing, while that animates
     lyric_swap: f32,                 // 0..1 through that change
     lyric_idx: Option<usize>,        // index of the current line in the song's lyrics
+    lyric_pts: Vec<(f32, f32)>,      // its words as (time, x) pairs: how far it has been sung at any moment (empty: line-timed)
+    lyric_fill: Option<f32>,         // ... and the x it is at now
     lyric_key: String,               // the song those belong to
     pin_tall: bool,                  // the pinned capsule is the tall one (this song has lyrics)
     pin_suspended: bool,                 // a full-screen app is in front: the pinned capsule steps aside
@@ -313,6 +315,8 @@ pub unsafe fn init(cfg: Config, hwnd: HWND) {
         lyric_old: None,
         lyric_swap: 1.0,
         lyric_idx: None,
+        lyric_pts: Vec::new(),
+        lyric_fill: None,
         lyric_key: String::new(),
         pin_tall: false,
         pin_suspended: false,
@@ -996,6 +1000,7 @@ unsafe fn pin_refresh(hwnd: HWND) {
 /// Forgets the lyric line on show (another song, or the lyrics were switched off).
 fn lyric_reset(s: &mut State) {
     (s.lyric, s.lyric_old, s.lyric_swap, s.lyric_idx) = (None, None, 1.0, None);
+    (s.lyric_pts, s.lyric_fill) = (Vec::new(), None);
     s.pin_tall = false;
     s.lyric_key.clear();
     s.marq = 0.0;
@@ -1009,14 +1014,32 @@ unsafe fn lyric_tick(hwnd: HWND) {
         return;
     }
     let Some(key) = s.song.as_ref().map(|x| x.key.clone()) else { return };
-    let line = media::position().zip(crate::lyrics::get(&key)).and_then(|(t, l)| l.line_at(t + s.cfg.lyric_ahead_ms as f32 / 1000.0).map(|(i, text)| (i, text.trim().to_string())));
-    let idx = line.as_ref().map(|(i, _)| *i);
+    let ahead = s.cfg.lyric_ahead_ms as f32 / 1000.0;
+    let line = media::position().zip(crate::lyrics::get(&key)).and_then(|(t, l)| {
+        l.line_at(t + ahead).map(|(i, line)| {
+            let text = line.text.trim().to_string();
+            // where each word starts and ends inside the rasterized line: the sung part grows along it
+            let measure = |to: usize| text::measure(&line.text[..to], -56, 700);
+            let mut pts = Vec::new();
+            for w in &line.words {
+                let (from, to) = (w.from.min(line.text.len()), w.to.min(line.text.len()));
+                if line.text.is_char_boundary(from) && line.text.is_char_boundary(to) && text.len() == line.text.len() {
+                    pts.push((w.start, measure(from).max(pts.last().map_or(0.0, |p: &(f32, f32)| p.1))));
+                    pts.push((w.end, measure(to)));
+                }
+            }
+            (i, text, pts)
+        })
+    });
+    let idx = line.as_ref().map(|(i, _, _)| *i);
     if idx == s.lyric_idx && s.lyric_key == key {
         return;
     }
     s.lyric_key = key;
     s.lyric_idx = idx;
-    let bmp = line.filter(|(_, t)| !t.is_empty()).and_then(|(_, t)| text::raster(&t, -56, 700)).map(Arc::new);
+    s.lyric_pts = line.as_ref().map(|(_, _, p)| p.clone()).unwrap_or_default();
+    let bmp = line.filter(|(_, t, _)| !t.is_empty()).and_then(|(_, t, _)| text::raster(&t, -56, 700)).map(Arc::new);
+    s.lyric_fill = (!s.lyric_pts.is_empty() && bmp.is_some()).then_some(0.0);
     if bmp.is_none() && s.lyric.is_none() {
         return; // still the title: nothing to change
     }
@@ -1756,6 +1779,10 @@ unsafe fn tick(hwnd: HWND) {
             s.pin_fade = s.pin_fade_goal;
         }
     }
+    if !s.lyric_pts.is_empty() && s.kind == Kind::Pinned {
+        let ahead = s.cfg.lyric_ahead_ms as f32 / 1000.0;
+        s.lyric_fill = media::position().map(|t| crate::lyrics::fill_x(&s.lyric_pts, t + ahead));
+    }
     if s.lyric_swap < 1.0 {
         s.lyric_swap = (s.lyric_swap + dt / LYRIC_SWAP_SECS).min(1.0);
         if s.lyric_swap >= 1.0 {
@@ -1914,7 +1941,7 @@ unsafe fn tick(hwnd: HWND) {
     let scrolling = s.scrolls();
     let viz = s.kind == Kind::Pinned && settled && (scrolling || media::playing() || s.viz_moving());
     if viz && s.steady_drawn {
-        if scrolling {
+        if scrolling || s.lyric_fill.is_some() {
             draw_and_present_region(hwnd, (0.0, s.h), Some((46.0, s.w))); // the cover stays as it is
         } else {
             let c = if s.pin_tall { 28.0 } else { ui::PINNED.1 / 2.0 };
@@ -2010,7 +2037,7 @@ fn draw(rows: Option<(f32, f32)>, cols: Option<(f32, f32)>) {
         check: s.notice.is_some() && s.notice_icon == 2,
         drop_hint: s.drop_hint.as_ref(),
         pin: shows(Kind::Pinned).then(|| {
-            render::PinView { song: s.song.as_deref(), prev: s.song_prev.as_deref(), swap: s.song_swap, bars: s.viz, lyric: s.lyric.as_deref(), lyric_old: s.lyric_old.as_deref(), lyric_swap: s.lyric_swap, tall: s.pin_tall || s.h > 50.0 }
+            render::PinView { song: s.song.as_deref(), prev: s.song_prev.as_deref(), swap: s.song_swap, bars: s.viz, lyric: s.lyric.as_deref(), lyric_old: s.lyric_old.as_deref(), lyric_swap: s.lyric_swap, lyric_fill: s.lyric_fill, tall: s.pin_tall || s.h > 50.0 }
         }),
         sub: s.sub(),
         song: if s.kind == Kind::Knob { s.song.as_deref() } else { s.shown_song() },

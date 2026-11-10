@@ -77,6 +77,23 @@ pub fn raster(s: &str, height: i32, weight: i32) -> Option<TextBmp> {
     raster_face(s, height, weight, "Segoe UI")
 }
 
+/// Where text of this size ends inside the bitmap `raster` makes of it (raster px from its left edge, padding included).
+pub fn measure(s: &str, height: i32, weight: i32) -> f32 {
+    let wide: Vec<u16> = s.encode_utf16().collect();
+    GDI.with(|cell| unsafe {
+        let mut cell = cell.borrow_mut();
+        let gdi = cell.get_or_insert_with(|| Gdi { dc: CreateCompatibleDC(None), fonts: Vec::new() });
+        let font = gdi.font(height, weight, "Segoe UI");
+        let old = SelectObject(gdi.dc, font);
+        let mut sz = SIZE::default();
+        if !wide.is_empty() {
+            let _ = GetTextExtentPoint32W(gdi.dc, &wide, &mut sz);
+        }
+        SelectObject(gdi.dc, old);
+        (sz.cx + 4) as f32
+    })
+}
+
 /// Same in another font face (the README pictures use a lighter one for large type).
 pub fn raster_face(s: &str, height: i32, weight: i32, face: &'static str) -> Option<TextBmp> {
     let wide: Vec<u16> = s.encode_utf16().collect();

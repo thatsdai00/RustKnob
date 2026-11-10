@@ -23,7 +23,7 @@ pub struct Config {
     pub screenshot: bool,   // Win+Shift+S opens RustKnob's own screenshot overlay
     pub pin_media: bool,    // the capsule stays up while music plays: cover, title and artist, visualizer
     pub pin_fullscreen: bool, // ... also over full-screen apps
-    pub pin_lyrics: bool,     // ... with the synced lyrics (LRCLIB) in place of the title
+    pub pin_lyrics: bool,     // ... with the synced lyrics (LiriQo, LRCLIB) in place of the title
     pub auto_update: bool,    // fetch new releases from GitHub by itself
     pub ntfy_server: String,
     pub ntfy_topic: String, // empty = ntfy off
