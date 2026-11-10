@@ -31,6 +31,7 @@ pub struct PinView<'a> {
     pub lyric: Option<&'a TextBmp>,     // the current lyric line; it takes the title's place (None: title and artist)
     pub lyric_old: Option<&'a TextBmp>, // the line it replaces, while `lyric_swap` < 1 (None: the title)
     pub lyric_swap: f32,                // 0..1 through that change
+    pub tall: bool,                     // the capsule is the tall one: a row for the lyric line under the title and artist
 }
 
 pub struct SettingsView<'a> {
@@ -185,6 +186,26 @@ fn text_left(tb: &TextBmp, x: f32, ty: f32, view: f32, marq: f32, unit: f32) -> 
     a.powf(0.85)
 }
 
+/// How far a lyric line slides while it changes (logical units).
+const LYRIC_TRAVEL: f32 = 15.0;
+
+/// A line centered in the box that starts `left` units from the shape's left edge and is `view` wide; a longer
+/// line is scaled down to fit (the lyric lines: they should show whole).
+fn text_fit(tb: &TextBmp, tx: f32, ty: f32, left: f32, view: f32, unit: f32) -> f32 {
+    let (wl, hl) = tb.size();
+    let k = (view / wl).min(1.0);
+    let x = tx - left - (view - wl * k) / 2.0;
+    if x < -1.0 || x > wl * k + 1.0 || ty.abs() > hl * k / 2.0 + 1.0 {
+        return 0.0;
+    }
+    let o = 0.25 / unit; // 2x2 supersampling
+    let mut acc = 0.0;
+    for (ox, oy) in [(-o, -o), (o, -o), (-o, o), (o, o)] {
+        acc += tb.sample((x + ox) / k * TEXT_R, ((ty + oy) / k + hl / 2.0) * TEXT_R);
+    }
+    (acc / 4.0).powf(0.85)
+}
+
 /// Same, centered on `dx = 0` (the knob's rows).
 fn text_center(tb: &TextBmp, dx: f32, ty: f32, view: f32, marq: f32, unit: f32) -> f32 {
     let (wl, _) = tb.size();
@@ -215,7 +236,7 @@ struct KnobGeom {
     prog: f32,
 }
 
-pub fn render(buf: &mut [u32], pw: usize, ph: usize, rect: (usize, usize, usize, usize), s: &Scene) {
+pub fn render(buf: &mut [u32], pw: usize, _ph: usize, rect: (usize, usize, usize, usize), s: &Scene) {
     let unit = s.unit;
     let aa = 1.0 / unit;
     let cx = pw as f32 / 2.0;
@@ -326,77 +347,6 @@ pub fn render(buf: &mut [u32], pw: usize, ph: usize, rect: (usize, usize, usize,
                 scope.spawn(move || shade_rows(chunk, y0 + i * per));
             }
         });
-    }
-    lyric_pass(buf, pw, ph, rect, s);
-}
-
-/// How far below the capsule the lyric line reaches (logical units): the redraw area grows by this much.
-pub const LYRIC_BAND: f32 = 34.0;
-const LYRIC_TRAVEL: f32 = 15.0; // how far a line slides while it changes
-
-/// The lyric line under the pinned capsule, outside it: white with a soft shadow so it reads on any background,
-/// at most 90% of the capsule's width (a longer line is scaled down to fit). Lines cross-fade as they change.
-fn lyric_pass(buf: &mut [u32], pw: usize, ph: usize, rect: (usize, usize, usize, usize), s: &Scene) {
-    let Some(v) = &s.pin else { return };
-    let shown = s.layers.iter().flatten().filter(|l| l.kind == Kind::Pinned).map(|l| l.alpha).fold(0.0f32, f32::max);
-    let base = shown * s.alpha;
-    if base <= 0.003 || (v.lyric.is_none() && v.lyric_old.is_none()) {
-        return;
-    }
-    let e = sstep(0.0, 1.0, v.lyric_swap);
-    if v.lyric_swap < 1.0 {
-        // the old line leaves upward, the new one rises in from below; both are cut off at the band's edges
-        let new = 1.0 - (1.0 - v.lyric_swap).powi(3);
-        lyric_line(buf, pw, ph, rect, s, v.lyric_old, base, -e * LYRIC_TRAVEL);
-        lyric_line(buf, pw, ph, rect, s, v.lyric, base, (1.0 - new) * LYRIC_TRAVEL);
-    } else {
-        lyric_line(buf, pw, ph, rect, s, v.lyric, base, 0.0);
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn lyric_line(buf: &mut [u32], pw: usize, ph: usize, rect: (usize, usize, usize, usize), s: &Scene, line: Option<&TextBmp>, alpha: f32, dy: f32) {
-    let Some(tb) = line else { return };
-    if alpha <= 0.003 {
-        return;
-    }
-    let unit = s.unit;
-    let (wl, hl) = tb.size();
-    let k = (0.9 * s.w / wl).min(1.0);
-    let (dw, dh) = (wl * k * unit, hl * k * unit);
-    let left = pw as f32 / 2.0 - dw / 2.0;
-    let top = (TOP + s.h + 17.0 + dy) * unit - dh / 2.0;
-    let scale = TEXT_R / (unit * k); // device pixels -> raster pixels
-    let cover = |x: f32, y: f32| tb.sample((x - left) * scale, (y - top) * scale);
-    let (x0, y0, x1, y1) = rect;
-    let rows = ((top - 4.0).floor().max(y0 as f32) as usize)..((top + dh + 4.0).ceil().min(y1.min(ph) as f32) as usize);
-    let cols = ((left - 4.0).floor().max(x0 as f32) as usize)..((left + dw + 4.0).ceil().min(x1.min(pw) as f32) as usize);
-    let blend = |px: &mut u32, rgb: f32, a: f32| {
-        if a <= 0.0 {
-            return;
-        }
-        let ch = |shift: u32| ((*px >> shift) & 0xFF) as f32;
-        let out = |shift: u32| (rgb * 255.0 * a + ch(shift) * (1.0 - a) + 0.5).min(255.0) as u32;
-        *px = out(24) << 24 | out(16) << 16 | out(8) << 8 | out(0);
-    };
-    let d = 1.6 * unit.max(1.0);
-    // the band under the capsule: a line fades out where it meets either edge
-    let (band_top, band_bottom) = ((TOP + s.h) * unit, (TOP + s.h + LYRIC_BAND) * unit);
-    let edge = 6.0 * unit;
-    for y in rows {
-        let m = sstep(band_top, band_top + edge, y as f32 + 0.5) * sstep(band_bottom, band_bottom - edge, y as f32 + 0.5);
-        if m <= 0.0 {
-            continue;
-        }
-        let alpha = alpha * m;
-        for x in cols.clone() {
-            let (fx, fy) = (x as f32 + 0.5, y as f32 + 0.5);
-            let text = cover(fx, fy);
-            let soft = (cover(fx - d, fy + d) + cover(fx + d, fy + d) + cover(fx, fy + 1.8 * d) + cover(fx, fy - 0.2 * d)) / 4.0;
-            let px = &mut buf[y * pw + x];
-            blend(px, 0.0, (soft * 0.75 * alpha).min(1.0));
-            blend(px, 1.0, (text * alpha).min(1.0));
-        }
     }
 }
 
@@ -564,7 +514,7 @@ fn drop_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) {
 /// the old text slides out to the left as the new one slides in from the right.
 fn pinned_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) {
     let (Some(v), pal) = (&s.pin, &s.pal) else { return };
-    let row = s.h / 2.0;
+    let row = if v.tall { 28.0 } else { s.h / 2.0 }; // the cover, title and visualizer sit at this height
     let ry = ty - row;
     let k = if pal.light { 0.55 / 255.0 } else { 1.0 / 255.0 }; // darker on the light theme
     let tint = |song: Option<&Song>| song.and_then(|x| x.art.as_ref()).map_or([235.0; 3], |a| a.accent);
@@ -633,6 +583,27 @@ fn pinned_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) {
                     p.over(dim, ca * 0.95 * text_mid(small, x, ry - 9.0, left, view, s.marq, unit));
                 }
                 None => p.over(accent, ca * text_mid(&song.big, x, ry, left, view, s.marq, unit)),
+            }
+        }
+    }
+
+    // the lyric line in its own row: the old one leaves upward, the new one rises in from below
+    if v.tall && v.prev.is_none() {
+        let (left, view, unit) = (s.w * 0.05, s.w * 0.9, 1.0 / aa); // at most 90% of the capsule's width
+        let mask = sstep(46.0, 51.0, ty) * sstep(76.0, 71.0, ty);
+        if mask > 0.0 {
+            let rise = 1.0 - (1.0 - v.lyric_swap.clamp(0.0, 1.0)).powi(3);
+            let leave = sstep(0.0, 1.0, v.lyric_swap);
+            let mut line = |tb: Option<&TextBmp>, off: f32| {
+                if let Some(tb) = tb {
+                    p.over(accent_now, ca * mask * text_fit(tb, tx, ty - (60.0 + off), left, view, unit));
+                }
+            };
+            if v.lyric_swap < 1.0 {
+                line(v.lyric_old, -leave * LYRIC_TRAVEL);
+                line(v.lyric, (1.0 - rise) * LYRIC_TRAVEL);
+            } else {
+                line(v.lyric, 0.0);
             }
         }
     }

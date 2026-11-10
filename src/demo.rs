@@ -32,10 +32,9 @@ struct Image {
 /// The shape drawn by the renderer, cropped to what it covers.
 fn shoot(scene: &Scene) -> Image {
     let unit = scene.unit;
-    let extra = if scene.pin.as_ref().is_some_and(|p| p.lyric.is_some()) { LYRIC_BAND } else { 0.0 };
-    let (pw, ph) = (((scene.w + 2.0 * ui::SHADOW) * unit).ceil() as usize + 8, ((ui::TOP + scene.h + extra + ui::SHADOW) * unit).ceil() as usize + 8);
+    let (pw, ph) = (((scene.w + 2.0 * ui::SHADOW) * unit).ceil() as usize + 8, ((ui::TOP + scene.h + ui::SHADOW) * unit).ceil() as usize + 8);
     let mut buf = vec![0u32; pw * ph];
-    let rect = bounds(pw, ph, unit, scene.w, scene.h + extra);
+    let rect = bounds(pw, ph, unit, scene.w, scene.h);
     render(&mut buf, pw, ph, (rect.0, rect.1, rect.2, rect.3), scene);
     let (x0, x1, y1) = (rect.0, rect.2, rect.3);
     let y0 = ((ui::TOP - 6.0) * unit) as usize;
@@ -546,7 +545,7 @@ pub fn run(dir: &str) {
     let song_blue = song("Daft Punk", "Instant Crush", Some(cover([40.0, 90.0, 220.0], [12.0, 18.0, 60.0], [130.0, 190.0, 255.0])));
     let pinned = |s: &Song, bars: [f32; 5], unit: f32| {
         let mut sc = capsule(ui::PINNED, Kind::Pinned, unit);
-        sc.pin = Some(PinView { song: Some(s), prev: None, swap: 1.0, bars, lyric: None, lyric_old: None, lyric_swap: 1.0 });
+        sc.pin = Some(PinView { song: Some(s), prev: None, swap: 1.0, bars, lyric: None, lyric_old: None, lyric_swap: 1.0, tall: false });
         shoot(&sc)
     };
 
@@ -616,8 +615,8 @@ pub fn run(dir: &str) {
     let p1 = pinned(&song_red, [0.9, 0.5, 0.78, 0.42, 0.66], 2.4);
     let lyric = raster("Sing it with me now", -64, 700).unwrap();
     let p2 = {
-        let mut sc = capsule(ui::PINNED, Kind::Pinned, 2.4);
-        sc.pin = Some(PinView { song: Some(&song_blue), prev: None, swap: 1.0, bars: [0.55, 0.85, 0.4, 0.75, 0.5], lyric: Some(&lyric), lyric_old: None, lyric_swap: 1.0 });
+        let mut sc = capsule(ui::PINNED_TALL, Kind::Pinned, 2.4);
+        sc.pin = Some(PinView { song: Some(&song_blue), prev: None, swap: 1.0, bars: [0.55, 0.85, 0.4, 0.75, 0.5], lyric: Some(&lyric), lyric_old: None, lyric_swap: 1.0, tall: true });
         shoot(&sc)
     };
     save(
@@ -751,9 +750,9 @@ pub fn run(dir: &str) {
         let bars = std::array::from_fn(|i| 0.15 + 0.85 * (0.5 + 0.5 * (t * (5.0 + i as f32 * 1.7) + i as f32 * 1.3).sin()) * (0.55 + 0.45 * (t * 2.1 + i as f32).sin().abs()));
         let mut sc = capsule(ui::PINNED, Kind::Pinned, 4.2);
         sc.pin = Some(if k <= 0.0 {
-            PinView { song: Some(from), prev: None, swap: 1.0, bars, lyric: None, lyric_old: None, lyric_swap: 1.0 }
+            PinView { song: Some(from), prev: None, swap: 1.0, bars, lyric: None, lyric_old: None, lyric_swap: 1.0, tall: false }
         } else {
-            PinView { song: Some(to), prev: if k < 1.0 { Some(from) } else { None }, swap: k, bars, lyric: None, lyric_old: None, lyric_swap: 1.0 }
+            PinView { song: Some(to), prev: if k < 1.0 { Some(from) } else { None }, swap: k, bars, lyric: None, lyric_old: None, lyric_swap: 1.0, tall: false }
         });
         let img = shoot_in(&sc, aw, ah);
         let mut c = Canvas::solid(aw, ah, [0.04, 0.04, 0.05]);

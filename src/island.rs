@@ -212,6 +212,7 @@ struct State {
     lyric_swap: f32,                 // 0..1 through that change
     lyric_idx: Option<usize>,        // index of the current line in the song's lyrics
     lyric_key: String,               // the song those belong to
+    pin_tall: bool,                  // the pinned capsule is the tall one (this song has lyrics)
     pin_suspended: bool,                 // a full-screen app is in front: the pinned capsule steps aside
     viz: [f32; 5],                       // bar heights 0..1
     steady_drawn: bool,                  // the last frame was a full draw of a settled capsule
@@ -313,6 +314,7 @@ pub unsafe fn init(cfg: Config, hwnd: HWND) {
         lyric_swap: 1.0,
         lyric_idx: None,
         lyric_key: String::new(),
+        pin_tall: false,
         pin_suspended: false,
         viz: [0.0; 5],
         steady_drawn: false,
@@ -437,7 +439,7 @@ impl State {
             Kind::Knob => ui::KNOB,
             Kind::Upload => ui::UPLOAD,
             Kind::Drop => ui::DROP,
-            Kind::Pinned => ui::PINNED,
+            Kind::Pinned => if self.pin_tall { ui::PINNED_TALL } else { ui::PINNED },
             Kind::History => (ui::HISTORY.0, ui::PAD * 2.0 + ui::HEAD_H + self.hist.len().clamp(2, ui::HIST_ROWS) as f32 * ui::HIST_ROW_H),
             Kind::Setup => ui::SETUP,
         }
@@ -505,7 +507,7 @@ impl State {
             Kind::Upload => {
                 self.up.name.as_ref().is_some_and(|t| long(t, ui::UPLOAD.0 - 152.0)) || self.up.line.as_ref().is_some_and(|t| long(t, ui::UPLOAD.0 - 70.0))
             }
-            Kind::Pinned => self.song.as_ref().is_some_and(|s| long(&s.big, ui::PINNED.0 - 102.0) || s.small.as_ref().is_some_and(|t| long(t, ui::PINNED.0 - 102.0))),
+            Kind::Pinned => self.song.as_ref().is_some_and(|s| long(&s.big, self.tw - 102.0) || s.small.as_ref().is_some_and(|t| long(t, self.tw - 102.0))),
             Kind::Settings | Kind::History | Kind::Setup | Kind::Drop => false,
         }
     }
@@ -994,6 +996,7 @@ unsafe fn pin_refresh(hwnd: HWND) {
 /// Forgets the lyric line on show (another song, or the lyrics were switched off).
 fn lyric_reset(s: &mut State) {
     (s.lyric, s.lyric_old, s.lyric_swap, s.lyric_idx) = (None, None, 1.0, None);
+    s.pin_tall = false;
     s.lyric_key.clear();
     s.marq = 0.0;
     s.steady_drawn = false;
@@ -1006,6 +1009,13 @@ unsafe fn lyric_tick(hwnd: HWND) {
         return;
     }
     let Some(key) = s.song.as_ref().map(|x| x.key.clone()) else { return };
+    let tall = crate::lyrics::get(&key).is_some(); // the capsule grows for the song's lyrics
+    if tall != s.pin_tall {
+        s.pin_tall = tall;
+        s.apply_targets();
+        s.steady_drawn = false;
+        frames(hwnd);
+    }
     let line = media::position().zip(crate::lyrics::get(&key)).and_then(|(t, l)| l.line_at(t + s.cfg.lyric_ahead_ms as f32 / 1000.0).map(|(i, text)| (i, text.trim().to_string())));
     let idx = line.as_ref().map(|(i, _)| *i);
     if idx == s.lyric_idx && s.lyric_key == key {
@@ -1911,7 +1921,8 @@ unsafe fn tick(hwnd: HWND) {
         if scrolling {
             draw_and_present_region(hwnd, (0.0, s.h), Some((46.0, s.w))); // the cover stays as it is
         } else {
-            draw_and_present_region(hwnd, (ui::PINNED.1 / 2.0 - 15.0, ui::PINNED.1 / 2.0 + 15.0), Some((s.w - 48.0, s.w - 4.0)));
+            let c = if s.pin_tall { 28.0 } else { ui::PINNED.1 / 2.0 };
+            draw_and_present_region(hwnd, (c - 15.0, c + 15.0), Some((s.w - 48.0, s.w - 4.0)));
         }
     } else {
         draw_and_present(hwnd);
@@ -1959,8 +1970,7 @@ fn draw(rows: Option<(f32, f32)>, cols: Option<(f32, f32)>) {
     let (pw, ph) = (s.surf.pw, s.surf.ph);
 
     // redraw the union of where the shape is now and where it was
-    let lyric_room = if s.kind == Kind::Pinned && (s.lyric.is_some() || s.lyric_old.is_some()) { render::LYRIC_BAND } else { 0.0 };
-    let now = render::bounds(pw, ph, s.unit * s.hs, s.w, s.h + lyric_room);
+    let now = render::bounds(pw, ph, s.unit * s.hs, s.w, s.h);
     let rect = match (rows, s.prev_rect) {
         (Some((top, bottom)), _) => {
             let u = s.unit * s.hs;
@@ -2004,7 +2014,7 @@ fn draw(rows: Option<(f32, f32)>, cols: Option<(f32, f32)>) {
         check: s.notice.is_some() && s.notice_icon == 2,
         drop_hint: s.drop_hint.as_ref(),
         pin: shows(Kind::Pinned).then(|| {
-            render::PinView { song: s.song.as_deref(), prev: s.song_prev.as_deref(), swap: s.song_swap, bars: s.viz, lyric: s.lyric.as_deref(), lyric_old: s.lyric_old.as_deref(), lyric_swap: s.lyric_swap }
+            render::PinView { song: s.song.as_deref(), prev: s.song_prev.as_deref(), swap: s.song_swap, bars: s.viz, lyric: s.lyric.as_deref(), lyric_old: s.lyric_old.as_deref(), lyric_swap: s.lyric_swap, tall: s.pin_tall }
         }),
         sub: s.sub(),
         song: if s.kind == Kind::Knob { s.song.as_deref() } else { s.shown_song() },

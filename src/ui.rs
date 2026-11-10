@@ -15,6 +15,7 @@ pub const VOLUME_H_SUB: f32 = 72.0; // with the song / device line underneath
 pub const SONG: (f32, f32) = TWO_ROWS;
 pub const UPLOAD: (f32, f32) = TWO_ROWS;
 pub const PINNED: (f32, f32) = (VOLUME_W, VOLUME_H); // cover | title and artist | visualizer
+pub const PINNED_TALL: (f32, f32) = (340.0, 80.0); // ... with the current lyric line in a row of its own below
 pub const DROP: (f32, f32) = (VOLUME_W, VOLUME_H); // shown while a file is dragged: drop it here
 
 pub const KNOB: (f32, f32) = (252.0, 252.0); // the capsule morphs into this disc
