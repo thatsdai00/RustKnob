@@ -197,6 +197,7 @@ impl Listener {
                     let age = tl.LastUpdatedTime().map_or(0.0, |t| (now - t.UniversalTime as i128) as f64 / 1e7);
                     pos += age.clamp(0.0, 600.0);
                 }
+                crate::lyrics::debug(&format!("timeline raw={:.2} start={:.2} pos+age={:.2} playing={playing}", tl.Position().map_or(0.0, secs), tl.StartTime().map_or(0.0, secs), pos));
                 if let Ok(mut g) = TIMELINE.lock() {
                     *g = Some((pos as f32, Instant::now(), playing));
                 }

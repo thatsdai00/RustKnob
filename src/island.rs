@@ -1035,6 +1035,7 @@ unsafe fn lyric_tick(hwnd: HWND) {
     if idx == s.lyric_idx && s.lyric_key == key {
         return;
     }
+    crate::lyrics::debug(&format!("line {idx:?} at pos={:?} ahead={ahead} words={} text={:?}", media::position(), line.as_ref().map_or(0, |l| l.2.len() / 2), line.as_ref().map(|l| l.1.clone())));
     s.lyric_key = key;
     s.lyric_idx = idx;
     s.lyric_pts = line.as_ref().map(|(_, _, p)| p.clone()).unwrap_or_default();

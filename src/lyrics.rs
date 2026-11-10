@@ -398,3 +398,16 @@ impl Reader<'_> {
         u32::from_str_radix(h, 16).ok()
     }
 }
+
+/// Writes a line to %TEMP%\rustknob-lyrics.log while a file named rustknob-lyrics.on sits beside it (for tracing the timing).
+pub fn debug(msg: &str) {
+    use std::io::Write;
+    let dir = std::env::temp_dir();
+    if !dir.join("rustknob-lyrics.on").exists() {
+        return;
+    }
+    let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() % 86_400_000);
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(dir.join("rustknob-lyrics.log")) {
+        let _ = writeln!(f, "{:02}:{:02}:{:02}.{:03} {msg}", ms / 3_600_000, ms / 60_000 % 60, ms / 1000 % 60, ms % 1000);
+    }
+}

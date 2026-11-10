@@ -29,7 +29,7 @@ pub struct Config {
     pub ntfy_topic: String, // empty = ntfy off
     pub ntfy_token: String, // optional access token
     pub ntfy_sound: String, // mp3 / wav played for a notification; empty = built-in chime
-    pub lyric_ahead_ms: i32, // lyrics show this much early (negative: late); the player's clock runs behind the sound
+    pub lyric_ahead_ms: i32, // lyrics show this much early (negative: late); the player clock is already right for Apple Music
     pub ntfy_volume: u32,   // notification sound level, percent (relative to the system volume)
     pub language: String,   // "auto" | "en" | "tr"
     pub theme: String,      // "auto" | "dark" | "light"
@@ -58,7 +58,7 @@ impl Default for Config {
             ntfy_topic: String::new(),
             ntfy_token: String::new(),
             ntfy_sound: String::new(),
-            lyric_ahead_ms: 700,
+            lyric_ahead_ms: 0,
             ntfy_volume: 20,
             language: "auto".into(),
             theme: "auto".into(),
@@ -126,7 +126,7 @@ impl Config {
              notify_song={}\nnotify_device={}\nvolume_keys={}\nclick_sound={}\nlow_power={}\nupload_sound={}\nscreenshot={}\npin_media={}\npin_fullscreen={}\npin_lyrics={}\nauto_update={}\n\
              ; ntfy bildirimleri: topic bos birakilirsa kapali. ntfy_sound: mp3/wav yolu (bos = yerlesik cin sesi).\n\
              ntfy_server={}\nntfy_topic={}\nntfy_token={}\nntfy_sound={}\nntfy_volume={}\n\
-             ; sozler sesten ne kadar once gosterilsin (ms; gecikiyorsa artir)\nlyric_ahead_ms={}\n\
+             ; sozler sesten ne kadar once gosterilsin (ms; gecikiyorsa artir, erken geliyorsa eksi yap)\nlyric_ahead_ms={}\n\
              ; language: auto | en | tr      theme: auto | dark | light\nlanguage={}\ntheme={}\n",
             self.hotkey,
             self.settings_hotkey,
