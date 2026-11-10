@@ -215,7 +215,7 @@ struct KnobGeom {
     prog: f32,
 }
 
-pub fn render(buf: &mut [u32], pw: usize, _ph: usize, rect: (usize, usize, usize, usize), s: &Scene) {
+pub fn render(buf: &mut [u32], pw: usize, ph: usize, rect: (usize, usize, usize, usize), s: &Scene) {
     let unit = s.unit;
     let aa = 1.0 / unit;
     let cx = pw as f32 / 2.0;
@@ -326,6 +326,66 @@ pub fn render(buf: &mut [u32], pw: usize, _ph: usize, rect: (usize, usize, usize
                 scope.spawn(move || shade_rows(chunk, y0 + i * per));
             }
         });
+    }
+    lyric_pass(buf, pw, ph, rect, s);
+}
+
+/// How far below the capsule the lyric line reaches (logical units): the redraw area grows by this much.
+pub const LYRIC_BAND: f32 = 34.0;
+
+/// The lyric line under the pinned capsule, outside it: white with a soft shadow so it reads on any background,
+/// at most 90% of the capsule's width (a longer line is scaled down to fit). Lines cross-fade as they change.
+fn lyric_pass(buf: &mut [u32], pw: usize, ph: usize, rect: (usize, usize, usize, usize), s: &Scene) {
+    let Some(v) = &s.pin else { return };
+    let shown = s.layers.iter().flatten().filter(|l| l.kind == Kind::Pinned).map(|l| l.alpha).fold(0.0f32, f32::max);
+    let base = shown * s.alpha;
+    if base <= 0.003 || (v.lyric.is_none() && v.lyric_old.is_none()) {
+        return;
+    }
+    let e = sstep(0.0, 1.0, v.lyric_swap);
+    if v.lyric_swap < 1.0 {
+        lyric_line(buf, pw, ph, rect, s, v.lyric_old, base * (1.0 - sstep(0.0, 0.7, v.lyric_swap)), e * 3.0);
+        lyric_line(buf, pw, ph, rect, s, v.lyric, base * sstep(0.3, 1.0, v.lyric_swap), -(1.0 - e) * 3.0);
+    } else {
+        lyric_line(buf, pw, ph, rect, s, v.lyric, base, 0.0);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn lyric_line(buf: &mut [u32], pw: usize, ph: usize, rect: (usize, usize, usize, usize), s: &Scene, line: Option<&TextBmp>, alpha: f32, dy: f32) {
+    let Some(tb) = line else { return };
+    if alpha <= 0.003 {
+        return;
+    }
+    let unit = s.unit;
+    let (wl, hl) = tb.size();
+    let k = (0.9 * s.w / wl).min(1.0);
+    let (dw, dh) = (wl * k * unit, hl * k * unit);
+    let left = pw as f32 / 2.0 - dw / 2.0;
+    let top = (TOP + s.h + 17.0 + dy) * unit - dh / 2.0;
+    let scale = TEXT_R / (unit * k); // device pixels -> raster pixels
+    let cover = |x: f32, y: f32| tb.sample((x - left) * scale, (y - top) * scale);
+    let (x0, y0, x1, y1) = rect;
+    let rows = ((top - 4.0).floor().max(y0 as f32) as usize)..((top + dh + 4.0).ceil().min(y1.min(ph) as f32) as usize);
+    let cols = ((left - 4.0).floor().max(x0 as f32) as usize)..((left + dw + 4.0).ceil().min(x1.min(pw) as f32) as usize);
+    let blend = |px: &mut u32, rgb: f32, a: f32| {
+        if a <= 0.0 {
+            return;
+        }
+        let ch = |shift: u32| ((*px >> shift) & 0xFF) as f32;
+        let out = |shift: u32| (rgb * 255.0 * a + ch(shift) * (1.0 - a) + 0.5).min(255.0) as u32;
+        *px = out(24) << 24 | out(16) << 16 | out(8) << 8 | out(0);
+    };
+    let d = 1.6 * unit.max(1.0);
+    for y in rows {
+        for x in cols.clone() {
+            let (fx, fy) = (x as f32 + 0.5, y as f32 + 0.5);
+            let text = cover(fx, fy);
+            let soft = (cover(fx - d, fy + d) + cover(fx + d, fy + d) + cover(fx, fy + 1.8 * d) + cover(fx, fy - 0.2 * d)) / 4.0;
+            let px = &mut buf[y * pw + x];
+            blend(px, 0.0, (soft * 0.75 * alpha).min(1.0));
+            blend(px, 1.0, (text * alpha).min(1.0));
+        }
     }
 }
 
@@ -552,35 +612,8 @@ fn pinned_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) {
             }
         }
 
-        // title (bold) over artist, centered between the cover and the visualizer; with lyrics the current line
-        // fills the middle alone and lines cross-fade as they change
-        let lyric_mode = v.prev.is_none() && (v.lyric.is_some() || (v.lyric_swap < 1.0 && v.lyric_old.is_some()));
-        if let (Some(song), true) = (song, lyric_mode) {
-            let (left, view, unit) = (52.0, s.w - 52.0 - 50.0, 1.0 / aa);
-            let e = sstep(0.0, 1.0, v.lyric_swap);
-            let mut draw = |lyric: Option<&TextBmp>, alpha: f32, dy: f32| {
-                if alpha <= 0.003 {
-                    return;
-                }
-                match lyric {
-                    // a lyric line fills the middle on its own
-                    Some(l) => p.over(accent, ca * alpha * text_mid(l, tx, ry + dy, left, view, s.marq, unit)),
-                    None => match &song.small {
-                        Some(small) => {
-                            p.over(accent, ca * alpha * text_mid(&song.big, tx, ry + 7.0 + dy, left, view, s.marq, unit));
-                            p.over(dim, ca * alpha * 0.95 * text_mid(small, tx, ry - 9.0 + dy, left, view, s.marq, unit));
-                        }
-                        None => p.over(accent, ca * alpha * text_mid(&song.big, tx, ry + dy, left, view, s.marq, unit)),
-                    },
-                }
-            };
-            if v.lyric_swap < 1.0 {
-                draw(v.lyric_old, 1.0 - sstep(0.0, 0.7, v.lyric_swap), e * 3.0);
-                draw(v.lyric, sstep(0.3, 1.0, v.lyric_swap), -(1.0 - e) * 3.0);
-            } else {
-                draw(v.lyric, 1.0, 0.0);
-            }
-        } else if let Some(song) = song {
+        // title (bold) over artist, centered between the cover and the visualizer
+        if let Some(song) = song {
             let (left, view, unit) = (52.0, s.w - 52.0 - 50.0, 1.0 / aa);
             let x = tx - slide;
             match &song.small {

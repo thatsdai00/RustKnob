@@ -999,21 +999,6 @@ fn lyric_reset(s: &mut State) {
     s.steady_drawn = false;
 }
 
-/// A lyric line as a bitmap: the biggest size at which it fits between the cover and the visualizer.
-fn fit_line(text: &str) -> Option<TextBmp> {
-    let room = ui::PINNED.0 - 52.0 - 50.0 - 6.0;
-    let mut last = None;
-    for h in [-60, -54, -48, -43, -38] {
-        let bmp = text::raster(text, h, 700)?;
-        let fits = bmp.size().0 <= room;
-        last = Some(bmp);
-        if fits {
-            break;
-        }
-    }
-    last
-}
-
 /// Looks at the clock: when the song has moved on to another lyric line, it takes the place of the title.
 unsafe fn lyric_tick(hwnd: HWND) {
     let s = st();
@@ -1028,12 +1013,12 @@ unsafe fn lyric_tick(hwnd: HWND) {
     }
     s.lyric_key = key;
     s.lyric_idx = idx;
-    let bmp = line.filter(|(_, t)| !t.is_empty()).and_then(|(_, t)| fit_line(&t)).map(Arc::new);
+    let bmp = line.filter(|(_, t)| !t.is_empty()).and_then(|(_, t)| text::raster(&t, -56, 700)).map(Arc::new);
     if bmp.is_none() && s.lyric.is_none() {
         return; // still the title: nothing to change
     }
     s.lyric_old = s.lyric.take();
-    (s.lyric, s.lyric_swap, s.marq, s.steady_drawn) = (bmp, 0.0, 0.0, false);
+    (s.lyric, s.lyric_swap, s.steady_drawn) = (bmp, 0.0, false);
     frames(hwnd);
 }
 
@@ -1974,7 +1959,8 @@ fn draw(rows: Option<(f32, f32)>, cols: Option<(f32, f32)>) {
     let (pw, ph) = (s.surf.pw, s.surf.ph);
 
     // redraw the union of where the shape is now and where it was
-    let now = render::bounds(pw, ph, s.unit * s.hs, s.w, s.h);
+    let lyric_room = if s.kind == Kind::Pinned && (s.lyric.is_some() || s.lyric_old.is_some()) { render::LYRIC_BAND } else { 0.0 };
+    let now = render::bounds(pw, ph, s.unit * s.hs, s.w, s.h + lyric_room);
     let rect = match (rows, s.prev_rect) {
         (Some((top, bottom)), _) => {
             let u = s.unit * s.hs;

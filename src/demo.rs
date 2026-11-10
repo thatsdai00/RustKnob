@@ -32,9 +32,10 @@ struct Image {
 /// The shape drawn by the renderer, cropped to what it covers.
 fn shoot(scene: &Scene) -> Image {
     let unit = scene.unit;
-    let (pw, ph) = (((scene.w + 2.0 * ui::SHADOW) * unit).ceil() as usize + 8, ((ui::TOP + scene.h + ui::SHADOW) * unit).ceil() as usize + 8);
+    let extra = if scene.pin.as_ref().is_some_and(|p| p.lyric.is_some()) { LYRIC_BAND } else { 0.0 };
+    let (pw, ph) = (((scene.w + 2.0 * ui::SHADOW) * unit).ceil() as usize + 8, ((ui::TOP + scene.h + extra + ui::SHADOW) * unit).ceil() as usize + 8);
     let mut buf = vec![0u32; pw * ph];
-    let rect = bounds(pw, ph, unit, scene.w, scene.h);
+    let rect = bounds(pw, ph, unit, scene.w, scene.h + extra);
     render(&mut buf, pw, ph, (rect.0, rect.1, rect.2, rect.3), scene);
     let (x0, x1, y1) = (rect.0, rect.2, rect.3);
     let y0 = ((ui::TOP - 6.0) * unit) as usize;
