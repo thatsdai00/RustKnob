@@ -1009,13 +1009,6 @@ unsafe fn lyric_tick(hwnd: HWND) {
         return;
     }
     let Some(key) = s.song.as_ref().map(|x| x.key.clone()) else { return };
-    let tall = crate::lyrics::get(&key).is_some(); // the capsule grows for the song's lyrics
-    if tall != s.pin_tall {
-        s.pin_tall = tall;
-        s.apply_targets();
-        s.steady_drawn = false;
-        frames(hwnd);
-    }
     let line = media::position().zip(crate::lyrics::get(&key)).and_then(|(t, l)| l.line_at(t + s.cfg.lyric_ahead_ms as f32 / 1000.0).map(|(i, text)| (i, text.trim().to_string())));
     let idx = line.as_ref().map(|(i, _)| *i);
     if idx == s.lyric_idx && s.lyric_key == key {
@@ -1029,6 +1022,9 @@ unsafe fn lyric_tick(hwnd: HWND) {
     }
     s.lyric_old = s.lyric.take();
     (s.lyric, s.lyric_swap, s.steady_drawn) = (bmp, 0.0, false);
+    // the capsule is tall only while there is a line to show: it grows for one and shrinks when there is none
+    s.pin_tall = s.lyric.is_some();
+    s.apply_targets();
     frames(hwnd);
 }
 
@@ -2014,7 +2010,7 @@ fn draw(rows: Option<(f32, f32)>, cols: Option<(f32, f32)>) {
         check: s.notice.is_some() && s.notice_icon == 2,
         drop_hint: s.drop_hint.as_ref(),
         pin: shows(Kind::Pinned).then(|| {
-            render::PinView { song: s.song.as_deref(), prev: s.song_prev.as_deref(), swap: s.song_swap, bars: s.viz, lyric: s.lyric.as_deref(), lyric_old: s.lyric_old.as_deref(), lyric_swap: s.lyric_swap, tall: s.pin_tall }
+            render::PinView { song: s.song.as_deref(), prev: s.song_prev.as_deref(), swap: s.song_swap, bars: s.viz, lyric: s.lyric.as_deref(), lyric_old: s.lyric_old.as_deref(), lyric_swap: s.lyric_swap, tall: s.pin_tall || s.h > 50.0 }
         }),
         sub: s.sub(),
         song: if s.kind == Kind::Knob { s.song.as_deref() } else { s.shown_song() },

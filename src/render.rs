@@ -514,7 +514,8 @@ fn drop_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) {
 /// the old text slides out to the left as the new one slides in from the right.
 fn pinned_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) {
     let (Some(v), pal) = (&s.pin, &s.pal) else { return };
-    let row = if v.tall { 28.0 } else { s.h / 2.0 }; // the cover, title and visualizer sit at this height
+    // the cover, title and visualizer sit at this height: a little higher while the capsule is tall
+    let row = if v.tall { 24.0 + 4.0 * ((s.h - 48.0) / 32.0).clamp(0.0, 1.0) } else { s.h / 2.0 };
     let ry = ty - row;
     let k = if pal.light { 0.55 / 255.0 } else { 1.0 / 255.0 }; // darker on the light theme
     let tint = |song: Option<&Song>| song.and_then(|x| x.art.as_ref()).map_or([235.0; 3], |a| a.accent);
