@@ -50,7 +50,6 @@ const PIN_FADE_RATE: f32 = 9.0; // how quickly it follows (per second)
 const T_LYRIC: usize = 11; // which lyric line is it? (only while the pinned capsule plays with lyrics on)
 const LYRIC_MS: u32 = 100;
 const LYRIC_SWAP_SECS: f32 = 0.28; // one lyric line giving way to the next
-const LYRIC_AHEAD: f32 = 0.25; // a line shows slightly early: drawing and the player's clock both lag
 const SONG_SWAP_SECS: f32 = 0.55; // the pinned capsule changing from one song to the next
 const VIZ_FRAME_MS: u32 = 33; // the visualizer moves at about 30 frames per second
 const T_HIDE: usize = 2;
@@ -1022,7 +1021,7 @@ unsafe fn lyric_tick(hwnd: HWND) {
         return;
     }
     let Some(key) = s.song.as_ref().map(|x| x.key.clone()) else { return };
-    let line = media::position().zip(crate::lyrics::get(&key)).and_then(|(t, l)| l.line_at(t + LYRIC_AHEAD).map(|(i, text)| (i, text.trim().to_string())));
+    let line = media::position().zip(crate::lyrics::get(&key)).and_then(|(t, l)| l.line_at(t + s.cfg.lyric_ahead_ms as f32 / 1000.0).map(|(i, text)| (i, text.trim().to_string())));
     let idx = line.as_ref().map(|(i, _)| *i);
     if idx == s.lyric_idx && s.lyric_key == key {
         return;
