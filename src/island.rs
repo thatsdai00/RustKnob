@@ -519,7 +519,7 @@ impl State {
 
     fn toggle_targets(&self) -> [f32; ui::TOGGLES] {
         let c = &self.cfg;
-        [c.click_sound, c.notify_song, c.notify_device, c.volume_keys, c.low_power, c.upload_sound, c.screenshot, c.pin_media, c.pin_fullscreen, c.pin_lyrics, c.auto_update, self.autostart].map(|b| f32::from(u8::from(b)))
+        [c.click_sound, c.notify_song, c.notify_device, c.volume_keys, c.low_power, c.upload_sound, c.screenshot, c.pin_media, c.pin_fullscreen, c.pin_lyrics, c.lyric_words, c.auto_update, self.autostart].map(|b| f32::from(u8::from(b)))
     }
 
     /// Screen-space rectangle of the shape at its target (for the mouse hook).
@@ -1016,13 +1016,14 @@ unsafe fn lyric_tick(hwnd: HWND) {
     }
     let Some(key) = s.song.as_ref().map(|x| x.key.clone()) else { return };
     let ahead = s.cfg.lyric_ahead_ms as f32 / 1000.0;
+    let words_on = s.cfg.lyric_words; // beta: off, the lines are lit whole
     let line = media::position().zip(crate::lyrics::get(&key)).and_then(|(t, l)| {
         l.line_shown(t + ahead, LYRIC_LEAD).map(|(i, line)| {
             let text = line.text.trim().to_string();
             // where each word starts and ends inside the rasterized line: the sung part grows along it
             let measure = |to: usize| text::measure(&line.text[..to], -56, 700);
             let mut pts = Vec::new();
-            for w in &line.words {
+            for w in line.words.iter().filter(|_| words_on) {
                 let (from, to) = (w.from.min(line.text.len()), w.to.min(line.text.len()));
                 if line.text.is_char_boundary(from) && line.text.is_char_boundary(to) && text.len() == line.text.len() {
                     pts.push((w.start, measure(from).max(pts.last().map_or(0.0, |p: &(f32, f32)| p.1))));
@@ -1327,7 +1328,7 @@ unsafe fn settings_click(hwnd: HWND, screen: POINT) {
             media::set_pin(s.cfg.pin_media);
             pin_refresh(hwnd);
         }
-        ui::Hit::Toggle(10) => {
+        ui::Hit::Toggle(11) => {
             s.cfg.auto_update ^= true;
             if s.cfg.auto_update && install::running_installed() {
                 SetTimer(hwnd, T_UPDATE, 3000, None); // look right away
@@ -1340,6 +1341,11 @@ unsafe fn settings_click(hwnd: HWND, screen: POINT) {
         ui::Hit::Toggle(9) => {
             s.cfg.pin_lyrics ^= true;
             media::set_lyrics(s.cfg.pin_lyrics);
+            lyric_reset(s);
+            pin_refresh(hwnd);
+        }
+        ui::Hit::Toggle(10) => {
+            s.cfg.lyric_words ^= true;
             lyric_reset(s);
             pin_refresh(hwnd);
         }

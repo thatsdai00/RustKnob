@@ -24,6 +24,7 @@ pub struct Config {
     pub pin_media: bool,    // the capsule stays up while music plays: cover, title and artist, visualizer
     pub pin_fullscreen: bool, // ... also over full-screen apps
     pub pin_lyrics: bool,     // ... with the synced lyrics (LiriQo, LRCLIB) in place of the title
+    pub lyric_words: bool,    // ... lit up word by word, as sung (beta); off: line by line
     pub auto_update: bool,    // fetch new releases from GitHub by itself
     pub ntfy_server: String,
     pub ntfy_topic: String, // empty = ntfy off
@@ -53,6 +54,7 @@ impl Default for Config {
             pin_media: false,
             pin_fullscreen: false,
             pin_lyrics: true,
+            lyric_words: false,
             auto_update: true,
             ntfy_server: "https://ntfy.sh".into(),
             ntfy_topic: String::new(),
@@ -100,6 +102,7 @@ impl Config {
                 "pin_media" => cfg.pin_media = flag,
                 "pin_fullscreen" => cfg.pin_fullscreen = flag,
                 "pin_lyrics" => cfg.pin_lyrics = flag,
+                "lyric_words" => cfg.lyric_words = flag,
                 "auto_update" => cfg.auto_update = flag,
                 "ntfy_server" if !val.is_empty() => cfg.ntfy_server = val.to_string(),
                 "ntfy_topic" => cfg.ntfy_topic = val.to_string(),
@@ -123,7 +126,8 @@ impl Config {
              hotkey={}\nsettings_hotkey={}\nhistory_hotkey={}\n\
              ; tekerlek / ses tusu basina ses adimi (yuzde)\nstep={}\n\
              ; tekerlek birakildiktan sonra kapanma suresi (ms)\nhide_ms={}\n\
-             notify_song={}\nnotify_device={}\nvolume_keys={}\nclick_sound={}\nlow_power={}\nupload_sound={}\nscreenshot={}\npin_media={}\npin_fullscreen={}\npin_lyrics={}\nauto_update={}\n\
+             notify_song={}\nnotify_device={}\nvolume_keys={}\nclick_sound={}\nlow_power={}\nupload_sound={}\nscreenshot={}\npin_media={}\npin_fullscreen={}\npin_lyrics={}
+lyric_words={}\nauto_update={}\n\
              ; ntfy bildirimleri: topic bos birakilirsa kapali. ntfy_sound: mp3/wav yolu (bos = yerlesik cin sesi).\n\
              ntfy_server={}\nntfy_topic={}\nntfy_token={}\nntfy_sound={}\nntfy_volume={}\n\
              ; sozler sesten ne kadar once gosterilsin (ms; gecikiyorsa artir, erken geliyorsa eksi yap)\nlyric_ahead_ms={}\n\
@@ -143,6 +147,7 @@ impl Config {
             b(self.pin_media),
             b(self.pin_fullscreen),
             b(self.pin_lyrics),
+            b(self.lyric_words),
             b(self.auto_update),
             self.ntfy_server,
             self.ntfy_topic,

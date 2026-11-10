@@ -621,7 +621,7 @@ pub fn run(dir: &str) {
     };
     save(
         "card-media",
-        &card("Your music, always there.", "Pin the media. Cover, a real spectrum visualizer and word-by-word synced lyrics. The colors follow the cover.", red, |c, cx, cy| {
+        &card("Your music, always there.", "Pin the media. Cover, a real spectrum visualizer and synced lyrics, even word by word (beta). The colors follow the cover.", red, |c, cx, cy| {
             show(c, &p1, cx, cy - 190.0);
             show(c, &p2, cx, cy + 20.0);
         }),

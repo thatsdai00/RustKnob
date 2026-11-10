@@ -24,21 +24,21 @@ pub const CAPSULE_RADIUS: f32 = 34.0;
 
 // ---- settings panel --------------------------------------------------------
 
-pub const ROWS: usize = 21;
+pub const ROWS: usize = 22;
 pub const ROW_H: f32 = 26.0;
 pub const PAD: f32 = 12.0;
 pub const SETTINGS: (f32, f32) = (380.0, PAD * 2.0 + ROWS as f32 * ROW_H);
 
-pub const TOGGLES: usize = 12; // rows 0..11 are on/off switches
-pub const TOGGLE_AUTOSTART: usize = 11;
-pub const ROW_STEP: usize = 12;
-pub const ROW_TOPIC: usize = 13; // ntfy topic, server and token are text fields
-pub const ROW_TOKEN: usize = 15;
-pub const ROW_SOUND: usize = 16; // notification sound file picker
-pub const ROW_VOLUME: usize = 17; // notification sound level
-pub const ROW_LANG: usize = 18; // click cycles auto / English / Türkçe
-pub const ROW_THEME: usize = 19; // click cycles auto / dark / light
-pub const ROW_QUIT: usize = 20;
+pub const TOGGLES: usize = 13; // rows 0..12 are on/off switches
+pub const TOGGLE_AUTOSTART: usize = 12;
+pub const ROW_STEP: usize = 13;
+pub const ROW_TOPIC: usize = 14; // ntfy topic, server and token are text fields
+pub const ROW_TOKEN: usize = 16;
+pub const ROW_SOUND: usize = 17; // notification sound file picker
+pub const ROW_VOLUME: usize = 18; // notification sound level
+pub const ROW_LANG: usize = 19; // click cycles auto / English / Türkçe
+pub const ROW_THEME: usize = 20; // click cycles auto / dark / light
+pub const ROW_QUIT: usize = 21;
 
 // stepper control geometry, measured from the panel's right edge
 pub const STEP_MINUS_X: f32 = 86.0;
