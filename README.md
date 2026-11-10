@@ -4,7 +4,7 @@
 
 <br>
 
-<a href="https://github.com/thatsdai00/RustKnob/releases/latest"><img src="docs/img/download.png" alt="Download RustKnob for Windows" width="380"></a>
+<a href="https://github.com/thatsdai00/RustKnob/releases/latest"><img src="docs/img/download.png" alt="Download Releases" width="380"></a>
 
 <sub>Windows 10 and 11 · one 0.7 MB file · no installer, no admin rights</sub>
 
@@ -104,6 +104,10 @@ cargo build --release
 ```
 
 Needs Rust and the Visual Studio C++ build tools. `package.ps1` writes `dist/RustKnob.exe` and a zip. The pictures above are drawn by the real renderer: `cargo run --release --features demo -- --demo docs/img`.
+
+## License
+
+[MIT](LICENSE).
 
 ## Uninstall
 

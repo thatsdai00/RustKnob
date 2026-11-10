@@ -587,9 +587,9 @@ pub fn run(dir: &str) {
     let mut button = Canvas::new(900, 300);
     button.rrect(0.0, 20.0, 900.0, 150.0, 75.0, rgb(0, 113, 227), 1.0);
     button.rrect(0.0, 20.0, 900.0, 75.0, 75.0, WHITE, 0.07);
-    let label = type_bmp("Download for Windows", 56, 600);
+    let label = type_bmp("Download Releases", 56, 600);
     button.text_center(&label, 450.0, 96.0, WHITE, WHITE, 1.0);
-    let small = type_bmp("Windows 10 and 11  ·  0.7 MB  ·  free", 34, 400);
+    let small = type_bmp("github.com/thatsdai00/RustKnob/releases", 34, 400);
     button.text_center(&small, 450.0, 232.0, [0.52, 0.52, 0.56], [0.52, 0.52, 0.56], 1.0);
     save("download", &button);
 
