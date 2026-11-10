@@ -57,7 +57,7 @@ unsafe fn lookup(title: &str, artist: &str, duration: Option<u32>) -> Option<Str
     let first_artist = json::url_encode(artist.split([',', '&']).next().unwrap_or(artist).trim());
     for query in [format!("track_name={plain}&artist_name={a}"), format!("q={plain}%20{first_artist}"), format!("q={plain}")] {
         let Some(body) = update::get(&format!("{base}/search?{query}"), 4 << 20).and_then(|b| String::from_utf8(b).ok()) else { continue };
-        if let Some(found) = synced(&body) {
+        if let Some(found) = best_synced(&body, duration) {
             return Some(found);
         }
     }
@@ -76,6 +76,65 @@ fn synced(body: &str) -> Option<String> {
     None
 }
 
+/// Among the results of a search, the synced lyrics of the recording whose length is closest to the one playing
+/// (the same song comes in several versions, and their lyrics are timed differently).
+fn best_synced(body: &str, duration: Option<u32>) -> Option<String> {
+    let mut best: Option<(f32, String)> = None;
+    for object in objects(body) {
+        let Some(text) = json::str_field(object, "syncedLyrics").filter(|v| v.contains('[')) else { continue };
+        let length = number_field(object, "duration");
+        let diff = match (duration, length) {
+            (Some(want), Some(have)) => (want as f32 - have).abs(),
+            _ => 1000.0, // unknown: behind every known length
+        };
+        if diff <= 6.0 + if duration.is_none() { 1000.0 } else { 0.0 } && best.as_ref().is_none_or(|(d, _)| diff < *d) {
+            best = Some((diff, text));
+        }
+    }
+    best.map(|(_, text)| text)
+}
+
+/// The top-level `{...}` pieces of a JSON array (strings may contain braces).
+fn objects(body: &str) -> Vec<&str> {
+    let (mut out, mut depth, mut start) = (Vec::new(), 0usize, 0usize);
+    let (mut in_string, mut escaped) = (false, false);
+    for (i, c) in body.char_indices() {
+        if in_string {
+            match (escaped, c) {
+                (true, _) => escaped = false,
+                (false, '\\') => escaped = true,
+                (false, '"') => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+        match c {
+            '"' => in_string = true,
+            '{' => {
+                if depth == 0 {
+                    start = i;
+                }
+                depth += 1;
+            }
+            '}' if depth > 0 => {
+                depth -= 1;
+                if depth == 0 {
+                    out.push(&body[start..=i]);
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+fn number_field(object: &str, key: &str) -> Option<f32> {
+    let after = &object[object.find(&format!("\"{key}\""))? + key.len() + 2..];
+    let value = after.trim_start().strip_prefix(':')?.trim_start();
+    let end = value.find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-')).unwrap_or(value.len());
+    value[..end].parse().ok()
+}
+
 fn clean_title(title: &str) -> &str {
     let cut = [" - ", " (", " [", " – "].iter().filter_map(|m| title.find(m)).min().unwrap_or(title.len());
     title[..cut].trim()
@@ -84,6 +143,8 @@ fn clean_title(title: &str) -> &str {
 /// "[mm:ss.xx]" stamps (a line may have several) in front of the text.
 fn parse(text: &str) -> Vec<(f32, String)> {
     let mut out = Vec::new();
+    // "[offset:+500]": the lines come that many milliseconds earlier (negative: later)
+    let offset = text.lines().find_map(|l| l.trim().strip_prefix("[offset:")?.split(']').next()?.trim().parse::<f32>().ok()).unwrap_or(0.0) / 1000.0;
     for raw in text.lines() {
         let mut rest = raw.trim();
         let mut stamps = Vec::new();
@@ -98,7 +159,7 @@ fn parse(text: &str) -> Vec<(f32, String)> {
             }
         }
         for t in stamps {
-            out.push((t, rest.to_string()));
+            out.push((t - offset, rest.to_string()));
         }
     }
     out.sort_by(|a, b| a.0.total_cmp(&b.0));
