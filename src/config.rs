@@ -58,7 +58,7 @@ impl Default for Config {
             ntfy_topic: String::new(),
             ntfy_token: String::new(),
             ntfy_sound: String::new(),
-            lyric_ahead_ms: 800,
+            lyric_ahead_ms: 750,
             ntfy_volume: 20,
             language: "auto".into(),
             theme: "auto".into(),
