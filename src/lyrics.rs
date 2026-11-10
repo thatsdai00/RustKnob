@@ -33,6 +33,21 @@ impl Lyrics {
     }
 }
 
+impl Lyrics {
+    /// The line to have on show at `t`: the next one appears `lead` seconds before it is sung (it needs a moment to
+    /// slide in and to be read), but never while the one before it still has words to come.
+    pub fn line_shown(&self, t: f32, lead: f32) -> Option<(usize, &Line)> {
+        let (i, line) = self.line_at(t + lead)?;
+        if i > 0 {
+            let prev = &self.lines[i - 1];
+            if prev.words.last().is_some_and(|w| w.end > t) && line.start > t {
+                return Some((i - 1, prev));
+            }
+        }
+        Some((i, line))
+    }
+}
+
 /// Where the sung part of a line ends at `t`: `points` are rising (time, x) pairs made from a line's words.
 pub fn fill_x(points: &[(f32, f32)], t: f32) -> f32 {
     let (Some(first), Some(last)) = (points.first(), points.last()) else { return 0.0 };
