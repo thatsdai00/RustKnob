@@ -40,6 +40,8 @@ static WAKE: Mutex<Option<Sender<()>>> = Mutex::new(None);
 static LYRICS_ON: AtomicBool = AtomicBool::new(false);
 /// Where the song was at the last timeline update: seconds, when that was read, and whether it was playing.
 static TIMELINE: Mutex<Option<(f32, Instant, bool)>> = Mutex::new(None);
+/// The current session changed (another player, or the same app with a new session): subscribe again.
+static SESSION_CHANGED: AtomicBool = AtomicBool::new(true);
 
 /// Turns the lyrics lookup on or off.
 pub fn set_lyrics(on: bool) {
@@ -118,6 +120,7 @@ fn run(hwnd: isize, song_msg: u32, pin_msg: u32) -> windows::core::Result<()> {
     {
         let tx = tx.clone();
         mgr.CurrentSessionChanged(&TypedEventHandler::new(move |_, _| {
+            SESSION_CHANGED.store(true, Ordering::Relaxed);
             let _ = tx.send(());
             Ok(())
         }))?;
@@ -138,6 +141,7 @@ fn run(hwnd: isize, song_msg: u32, pin_msg: u32) -> windows::core::Result<()> {
 impl Listener {
     fn update(&mut self) -> windows::core::Result<()> {
         let Ok(ses) = self.mgr.GetCurrentSession() else {
+            self.unsubscribe();
             set_song(None);
             self.last_key.clear();
             self.has_art = false;
@@ -147,12 +151,8 @@ impl Listener {
             return Ok(());
         };
         let app = ses.SourceAppUserModelId()?.to_string();
-        if app != self.app || self.sub.is_none() {
-            if let Some((old, t1, t2, t3)) = self.sub.take() {
-                let _ = old.RemoveMediaPropertiesChanged(t1);
-                let _ = old.RemovePlaybackInfoChanged(t2);
-                let _ = old.RemoveTimelinePropertiesChanged(t3);
-            }
+        if SESSION_CHANGED.swap(false, Ordering::Relaxed) || app != self.app || self.sub.is_none() {
+            self.unsubscribe();
             let (tx1, tx2) = (self.tx.clone(), self.tx.clone());
             let t1 = ses.MediaPropertiesChanged(&TypedEventHandler::new(move |_, _| {
                 let _ = tx1.send(());
@@ -164,7 +164,7 @@ impl Listener {
             }))?;
             let tx3 = self.tx.clone();
             let t3 = ses.TimelinePropertiesChanged(&TypedEventHandler::new(move |_, _| {
-                if LYRICS_ON.load(Ordering::Relaxed) {
+                if LYRICS_ON.load(Ordering::Relaxed) && PIN_ON.load(Ordering::Relaxed) {
                     let _ = tx3.send(()); // a seek: the lyrics follow
                 }
                 Ok(())
@@ -197,7 +197,6 @@ impl Listener {
                     let age = tl.LastUpdatedTime().map_or(0.0, |t| (now - t.UniversalTime as i128) as f64 / 1e7);
                     pos += age.clamp(0.0, 600.0);
                 }
-                crate::lyrics::debug(&format!("timeline raw={:.2} start={:.2} pos+age={:.2} playing={playing}", tl.Position().map_or(0.0, secs), tl.StartTime().map_or(0.0, secs), pos));
                 if let Ok(mut g) = TIMELINE.lock() {
                     *g = Some((pos as f32, Instant::now(), playing));
                 }
@@ -219,7 +218,9 @@ impl Listener {
         }
         let changed = key != self.last_key;
         let wants_art = PIN_ON.load(Ordering::Relaxed);
-        if !changed && !(wants_art && !self.has_art) {
+        // the cover is tried again only once the player has one (a song without a cover would be redone on every event)
+        let retry_art = wants_art && !self.has_art && props.Thumbnail().is_ok();
+        if !changed && !retry_art {
             if playing != was_playing {
                 self.tell_pin(); // only play / pause
             }
@@ -257,6 +258,16 @@ impl Listener {
 }
 
 impl Listener {
+    /// Lets go of the session the handlers were on.
+    fn unsubscribe(&mut self) {
+        if let Some((old, t1, t2, t3)) = self.sub.take() {
+            let _ = old.RemoveMediaPropertiesChanged(t1);
+            let _ = old.RemovePlaybackInfoChanged(t2);
+            let _ = old.RemoveTimelinePropertiesChanged(t3);
+        }
+        self.app.clear();
+    }
+
     fn tell_pin(&self) {
         if PIN_ON.load(Ordering::Relaxed) {
             unsafe {
@@ -292,7 +303,7 @@ fn fetch_art(props: &GlobalSystemMediaTransportControlsSessionMediaProperties) -
     if bytes.len() < ART_PX * ART_PX * 4 {
         return None;
     }
-    let px: Vec<u32> = bytes.chunks_exact(4).take(ART_PX * ART_PX).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
+    let px: Vec<u32> = bytes.as_chunks::<4>().0.iter().take(ART_PX * ART_PX).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
     let accent = accent_of(&px);
     Some(Art { px, accent })
 }

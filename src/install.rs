@@ -105,7 +105,15 @@ pub fn close_running() {
                 return;
             }
             let _ = PostMessageW(h, WM_CLOSE, WPARAM(0), LPARAM(0));
-            std::thread::sleep(std::time::Duration::from_millis(1200));
+            // wait for it to be gone (it lets go of its exe then), not a fixed guess
+            use windows::Win32::System::Threading::{OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE};
+            match OpenProcess(PROCESS_SYNCHRONIZE, false, pid) {
+                Ok(process) => {
+                    WaitForSingleObject(process, 10_000);
+                    let _ = CloseHandle(process);
+                }
+                Err(_) => std::thread::sleep(std::time::Duration::from_millis(1200)),
+            }
         }
     }
 }
@@ -210,17 +218,13 @@ pub fn uninstall(t: &Strings, ask: bool) {
             return;
         }
         close_running();
-        autostart::set(false);
+        autostart::set_for(false, Path::new(""));
         menu::remove_old_entries();
         let _ = std::fs::remove_file(shortcut_path());
         let _ = RegDeleteKeyW(HKEY_CURRENT_USER, UNINSTALL_KEY);
     }
     // a running exe cannot delete itself: a detached shell does it a few seconds later
-    let dir = install_dir();
-    let _ = std::process::Command::new("cmd")
-        .raw_arg(format!("/C ping 127.0.0.1 -n 4 >nul & rmdir /S /Q \"{}\"", dir.display()))
-        .creation_flags(NO_WINDOW)
-        .spawn();
+    delete_later(&install_dir());
     info(t.uninstalled);
 }
 
@@ -244,10 +248,18 @@ fn remove_legacy() {
     let _ = std::fs::remove_file(env_path("APPDATA").join(r"Microsoft\Windows\Start Menu\Programs\DigitalKnob.lnk"));
     let old_dir = env_path("LOCALAPPDATA").join("Programs").join("DigitalKnob");
     if old_dir.exists() && std::fs::remove_dir_all(&old_dir).is_err() {
-        // still locked: let a detached shell finish it
-        let _ = std::process::Command::new("cmd")
-            .raw_arg(format!("/C ping 127.0.0.1 -n 4 >nul & rmdir /S /Q \"{}\"", old_dir.display()))
-            .creation_flags(NO_WINDOW)
-            .spawn();
+        delete_later(&old_dir); // still locked
     }
+}
+
+/// Deletes a folder a few seconds from now, from a detached shell (a running exe cannot delete itself).
+/// Only an absolute path: with %LOCALAPPDATA% unset the path would be relative to wherever this runs.
+pub fn delete_later(dir: &Path) {
+    if !dir.is_absolute() {
+        return;
+    }
+    let _ = std::process::Command::new("cmd")
+        .raw_arg(format!("/C ping 127.0.0.1 -n 4 >nul & rmdir /S /Q \"{}\"", dir.display()))
+        .creation_flags(NO_WINDOW)
+        .spawn();
 }

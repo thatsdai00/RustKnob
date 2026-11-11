@@ -84,10 +84,25 @@ fn run() {
 struct Format {
     channels: usize,
     float: bool,
+    bytes: usize, // per sample: 2, 3 or 4 (float is always 4)
     rate: f32,
 }
 
+impl Format {
+    /// Sample `i` of a buffer, -1..1.
+    unsafe fn sample(&self, data: *const u8, i: usize) -> f32 {
+        let p = data.add(i * self.bytes);
+        match (self.float, self.bytes) {
+            (true, _) => (p as *const f32).read_unaligned(),
+            (false, 2) => f32::from((p as *const i16).read_unaligned()) / 32768.0,
+            (false, 3) => (i32::from_le_bytes([0, *p, *p.add(1), *p.add(2)]) >> 8) as f32 / 8_388_608.0,
+            _ => (p as *const i32).read_unaligned() as f32 / 2_147_483_648.0,
+        }
+    }
+}
+
 unsafe fn capture() -> Result<()> {
+    let device_now = crate::device::RENDER_CHANGES.load(Relaxed); // a new default device ends this capture
     let enumerator: IMMDeviceEnumerator = CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?;
     let device = enumerator.GetDefaultAudioEndpoint(eRender, eConsole)?;
     let client: IAudioClient = device.Activate(CLSCTX_ALL, None)?;
@@ -95,14 +110,28 @@ unsafe fn capture() -> Result<()> {
     let format = {
         let m = &*mix;
         let (tag, bits) = (m.wFormatTag, m.wBitsPerSample);
-        Format { channels: usize::from(m.nChannels).max(1), float: tag == 3 || (tag == 0xFFFE && bits == 32), rate: m.nSamplesPerSec as f32 }
+        let channels = usize::from(m.nChannels).max(1);
+        // the container size: a 24-bit sample may sit in 4 bytes
+        let bytes = (usize::from(m.nBlockAlign) / channels).max(usize::from(bits / 8));
+        Format { channels, float: tag == 3 || (tag == 0xFFFE && bits == 32), bytes, rate: m.nSamplesPerSec as f32 }
     };
+    if !format.float && !(2..=4).contains(&format.bytes) || format.float && format.bytes != 4 {
+        CoTaskMemFree(Some(mix as *const _));
+        return Err(windows::Win32::Foundation::E_FAIL.into()); // a format this cannot read
+    }
     let started = client
         .Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK, 1_000_000, 0, mix, None)
         .and_then(|_| client.GetService::<IAudioCaptureClient>());
     CoTaskMemFree(Some(mix as *const _));
     let capture = started?;
     client.Start()?;
+    let result = listen(&capture, &format, device_now);
+    let _ = client.Stop();
+    result
+}
+
+/// Reads the capture until the visualizer is no longer wanted (or the default device changes).
+unsafe fn listen(capture: &IAudioCaptureClient, format: &Format, device_now: u32) -> Result<()> {
 
     let window: Vec<f32> = (0..WINDOW).map(|i| 0.5 - 0.5 * (TAU * i as f32 / WINDOW as f32).cos()).collect(); // Hann
     let coefficients: [[f32; 2]; BANDS] = std::array::from_fn(|b| std::array::from_fn(|k| 2.0 * (TAU * BINS[b][k] / format.rate).cos()));
@@ -110,20 +139,14 @@ unsafe fn capture() -> Result<()> {
     let mut frame = vec![0.0f32; WINDOW];
     let mut at = 0usize;
     let mut shown = [0.0f32; BANDS];
-    let result = loop {
-        if !wanted() {
-            break Ok(());
+    loop {
+        if !wanted() || crate::device::RENDER_CHANGES.load(Relaxed) != device_now {
+            return Ok(());
         }
         std::thread::sleep(Duration::from_millis(POLL_MS));
         let mut fresh = false;
         loop {
-            let frames = match capture.GetNextPacketSize() {
-                Ok(n) => n,
-                Err(e) => {
-                    let _ = client.Stop();
-                    return Err(e);
-                }
-            };
+            let frames = capture.GetNextPacketSize()?;
             if frames == 0 {
                 break;
             }
@@ -134,11 +157,7 @@ unsafe fn capture() -> Result<()> {
                 let mut sum = 0.0;
                 if !silent {
                     for c in 0..format.channels {
-                        sum += if format.float {
-                            *(data as *const f32).add(f * format.channels + c)
-                        } else {
-                            f32::from(*(data as *const i16).add(f * format.channels + c)) / 32768.0
-                        };
+                        sum += format.sample(data, f * format.channels + c);
                     }
                 }
                 ring[at] = sum / format.channels as f32;
@@ -177,7 +196,5 @@ unsafe fn capture() -> Result<()> {
             shown[b] = if now[b] > shown[b] { now[b] } else { (shown[b] - 0.07).max(now[b]) };
         }
         publish(shown);
-    };
-    let _ = client.Stop();
-    result
+    }
 }

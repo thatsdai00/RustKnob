@@ -211,11 +211,29 @@ fn text_fit(tb: &TextBmp, tx: f32, ty: f32, left: f32, view: f32, unit: f32, fil
         };
         acc += tb.sample(u, ((ty + oy) / k + hl / 2.0) * TEXT_R) * lit;
     }
+    if acc == 0.0 {
+        return 0.0;
+    }
     (acc / 4.0).powf(0.85)
 }
 
 /// Half the width (raster px) of the soft edge between the sung and the unsung part of a line.
-const LYRIC_EDGE: f32 = 34.0;
+pub const LYRIC_EDGE: f32 = 34.0;
+
+/// An on/off switch centered at `lx` = 0 on its row; `t` 0..1 is how far it is on.
+fn switch(p: &mut Px, lx: f32, ry: f32, t: f32, pal: &Palette, ca: f32, aa: f32) {
+    if lx.abs() < 22.0 {
+        p.over(pal.mix(lerp(0.26, 1.0, t)), ca * cov(rrect(lx, ry, 20.0, 11.0, 11.0), aa));
+        let off = pal.mix(0.72);
+        let knob: [f32; 3] = std::array::from_fn(|i| lerp(off[i], pal.bg[i], t));
+        p.over(knob, ca * cov((lx - lerp(-9.0, 9.0, t)).hypot(ry) - 8.5, aa));
+    }
+}
+
+/// The small "x" of a clear button.
+fn cross_sdf(lx: f32, ry: f32) -> f32 {
+    seg(lx, ry, (-3.5, -3.5), (3.5, 3.5), 0.9).min(seg(lx, ry, (-3.5, 3.5), (3.5, -3.5), 0.9))
+}
 
 /// Same, centered on `dx = 0` (the knob's rows).
 fn text_center(tb: &TextBmp, dx: f32, ty: f32, view: f32, marq: f32, unit: f32) -> f32 {
@@ -245,9 +263,55 @@ struct KnobGeom {
     prog_caps: [(f32, f32); 2],
     ticks: [(f32, f32); 28],
     prog: f32,
+    indicator: (f32, f32),                  // sin, cos of the indicator's angle
+    icon: Option<(Icon, f32, f32, f32)>,    // icon_anim(s, 18.0)
 }
 
-pub fn render(buf: &mut [u32], pw: usize, _ph: usize, rect: (usize, usize, usize, usize), s: &Scene) {
+/// One song's look in a frame of the pinned capsule: song, alpha, slide, scale, accent, dim.
+type PinLayer<'a> = (Option<&'a Song>, f32, f32, f32, [f32; 3], [f32; 3]);
+
+/// What the pinned capsule's content needs that is the same for every pixel of a frame.
+struct PinFrame<'a> {
+    row: f32,             // height of the cover, title and visualizer row
+    accent_now: [f32; 3], // the color, mid-way between the two songs while they swap
+    layers: [PinLayer<'a>; 2],
+    rise: f32,
+    leave: f32,
+}
+
+fn pin_frame<'a>(s: &Scene<'a>) -> Option<PinFrame<'a>> {
+    let (v, pal) = (s.pin.as_ref()?, &s.pal);
+    let row = if v.tall { 24.0 + 4.0 * ((s.h - 48.0) / 32.0).clamp(0.0, 1.0) } else { s.h / 2.0 };
+    let k = if pal.light { 0.55 / 255.0 } else { 1.0 / 255.0 }; // darker on the light theme
+    let tint = |song: Option<&Song>| song.and_then(|x| x.art.as_ref()).map_or([235.0; 3], |a| a.accent);
+
+    // 0 = the old song, 1 = the new one
+    let swap = v.swap.clamp(0.0, 1.0);
+    let (old, new) = (v.prev, v.song);
+    let into = sstep(0.0, 1.0, swap);
+    let accent_now = std::array::from_fn::<f32, 3, _>(|c| lerp(tint(old)[c], tint(new)[c], into) * k);
+
+    let mut motion = [(new, 1.0f32, 0.0f32, 1.0f32), (old, 0.0, 0.0, 1.0)];
+    if v.prev.is_some() {
+        let back = |t: f32| {
+            // overshoots a little before it settles
+            let t = t.clamp(0.0, 1.0) - 1.0;
+            1.0 + 2.70158 * t * t * t + 1.70158 * t * t
+        };
+        motion[0] = (new, sstep(0.25, 1.0, swap), (1.0 - sstep(0.0, 1.0, swap)) * 18.0, 0.78 + 0.22 * back(swap)); // arriving
+        motion[1] = (old, 1.0 - sstep(0.0, 0.55, swap), -sstep(0.0, 1.0, swap) * 18.0, 1.0 - 0.18 * sstep(0.0, 0.6, swap)); // leaving
+    }
+    let layers = motion.map(|(song, alpha, slide, scale)| {
+        let accent = song.and_then(|x| x.art.as_ref()).map_or([235.0; 3], |a| a.accent).map(|c| c * k);
+        let accent = if v.prev.is_some() { accent_now } else { accent };
+        (song, alpha, slide, scale, accent, accent.map(|c| c * 0.72))
+    });
+    let rise = 1.0 - (1.0 - v.lyric_swap.clamp(0.0, 1.0)).powi(3);
+    let leave = sstep(0.0, 1.0, v.lyric_swap);
+    Some(PinFrame { row, accent_now, layers, rise, leave })
+}
+
+pub fn render(buf: &mut [u32], pw: usize, ph: usize, rect: (usize, usize, usize, usize), s: &Scene) {
     let unit = s.unit;
     let aa = 1.0 / unit;
     let cx = pw as f32 / 2.0;
@@ -269,8 +333,13 @@ pub fn render(buf: &mut [u32], pw: usize, _ph: usize, rect: (usize, usize, usize
             (TICK_R * cs, TICK_R * sn)
         }),
         prog,
+        indicator: (ARC_START + prog).to_radians().sin_cos(),
+        icon: icon_anim(s, 18.0),
     };
-    let (x0, y0, x1, y1) = rect;
+    let pin = pin_frame(s);
+    // a rectangle past the surface (or upside down) draws nothing instead of slicing out of bounds
+    let (x1, y1) = (rect.2.min(pw), rect.3.min(ph).min(buf.len() / pw.max(1)));
+    let (x0, y0) = (rect.0.min(x1), rect.1.min(y1));
 
     // what every layer of content draws at a point (lx, ly: from the shape's center); `spans` tell which
     // stretches of the current row a layer can touch at all
@@ -293,7 +362,11 @@ pub fn render(buf: &mut [u32], pw: usize, _ph: usize, rect: (usize, usize, usize
                 Kind::History => history_content(p, tx, ty, aa, s, ca),
                 Kind::Setup => setup_content(p, tx, ty, aa, s, ca),
                 Kind::Drop => drop_content(p, tx, ty, aa, s, ca),
-                Kind::Pinned => pinned_content(p, tx, ty, aa, s, ca),
+                Kind::Pinned => {
+                    if let Some(pin) = &pin {
+                        pinned_content(p, tx, ty, aa, s, ca, pin)
+                    }
+                }
             }
         }
       }};
@@ -307,11 +380,17 @@ pub fn render(buf: &mut [u32], pw: usize, _ph: usize, rect: (usize, usize, usize
         let ly = ty - hh;
         // where this row is plain, opaque shape: no distance field needed there, only the content
         let (solid_from, solid_to) = solid_span(ly, hw, hh, radius, cx, unit);
+        // past this the pixel stays empty: no body (its edge is anti-aliased over half a pixel), no shadow
+        let (live_from, live_to) = live_span(ly, hw, hh, radius, cx, unit, aa);
         let spans = [
             s.layers[0].filter(|l| l.alpha > 0.01).and_then(|l| row_spans(l.kind, s, ty)),
             s.layers[1].filter(|l| l.alpha > 0.01).and_then(|l| row_spans(l.kind, s, ty)),
         ];
         for x in x0..x1 {
+            if x < live_from || x >= live_to {
+                row[x] = 0; // what an untouched pixel packs to
+                continue;
+            }
             let lx = (x as f32 + 0.5 - cx) / unit;
             if x >= solid_from && x < solid_to {
                 let mut p = Px::default();
@@ -353,9 +432,14 @@ pub fn render(buf: &mut [u32], pw: usize, _ph: usize, rect: (usize, usize, usize
     } else {
         let per = rows.div_ceil(threads);
         std::thread::scope(|scope| {
-            for (i, chunk) in band.chunks_mut(per * pw).enumerate() {
+            let mut bands = band.chunks_mut(per * pw).enumerate();
+            let first = bands.next();
+            for (i, chunk) in bands {
                 let shade_rows = &shade_rows;
                 scope.spawn(move || shade_rows(chunk, y0 + i * per));
+            }
+            if let Some((_, chunk)) = first {
+                shade_rows(chunk, y0); // this thread would only wait otherwise
             }
         });
     }
@@ -380,6 +464,30 @@ fn solid_span(ly: f32, hw: f32, hh: f32, radius: f32, cx: f32, unit: f32) -> (us
     }
     let from = (cx - half * unit - 0.5).ceil().max(0.0) as usize;
     let to = ((cx + half * unit - 0.5).floor() + 1.0).max(0.0) as usize;
+    (from, to.max(from))
+}
+
+/// The device-pixel columns [from, to) of a row that the shape or its shadow can touch at all. Everything a
+/// rounded rectangle's distance field puts below `d` is the same rectangle grown by `d` (corners too), so:
+/// the body reaches `aa / 2` out, the shadow (moved down by SHADOW_DROP) SHADOW_REACH.
+fn live_span(ly: f32, hw: f32, hh: f32, radius: f32, cx: f32, unit: f32, aa: f32) -> (usize, usize) {
+    let half = |dy: f32, d: f32| -> f32 {
+        let (inner, r) = (hh - radius, radius + d);
+        let t = dy - inner;
+        if t <= 0.0 {
+            hw + d
+        } else if t >= r {
+            -1.0
+        } else {
+            (hw - radius) + (r * r - t * t).sqrt()
+        }
+    };
+    let reach = half(ly.abs(), aa).max(half((ly - SHADOW_DROP).abs(), SHADOW_REACH));
+    if reach < 0.0 {
+        return (0, 0);
+    }
+    let from = (cx - reach * unit - 2.0).floor().max(0.0) as usize;
+    let to = (cx + reach * unit + 2.0).ceil().max(0.0) as usize;
     (from, to.max(from))
 }
 
@@ -523,38 +631,16 @@ fn drop_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) {
 /// The pinned media: the cover on the left, title and artist in the middle (in the cover's color), a
 /// visualizer on the right. When the song changes, the old cover shrinks away while the new one pops in, and
 /// the old text slides out to the left as the new one slides in from the right.
-fn pinned_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) {
+fn pinned_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32, f: &PinFrame) {
     let (Some(v), pal) = (&s.pin, &s.pal) else { return };
-    // the cover, title and visualizer sit at this height: a little higher while the capsule is tall
-    let row = if v.tall { 24.0 + 4.0 * ((s.h - 48.0) / 32.0).clamp(0.0, 1.0) } else { s.h / 2.0 };
-    let ry = ty - row;
-    let k = if pal.light { 0.55 / 255.0 } else { 1.0 / 255.0 }; // darker on the light theme
-    let tint = |song: Option<&Song>| song.and_then(|x| x.art.as_ref()).map_or([235.0; 3], |a| a.accent);
+    // the cover, title and visualizer sit at f.row: a little higher while the capsule is tall
+    let ry = ty - f.row;
+    let accent_now = f.accent_now;
 
-    // 0 = the old song, 1 = the new one
-    let swap = v.swap.clamp(0.0, 1.0);
-    let (old, new) = (v.prev, v.song);
-    let into = sstep(0.0, 1.0, swap);
-    let accent_now = std::array::from_fn::<f32, 3, _>(|c| lerp(tint(old)[c], tint(new)[c], into) * k);
-
-    let mut layers = [(new, 1.0f32, 0.0f32, 1.0f32), (old, 0.0, 0.0, 1.0)];
-    if v.prev.is_some() {
-        let back = |t: f32| {
-            // overshoots a little before it settles
-            let t = t.clamp(0.0, 1.0) - 1.0;
-            1.0 + 2.70158 * t * t * t + 1.70158 * t * t
-        };
-        layers[0] = (new, sstep(0.25, 1.0, swap), (1.0 - sstep(0.0, 1.0, swap)) * 18.0, 0.78 + 0.22 * back(swap)); // arriving
-        layers[1] = (old, 1.0 - sstep(0.0, 0.55, swap), -sstep(0.0, 1.0, swap) * 18.0, 1.0 - 0.18 * sstep(0.0, 0.6, swap)); // leaving
-    }
-
-    for (song, alpha, slide, scale) in layers {
+    for &(song, alpha, slide, scale, accent, dim) in &f.layers {
         if alpha <= 0.003 {
             continue;
         }
-        let accent = song.and_then(|x| x.art.as_ref()).map_or([235.0; 3], |a| a.accent).map(|c| c * k);
-        let accent = if v.prev.is_some() { accent_now } else { accent };
-        let dim = accent.map(|c| c * 0.72);
         let ca = ca * alpha;
 
         // cover: a rounded square, or a plain tile with a note while there is none
@@ -600,12 +686,11 @@ fn pinned_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) {
     }
 
     // the lyric line in its own row: the old one leaves upward, the new one rises in from below
-    if v.tall && v.prev.is_none() {
+    if v.tall && v.prev.is_none() && ty > 46.0 && ty < 76.0 {
         let (left, view, unit) = (s.w * 0.05, s.w * 0.9, 1.0 / aa); // at most 90% of the capsule's width
         let mask = sstep(46.0, 51.0, ty) * sstep(76.0, 71.0, ty);
         if mask > 0.0 {
-            let rise = 1.0 - (1.0 - v.lyric_swap.clamp(0.0, 1.0)).powi(3);
-            let leave = sstep(0.0, 1.0, v.lyric_swap);
+            let (rise, leave) = (f.rise, f.leave);
             let mut line = |tb: Option<&TextBmp>, off: f32, fill: Option<f32>| {
                 if let Some(tb) = tb {
                     p.over(accent_now, ca * mask * text_fit(tb, tx, ty - (60.0 + off), left, view, unit, fill));
@@ -682,14 +767,7 @@ fn settings_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32, s
     }
 
     if row < ui::TOGGLES {
-        let (lx, t) = (tx - (w - 40.0), v.toggles[row]);
-        if lx.abs() < 22.0 {
-            let track = pal.mix(lerp(0.26, 1.0, t));
-            p.over(track, ca * cov(rrect(lx, ry, 20.0, 11.0, 11.0), aa));
-            let off = pal.mix(0.72);
-            let knob: [f32; 3] = std::array::from_fn(|i| lerp(off[i], pal.bg[i], t));
-            p.over(knob, ca * cov((lx - lerp(-9.0, 9.0, t)).hypot(ry) - 8.5, aa));
-        }
+        switch(p, tx - (w - 40.0), ry, v.toggles[row], pal, ca, aa);
     } else if row == ui::ROW_STEP || row == ui::ROW_VOLUME {
         let step_digits = &steppers[usize::from(row == ui::ROW_VOLUME)];
         for (from_right, plus) in [(ui::STEP_MINUS_X, false), (ui::STEP_PLUS_X, true)] {
@@ -732,7 +810,7 @@ fn settings_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32, s
             // "x": back to the built-in chime
             let lx = tx - (w - 22.0);
             if lx.abs() < 6.0 {
-                let cross = seg(lx, ry, (-3.5, -3.5), (3.5, 3.5), 0.9).min(seg(lx, ry, (-3.5, 3.5), (3.5, -3.5), 0.9));
+                let cross = cross_sdf(lx, ry);
                 p.over(pal.fg, ca * 0.8 * cov(cross, aa));
             }
         }
@@ -769,7 +847,7 @@ fn knob_content(p: &mut Px, dx: f32, dy: f32, aa: f32, s: &Scene, ca: f32, k: &K
     }
 
     // indicator
-    let (isn, ics) = (ARC_START + k.prog).to_radians().sin_cos();
+    let (isn, ics) = k.indicator;
     let (lx, ly) = (dx * ics + dy * isn, -dx * isn + dy * ics);
     if d < 72.0 && lx > 28.0 && lx < 66.0 && ly.abs() < 14.0 {
         let px = lx.clamp(41.0, 57.0);
@@ -778,7 +856,7 @@ fn knob_content(p: &mut Px, dx: f32, dy: f32, aa: f32, s: &Scene, ca: f32, k: &K
 
     // percent, crossfading with the transport icon
     if dx.abs() < 46.0 && dy.abs() < 22.0 {
-        let anim = icon_anim(s, 18.0);
+        let anim = k.icon;
         let ia = anim.map_or(0.0, |a| a.1);
         if ia < 0.99 {
             p.over(pal.text, ca * 0.95 * (1.0 - ia) * cov(digits.dist(dx, dy) - DIGIT_STROKE, aa));
@@ -912,7 +990,7 @@ fn history_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) {
     if hot {
         let lx = tx - (w - 28.0);
         if lx.abs() < 6.0 {
-            let cross = seg(lx, ry, (-3.5, -3.5), (3.5, 3.5), 0.9).min(seg(lx, ry, (-3.5, 3.5), (3.5, -3.5), 0.9));
+            let cross = cross_sdf(lx, ry);
             p.over(pal.fg, ca * 0.8 * cov(cross, aa));
         }
     }
@@ -943,13 +1021,7 @@ fn setup_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) {
             p.over(pal.text, ca * text_left(label, tx - 22.0, ry, 220.0, 0.0, unit));
         }
         if i < 2 {
-            let (lx, t) = (tx - (w - 40.0), v.toggles[i]);
-            if lx.abs() < 22.0 {
-                p.over(pal.mix(lerp(0.26, 1.0, t)), ca * cov(rrect(lx, ry, 20.0, 11.0, 11.0), aa));
-                let off = pal.mix(0.72);
-                let knob: [f32; 3] = std::array::from_fn(|k| lerp(off[k], pal.bg[k], t));
-                p.over(knob, ca * cov((lx - lerp(-9.0, 9.0, t)).hypot(ry) - 8.5, aa));
-            }
+            switch(p, tx - (w - 40.0), ry, v.toggles[i], pal, ca, aa);
         } else if let Some(value) = v.values.get(i - 2) {
             let box_x = tx - (w - 20.0 - 60.0);
             if box_x.abs() < 62.0 {

@@ -57,6 +57,12 @@ pub fn status() -> Status {
     STATUS.lock().map(|s| s.clone()).unwrap_or_else(|e| e.into_inner().clone())
 }
 
+/// (bytes of the current file, its 1-based number, how many) without copying the rest: read every frame.
+pub fn progress() -> (u64, usize, usize) {
+    let s = STATUS.lock().unwrap_or_else(|e| e.into_inner());
+    (s.total, s.index, s.count)
+}
+
 fn update(f: impl FnOnce(&mut Status)) {
     if let Ok(mut s) = STATUS.lock() {
         f(&mut s);
@@ -128,6 +134,10 @@ fn worker(hwnd: isize, msg: u32) {
     update(|s| s.phase = if s.links.is_empty() { Phase::Failed } else { Phase::Done });
     WORKER.store(false, Ordering::SeqCst);
     notify(hwnd, msg);
+    // a file queued after the loop saw the queue empty (but before WORKER dropped) still needs a worker
+    if QUEUE.lock().is_ok_and(|q| !q.is_empty()) && !WORKER.swap(true, Ordering::SeqCst) {
+        worker(hwnd, msg);
+    }
 }
 
 // ---- HTTP ------------------------------------------------------------------
@@ -321,6 +331,9 @@ fn upload_part(session: usize, location: &str, path: &Path, part_no: u64, start:
             attempt += 1;
             if attempt > MAX_RETRIES {
                 return Err(format!("part {part_no} failed: {}", api_error(status, &body)));
+            }
+            if stop.load(Ordering::SeqCst) {
+                return Err("stopped".into()); // another part failed: no point waiting to retry
             }
             std::thread::sleep(RETRY_WAIT);
             continue;

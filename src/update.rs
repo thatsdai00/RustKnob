@@ -6,6 +6,7 @@
 
 use std::ffi::c_void;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use windows::core::{w, HSTRING, PCWSTR};
@@ -23,7 +24,7 @@ const MAX_BYTES: usize = 40 * 1024 * 1024; // far above the real size: a guard a
 
 /// The downloaded, verified exe waiting to be installed.
 static READY: Mutex<Option<(String, PathBuf)>> = Mutex::new(None);
-static BUSY: Mutex<bool> = Mutex::new(false);
+static BUSY: AtomicBool = AtomicBool::new(false);
 
 /// (version, path) of a downloaded update, taken once.
 pub fn take_ready() -> Option<(String, PathBuf)> {
@@ -32,12 +33,8 @@ pub fn take_ready() -> Option<(String, PathBuf)> {
 
 /// Checks GitHub and downloads a newer release if there is one; posts `msg` to `hwnd` when one is ready.
 pub fn check(hwnd: isize, msg: u32) {
-    {
-        let Ok(mut busy) = BUSY.lock() else { return };
-        if *busy {
-            return;
-        }
-        *busy = true;
+    if BUSY.swap(true, Ordering::AcqRel) {
+        return; // a check is already under way
     }
     std::thread::spawn(move || {
         if let Some(found) = unsafe { newer_release() } {
@@ -48,9 +45,7 @@ pub fn check(hwnd: isize, msg: u32) {
                 let _ = PostMessageW(HWND(hwnd as _), msg, WPARAM(0), LPARAM(0));
             }
         }
-        if let Ok(mut busy) = BUSY.lock() {
-            *busy = false;
-        }
+        BUSY.store(false, Ordering::Release);
     });
 }
 
@@ -106,7 +101,11 @@ unsafe fn sha256(data: &[u8]) -> Option<String> {
 }
 
 /// GET `url` (redirects are followed), at most `limit` bytes; None on any failure or a status other than 200.
-pub unsafe fn get(url: &str, limit: usize) -> Option<Vec<u8>> {
+pub fn get(url: &str, limit: usize) -> Option<Vec<u8>> {
+    unsafe { get_raw(url, limit) }
+}
+
+unsafe fn get_raw(url: &str, limit: usize) -> Option<Vec<u8>> {
     let rest = url.strip_prefix("https://")?;
     let (host, target) = match rest.find('/') {
         Some(i) => (&rest[..i], &rest[i..]),
@@ -122,20 +121,21 @@ pub unsafe fn get(url: &str, limit: usize) -> Option<Vec<u8>> {
         let request = WinHttpOpenRequest(connection, w!("GET"), &HSTRING::from(target), PCWSTR::null(), PCWSTR::null(), std::ptr::null(), WINHTTP_FLAG_SECURE);
         if !request.is_null() {
             let headers: Vec<u16> = "Accept: application/vnd.github+json, application/octet-stream\r\n".encode_utf16().collect();
-            let _ = WinHttpSetTimeouts(request, 0, 20_000, 30_000, 60_000);
+            let _ = WinHttpSetTimeouts(request, 15_000, 20_000, 30_000, 60_000); // 0 would let a name lookup hang for ever
             if WinHttpSendRequest(request, Some(&headers), None, 0, 0, 0).is_ok() && WinHttpReceiveResponse(request, std::ptr::null_mut()).is_ok() {
                 let (mut code, mut size) = (0u32, 4u32);
                 let _ = WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, PCWSTR::null(), Some(&mut code as *mut u32 as *mut c_void), &mut size, std::ptr::null_mut());
                 if code == 200 {
                     let mut body = Vec::new();
+                    let mut chunk = vec![0u8; 1 << 16];
                     loop {
                         let mut available = 0u32;
                         if WinHttpQueryDataAvailable(request, &mut available).is_err() || available == 0 {
                             break;
                         }
-                        let mut chunk = vec![0u8; available.min(1 << 16) as usize];
+                        let want = available.min(chunk.len() as u32);
                         let mut read = 0u32;
-                        if WinHttpReadData(request, chunk.as_mut_ptr() as *mut c_void, chunk.len() as u32, &mut read).is_err() || read == 0 {
+                        if WinHttpReadData(request, chunk.as_mut_ptr() as *mut c_void, want, &mut read).is_err() || read == 0 {
                             break;
                         }
                         body.extend_from_slice(&chunk[..read as usize]);

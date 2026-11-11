@@ -69,6 +69,20 @@ static CHIME_BUF: std::sync::Mutex<Vec<u8>> = std::sync::Mutex::new(Vec::new());
 
 /// Built-in chime: two soft bell notes (E5, then A5).
 unsafe fn play_chime(level: u32) {
+    static SHAPE: std::sync::OnceLock<Vec<f32>> = std::sync::OnceLock::new(); // the same every time: made once
+    let normalized = SHAPE.get_or_init(chime_shape);
+    let gain = CHIME_PEAK * level.clamp(1, 100) as f32 / 100.0;
+    let new = wav(normalized, gain);
+    if let Ok(mut buf) = CHIME_BUF.lock() {
+        // the chime still playing reads its buffer: stop it before that buffer goes
+        let _ = PlaySoundW(PCWSTR::null(), None, SND_FLAGS(0));
+        *buf = new;
+        let _ = PlaySoundW(PCWSTR(buf.as_ptr() as *const u16), None, SND_MEMORY | SND_ASYNC | SND_NODEFAULT);
+    }
+}
+
+/// The chime's samples, peaking at 1.
+fn chime_shape() -> Vec<f32> {
     let n = (RATE as f32 * 0.7) as usize;
     let samples: Vec<f32> = (0..n)
         .map(|i| {
@@ -86,12 +100,7 @@ unsafe fn play_chime(level: u32) {
         })
         .collect();
     let peak = samples.iter().fold(1e-6f32, |m, x| m.max(x.abs()));
-    let normalized: Vec<f32> = samples.iter().map(|x| x / peak).collect();
-    let gain = CHIME_PEAK * level.clamp(1, 100) as f32 / 100.0;
-    if let Ok(mut buf) = CHIME_BUF.lock() {
-        *buf = wav(&normalized, gain);
-        let _ = PlaySoundW(PCWSTR(buf.as_ptr() as *const u16), None, SND_MEMORY | SND_ASYNC | SND_NODEFAULT);
-    }
+    samples.iter().map(|x| x / peak).collect()
 }
 
 /// Two quick ticks (sharp, then softer) over a short low body: a ratchet detent.

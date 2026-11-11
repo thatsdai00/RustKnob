@@ -1,6 +1,7 @@
 // Synced lyrics from LRCLIB (https://lrclib.net): looked up once per song on a thread of its own, parsed from the
 // LRC text ("[01:23.45] a line") into (seconds, line) pairs. The pinned capsule asks which line is current.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::json;
@@ -63,6 +64,8 @@ pub fn fill_x(points: &[(f32, f32)], t: f32) -> f32 {
 }
 
 static CURRENT: Mutex<Option<Arc<Lyrics>>> = Mutex::new(None);
+/// Bumped for every lookup: a lookup that finishes after a newer one started throws its result away.
+static LOOKUP: AtomicU64 = AtomicU64::new(0);
 
 /// The lyrics of the song with this key, once they have arrived.
 pub fn get(key: &str) -> Option<Arc<Lyrics>> {
@@ -71,21 +74,23 @@ pub fn get(key: &str) -> Option<Arc<Lyrics>> {
 
 /// Looks the song up. `duration` (seconds) narrows the match when the player reports it.
 pub fn fetch(key: String, title: String, artist: String, duration: Option<u32>) {
+    let id = LOOKUP.fetch_add(1, Ordering::AcqRel) + 1;
     if let Ok(mut g) = CURRENT.lock() {
         *g = None;
     }
     std::thread::spawn(move || {
+        let stale = || LOOKUP.load(Ordering::Acquire) != id; // another song since: stop asking
         // LiriQo first (word-timed lyrics from Apple Music and others), LRCLIB when it has nothing
-        let lines = unsafe { liriqo(&title, &artist, duration) }
-            .or_else(|| unsafe { lookup(&title, &artist, duration) }.map(|t| parse(&t)))
-            .unwrap_or_default();
+        let lines = liriqo(&title, &artist, duration).or_else(|| (!stale()).then(|| lookup(&title, &artist, duration, &stale)).flatten().map(|t| parse(&t))).unwrap_or_default();
         if let Ok(mut g) = CURRENT.lock() {
-            *g = Some(Arc::new(Lyrics { key, lines }));
+            if !stale() {
+                *g = Some(Arc::new(Lyrics { key, lines }));
+            }
         }
     });
 }
 
-unsafe fn lookup(title: &str, artist: &str, duration: Option<u32>) -> Option<String> {
+fn lookup(title: &str, artist: &str, duration: Option<u32>, stale: &dyn Fn() -> bool) -> Option<String> {
     let base = "https://lrclib.net/api";
     let (t, a) = (json::url_encode(title), json::url_encode(artist));
     let mut exact = format!("{base}/get?track_name={t}&artist_name={a}");
@@ -102,6 +107,9 @@ unsafe fn lookup(title: &str, artist: &str, duration: Option<u32>) -> Option<Str
     // then looser: the artist spelled differently (several artists, "&") matters less than the title
     let first_artist = json::url_encode(artist.split([',', '&']).next().unwrap_or(artist).trim());
     for query in [format!("track_name={plain}&artist_name={a}"), format!("q={plain}%20{first_artist}"), format!("q={plain}")] {
+        if stale() {
+            return None;
+        }
         let Some(body) = update::get(&format!("{base}/search?{query}"), 4 << 20).and_then(|b| String::from_utf8(b).ok()) else { continue };
         if let Some(found) = best_synced(&body, duration) {
             return Some(found);
@@ -133,7 +141,8 @@ fn best_synced(body: &str, duration: Option<u32>) -> Option<String> {
             (Some(want), Some(have)) => (want as f32 - have).abs(),
             _ => 1000.0, // unknown: behind every known length
         };
-        if diff <= 6.0 + if duration.is_none() { 1000.0 } else { 0.0 } && best.as_ref().is_none_or(|(d, _)| diff < *d) {
+        let max = if duration.is_some() { 6.0 } else { f32::INFINITY }; // a known length must be close
+        if diff <= max && best.as_ref().is_none_or(|(d, _)| diff < *d) {
             best = Some((diff, text));
         }
     }
@@ -215,7 +224,7 @@ fn parse(text: &str) -> Vec<Line> {
 // ---- LiriQo (https://github.com/AlFarrizi-Studio/LiriQo): one endpoint over Apple Music, Musixmatch, QQ, ... ----
 
 /// The best timed lyrics it knows: word- or syllable-timed ones when there are any, else its first line-timed set.
-unsafe fn liriqo(title: &str, artist: &str, duration: Option<u32>) -> Option<Vec<Line>> {
+fn liriqo(title: &str, artist: &str, duration: Option<u32>) -> Option<Vec<Line>> {
     let mut url = format!("https://api.liriqo-alfarrizi.my.id/v1/lyrics?title={}&artist={}", json::url_encode(title), json::url_encode(artist));
     if let Some(d) = duration.filter(|d| *d > 0) {
         url.push_str(&format!("&duration={d}"));
@@ -278,7 +287,7 @@ enum J {
 
 impl J {
     fn parse(text: &str) -> Option<J> {
-        Reader { s: text.as_bytes(), i: 0 }.value()
+        Reader { s: text.as_bytes(), i: 0, depth: 0 }.value()
     }
     fn get(&self, key: &str) -> Option<&J> {
         match self {
@@ -300,6 +309,7 @@ impl J {
 struct Reader<'a> {
     s: &'a [u8],
     i: usize,
+    depth: u32, // nesting: a hostile response must not run the stack out
 }
 
 impl Reader<'_> {
@@ -311,6 +321,16 @@ impl Reader<'_> {
     }
 
     fn value(&mut self) -> Option<J> {
+        if self.depth > 64 {
+            return None;
+        }
+        self.depth += 1;
+        let v = self.value_inner();
+        self.depth -= 1;
+        v
+    }
+
+    fn value_inner(&mut self) -> Option<J> {
         match self.peek()? {
             b'{' => {
                 self.i += 1;
@@ -411,18 +431,5 @@ impl Reader<'_> {
         let h = std::str::from_utf8(self.s.get(self.i..self.i + 4)?).ok()?;
         self.i += 4;
         u32::from_str_radix(h, 16).ok()
-    }
-}
-
-/// Writes a line to %TEMP%\rustknob-lyrics.log while a file named rustknob-lyrics.on sits beside it (for tracing the timing).
-pub fn debug(msg: &str) {
-    use std::io::Write;
-    let dir = std::env::temp_dir();
-    if !dir.join("rustknob-lyrics.on").exists() {
-        return;
-    }
-    let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() % 86_400_000);
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(dir.join("rustknob-lyrics.log")) {
-        let _ = writeln!(f, "{:02}:{:02}:{:02}.{:03} {msg}", ms / 3_600_000, ms / 60_000 % 60, ms / 1000 % 60, ms % 1000);
     }
 }

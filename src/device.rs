@@ -1,6 +1,6 @@
 // Default output device: change notifications and the friendly device name.
 
-use std::sync::atomic::{AtomicIsize, Ordering};
+use std::sync::atomic::{AtomicIsize, AtomicU32, Ordering};
 
 use windows::core::{implement, Result, PCWSTR};
 use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
@@ -13,6 +13,8 @@ use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 static TARGET: AtomicIsize = AtomicIsize::new(0);
 static MSG: AtomicIsize = AtomicIsize::new(0);
+/// Bumped whenever a default playback device (any role) changes: the visualizer's capture follows it.
+pub static RENDER_CHANGES: AtomicU32 = AtomicU32::new(0);
 
 #[implement(IMMNotificationClient)]
 struct Watcher;
@@ -28,6 +30,9 @@ impl IMMNotificationClient_Impl for Watcher_Impl {
         Ok(())
     }
     fn OnDefaultDeviceChanged(&self, flow: EDataFlow, role: ERole, _: &PCWSTR) -> Result<()> {
+        if flow == eRender {
+            RENDER_CHANGES.fetch_add(1, Ordering::Relaxed);
+        }
         if flow == eRender && role == eMultimedia {
             unsafe {
                 let _ = PostMessageW(

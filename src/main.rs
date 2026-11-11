@@ -66,8 +66,9 @@ fn main() {
                 // started by the running copy with a downloaded release: install it over the old one, keep the
                 // autostart choice, and start again
                 let t = i18n::strings(i18n::resolve("auto"));
-                if let Ok(exe) = install::install(install::Options { autostart: autostart::is_enabled() }, t) {
-                    install::launch_with(&exe, "--updated");
+                match install::install(install::Options { autostart: autostart::is_enabled() }, t) {
+                    Ok(exe) => install::launch_with(&exe, "--updated"),
+                    Err(_) => install::launch_installed(), // the old copy is closed by now: never leave the user without one
                 }
                 return;
             }

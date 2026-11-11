@@ -4,7 +4,7 @@
 
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicIsize, AtomicU32, Ordering};
-use std::sync::Mutex;
+use std::sync::{Condvar, Mutex};
 use std::time::Duration;
 
 use windows::core::{w, HSTRING, PCWSTR};
@@ -24,6 +24,8 @@ static LATEST: Mutex<Option<Notice>> = Mutex::new(None);
 // closed by a restart so the old listener's blocked read ends right away.
 static GEN: AtomicU32 = AtomicU32::new(0);
 static ACTIVE: AtomicIsize = AtomicIsize::new(0);
+/// Wakes a listener waiting out its retry delay when a restart happens.
+static RESTART: (Mutex<()>, Condvar) = (Mutex::new(()), Condvar::new());
 
 /// The most recent notification, taken once.
 pub fn take() -> Option<Notice> {
@@ -34,6 +36,7 @@ pub fn take() -> Option<Notice> {
 /// Any earlier listener stops. Does nothing more when the topic is empty.
 pub fn start(cfg: &Config, hwnd: isize, msg: u32) {
     let gen = GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    RESTART.1.notify_all();
     let active = ACTIVE.swap(0, Ordering::SeqCst);
     if active != 0 {
         unsafe {
@@ -49,12 +52,9 @@ pub fn start(cfg: &Config, hwnd: isize, msg: u32) {
         while GEN.load(Ordering::SeqCst) == gen {
             let got_data = unsafe { stream(&server, &topic, &token, hwnd, msg, gen) };
             backoff = if got_data { 3 } else { (backoff * 2).min(60) };
-            // sleep in short steps so a restart is noticed quickly
-            for _ in 0..backoff * 4 {
-                if GEN.load(Ordering::SeqCst) != gen {
-                    return;
-                }
-                std::thread::sleep(Duration::from_millis(250));
+            // wait out the delay, or until a restart says to stop
+            if let Ok(g) = RESTART.0.lock() {
+                let _ = RESTART.1.wait_timeout_while(g, Duration::from_secs(backoff), |_| GEN.load(Ordering::SeqCst) == gen);
             }
         }
     });
@@ -94,15 +94,18 @@ unsafe fn stream(server: &str, topic: &str, token: &str, hwnd: isize, msg: u32, 
             }
             // keepalives arrive about every 45 s: two minutes of silence means the link is dead
             let _ = WinHttpSetTimeouts(request, 0, 30_000, 30_000, 120_000);
-            ACTIVE.store(request as isize, Ordering::SeqCst);
-            if GEN.load(Ordering::SeqCst) == gen
+            // an older listener must not take the slot of a newer one (a restart could not close the newer one then)
+            let mine = GEN.load(Ordering::SeqCst) == gen && ACTIVE.compare_exchange(0, request as isize, Ordering::SeqCst, Ordering::SeqCst).is_ok();
+            if mine
+                && GEN.load(Ordering::SeqCst) == gen
                 && WinHttpSendRequest(request, None, None, 0, 0, 0).is_ok()
                 && WinHttpReceiveResponse(request, std::ptr::null_mut()).is_ok()
+                && status_code(request) == 200 // an error page (wrong token, no such topic) is not a stream: back off
             {
                 got_data = read_lines(request, hwnd, msg, gen);
             }
             // a restart may already have closed it
-            if ACTIVE.compare_exchange(request as isize, 0, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+            if !mine || ACTIVE.compare_exchange(request as isize, 0, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
                 let _ = WinHttpCloseHandle(request);
             }
         }
@@ -110,6 +113,12 @@ unsafe fn stream(server: &str, topic: &str, token: &str, hwnd: isize, msg: u32, 
     }
     let _ = WinHttpCloseHandle(session);
     got_data
+}
+
+unsafe fn status_code(request: *mut c_void) -> u32 {
+    let (mut code, mut size) = (0u32, 4u32);
+    let _ = WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, PCWSTR::null(), Some(&mut code as *mut u32 as *mut c_void), &mut size, std::ptr::null_mut());
+    code
 }
 
 unsafe fn read_lines(request: *mut c_void, hwnd: isize, msg: u32, gen: u32) -> bool {

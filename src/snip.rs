@@ -63,8 +63,14 @@ impl Surface {
             ..Default::default()
         };
         let dc = CreateCompatibleDC(None);
+        if dc.is_invalid() {
+            return None;
+        }
         let mut bits = std::ptr::null_mut();
-        let bmp = CreateDIBSection(dc, &info, DIB_RGB_COLORS, &mut bits, None, 0).ok()?;
+        let Ok(bmp) = CreateDIBSection(dc, &info, DIB_RGB_COLORS, &mut bits, None, 0) else {
+            let _ = DeleteDC(dc); // a big virtual screen can run out of memory here
+            return None;
+        };
         if bits.is_null() {
             let _ = DeleteObject(bmp);
             let _ = DeleteDC(dc);

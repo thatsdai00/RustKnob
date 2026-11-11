@@ -80,7 +80,10 @@ fn notify_shell() {
 /// Removes the old FFUploader completely: its Windows 11 menu package, registry entries and
 /// install folder. Its link list is copied into ours first.
 pub fn remove_ffuploader() {
-    let dir = ffuploader_dir().unwrap_or_else(|| PathBuf::from(r"C:\ffinstaller"));
+    // the folder comes from the registry: delete it only when it looks like FFUploader's own
+    let dir = ffuploader_dir()
+        .filter(|d| d.join("linkler.txt").exists() || d.file_name().is_some_and(|n| n.eq_ignore_ascii_case("ffinstaller") || n.eq_ignore_ascii_case("FFUploader")))
+        .unwrap_or_else(|| PathBuf::from(r"C:\ffinstaller"));
     history::import_from(&dir.join("linkler.txt"));
     history::import_from(&PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_default()).join("FFUploader").join("linkler.txt"));
 
@@ -104,10 +107,9 @@ pub fn remove_ffuploader() {
     notify_shell();
 
     if dir.exists() && std::fs::remove_dir_all(&dir).is_err() {
-        let _ = std::process::Command::new("cmd")
-            .raw_arg(format!("/C ping 127.0.0.1 -n 4 >nul & rmdir /S /Q \"{}\"", dir.display()))
-            .creation_flags(NO_WINDOW)
-            .spawn();
+        crate::install::delete_later(&dir);
     }
-    let _ = std::fs::remove_dir_all(PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_default()).join("FFUploader"));
+    if let Some(local) = std::env::var_os("LOCALAPPDATA").filter(|v| !v.is_empty()) {
+        let _ = std::fs::remove_dir_all(PathBuf::from(local).join("FFUploader")); // never a relative path
+    }
 }

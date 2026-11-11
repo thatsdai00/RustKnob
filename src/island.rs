@@ -214,6 +214,7 @@ struct State {
     lyric_idx: Option<usize>,        // index of the current line in the song's lyrics
     lyric_pts: Vec<(f32, f32)>,      // its words as (time, x) pairs: how far it has been sung at any moment (empty: line-timed)
     lyric_fill: Option<f32>,         // ... and the x it is at now
+    lyric_drawn: Option<f32>,        // the x that is on screen (only the stretch between the two needs drawing)
     lyric_key: String,               // the song those belong to
     pin_tall: bool,                  // the pinned capsule is the tall one (this song has lyrics)
     pin_suspended: bool,                 // a full-screen app is in front: the pinned capsule steps aside
@@ -318,6 +319,7 @@ pub unsafe fn init(cfg: Config, hwnd: HWND) {
         lyric_idx: None,
         lyric_pts: Vec::new(),
         lyric_fill: None,
+        lyric_drawn: None,
         lyric_key: String::new(),
         pin_tall: false,
         pin_suspended: false,
@@ -412,12 +414,12 @@ impl State {
         self.live() && self.kind == Kind::Upload
     }
 
-    /// Opened by the user and showing a volume UI (bar or knob).
     /// Is the media pinned right now: the setting is on, something plays, and nothing in front asks us to stay out.
     fn pin_wanted(&self) -> bool {
         self.cfg.pin_media && !self.pin_suspended && media::playing() && media::song().is_some()
     }
 
+    /// Opened by the user and showing a volume UI (bar or knob).
     fn volume_ui(&self) -> bool {
         self.live() && self.manual && matches!(self.kind, Kind::Volume | Kind::Knob)
     }
@@ -882,7 +884,6 @@ unsafe fn play_state(hwnd: HWND) {
 
 // ---- notifications ---------------------------------------------------------
 
-/// A different song started playing.
 // ---- updates ----------------------------------------------------------------
 
 /// Now and then (and shortly after start): look on GitHub for a newer release.
@@ -964,7 +965,7 @@ unsafe fn pin_refresh(hwnd: HWND) {
     if old.as_ref().map(|o| &o.key) != s.song.as_ref().map(|n| &n.key) {
         lyric_reset(s); // the lines belong to the song that was playing
     }
-    if s.cfg.pin_lyrics && media::playing() && s.song.is_some() {
+    if s.cfg.pin_lyrics && media::playing() && s.song.is_some() && s.pin_wanted() {
         SetTimer(hwnd, T_LYRIC, LYRIC_MS, None);
     } else {
         let _ = KillTimer(hwnd, T_LYRIC);
@@ -1017,31 +1018,33 @@ unsafe fn lyric_tick(hwnd: HWND) {
     let Some(key) = s.song.as_ref().map(|x| x.key.clone()) else { return };
     let ahead = s.cfg.lyric_ahead_ms as f32 / 1000.0;
     let words_on = s.cfg.lyric_words; // beta: off, the lines are lit whole
-    let line = media::position().zip(crate::lyrics::get(&key)).and_then(|(t, l)| {
-        l.line_shown(t + ahead, LYRIC_LEAD).map(|(i, line)| {
+    let lyrics = media::position().zip(crate::lyrics::get(&key));
+    let shown = lyrics.as_ref().and_then(|(t, l)| l.line_shown(t + ahead, LYRIC_LEAD));
+    let idx = shown.map(|(i, _)| i);
+    if idx == s.lyric_idx && s.lyric_key == key {
+        return; // the same line: nothing to do (this runs ten times a second)
+    }
+    let (text, pts) = match shown {
+        Some((_, line)) => {
             let text = line.text.trim().to_string();
             // where each word starts and ends inside the rasterized line: the sung part grows along it
             let measure = |to: usize| text::measure(&line.text[..to], -56, 700);
-            let mut pts = Vec::new();
+            let mut pts: Vec<(f32, f32)> = Vec::new();
             for w in line.words.iter().filter(|_| words_on) {
                 let (from, to) = (w.from.min(line.text.len()), w.to.min(line.text.len()));
                 if line.text.is_char_boundary(from) && line.text.is_char_boundary(to) && text.len() == line.text.len() {
-                    pts.push((w.start, measure(from).max(pts.last().map_or(0.0, |p: &(f32, f32)| p.1))));
+                    pts.push((w.start, measure(from).max(pts.last().map_or(0.0, |p| p.1))));
                     pts.push((w.end, measure(to)));
                 }
             }
-            (i, text, pts)
-        })
-    });
-    let idx = line.as_ref().map(|(i, _, _)| *i);
-    if idx == s.lyric_idx && s.lyric_key == key {
-        return;
-    }
-    crate::lyrics::debug(&format!("line {idx:?} at pos={:?} ahead={ahead} words={} text={:?}", media::position(), line.as_ref().map_or(0, |l| l.2.len() / 2), line.as_ref().map(|l| l.1.clone())));
+            (text, pts)
+        }
+        None => (String::new(), Vec::new()),
+    };
     s.lyric_key = key;
     s.lyric_idx = idx;
-    s.lyric_pts = line.as_ref().map(|(_, _, p)| p.clone()).unwrap_or_default();
-    let bmp = line.filter(|(_, t, _)| !t.is_empty()).and_then(|(_, t, _)| text::raster(&t, -56, 700)).map(Arc::new);
+    s.lyric_pts = pts;
+    let bmp = Some(text).filter(|t| !t.is_empty()).and_then(|t| text::raster(&t, -56, 700)).map(Arc::new);
     s.lyric_fill = (!s.lyric_pts.is_empty() && bmp.is_some()).then_some(0.0);
     if bmp.is_none() && s.lyric.is_none() {
         return; // still the title: nothing to change
@@ -1052,6 +1055,24 @@ unsafe fn lyric_tick(hwnd: HWND) {
     s.pin_tall = s.lyric.is_some();
     s.apply_targets();
     frames(hwnd);
+}
+
+/// A word-timed lyric line at rest: only the stretch where the sung part moved since the last frame is drawn
+/// again (the soft edge between lit and dim reaches `render::LYRIC_EDGE` raster px on each side).
+unsafe fn lyric_redraw(hwnd: HWND, s: &mut State) {
+    let (Some(fill), Some(line)) = (s.lyric_fill, s.lyric.as_ref()) else { return };
+    let drawn = s.lyric_drawn.unwrap_or(fill);
+    if (fill - drawn).abs() < 0.01 && s.lyric_drawn.is_some() {
+        return;
+    }
+    // the same mapping as render::text_fit: raster px of the line to logical x in the capsule
+    let (left, view) = (s.w * 0.05, s.w * 0.9);
+    let wl = line.size().0;
+    let k = (view / wl).min(1.0);
+    let x = |u: f32| left + (view - wl * k) / 2.0 + u / text::TEXT_R * k;
+    let (from, to) = (fill.min(drawn) - render::LYRIC_EDGE, fill.max(drawn) + render::LYRIC_EDGE);
+    draw_and_present_region(hwnd, (45.0, 77.0), Some((x(from) - 1.0, x(to) + 1.0)));
+    s.lyric_drawn = Some(fill);
 }
 
 /// A full-screen app in front hides the pinned capsule (unless "pin over full-screen apps" is on); it comes
@@ -1085,6 +1106,7 @@ fn viz_step(s: &mut State, dt: f32) {
     }
 }
 
+/// A different song started playing.
 unsafe fn song_changed(hwnd: HWND) {
     let s = st();
     s.song = media::song();
@@ -1477,12 +1499,12 @@ unsafe fn panel_hover(hwnd: HWND) {
         Kind::Settings => {
             let hover = if inside { ui::row_at(ty) } else { None };
             let old = std::mem::replace(&mut s.hover, hover);
-            (old != hover).then(|| (old, hover, (|i| (ui::PAD + i as f32 * ui::ROW_H, ui::ROW_H)) as fn(usize) -> (f32, f32)))
+            (old != hover).then_some((old, hover, (|i| (ui::PAD + i as f32 * ui::ROW_H, ui::ROW_H)) as fn(usize) -> (f32, f32)))
         }
         Kind::History => {
             let hover = if inside { ui::hist_row_at(ty).filter(|&i| i < s.hist_rows.len()) } else { None };
             let old = std::mem::replace(&mut s.hist_hover, hover);
-            (old != hover).then(|| (old, hover, (|i| (ui::PAD + ui::HEAD_H + i as f32 * ui::HIST_ROW_H, ui::HIST_ROW_H)) as fn(usize) -> (f32, f32)))
+            (old != hover).then_some((old, hover, (|i| (ui::PAD + ui::HEAD_H + i as f32 * ui::HIST_ROW_H, ui::HIST_ROW_H)) as fn(usize) -> (f32, f32)))
         }
         Kind::Setup => {
             let hover = if inside { ui::setup_element(tx, ty) } else { None };
@@ -1504,22 +1526,6 @@ unsafe fn panel_hover(hwnd: HWND) {
         draw_and_present(hwnd);
     } else {
         draw_and_present_rows(hwnd, top, bottom);
-    }
-}
-
-#[allow(dead_code)]
-unsafe fn settings_hover(hwnd: HWND) {
-    let s = st();
-    if !settings_open() {
-        return;
-    }
-    let mut cur = POINT::default();
-    let _ = GetCursorPos(&mut cur);
-    let (tx, ty) = pointer_in_shape(s, cur);
-    let hover = if tx >= 0.0 && tx < s.tw { ui::row_at(ty) } else { None };
-    if hover != s.hover {
-        s.hover = hover;
-        draw_and_present(hwnd);
     }
 }
 
@@ -1574,10 +1580,18 @@ unsafe fn upload_event(hwnd: HWND) {
 }
 
 /// Per-frame upload progress and the speed text (refreshed a few times a second).
+/// Eases `x` toward `goal` (`rate` per second, frame-rate independent) and snaps once within `snap` of it.
+fn approach(x: &mut f32, goal: f32, rate: f32, dt: f32, snap: f32) {
+    *x += (goal - *x) * (1.0 - (-dt * rate).exp());
+    if (goal - *x).abs() < snap {
+        *x = goal;
+    }
+}
+
 fn upload_tick(s: &mut State, dt: f32) {
-    let status = upload::status();
+    let (total, index, count) = upload::progress();
     let sent = upload::SENT.load(Relaxed);
-    let target = if status.total > 0 { (sent as f32 / status.total as f32).min(1.0) } else { 0.0 };
+    let target = if total > 0 { (sent as f32 / total as f32).min(1.0) } else { 0.0 };
     s.up.progress += (target - s.up.progress) * (1.0 - (-dt * 10.0).exp());
     s.up.clock += dt;
     if s.up.clock >= 0.3 {
@@ -1585,7 +1599,7 @@ fn upload_tick(s: &mut State, dt: f32) {
         s.up.speed += (rate - s.up.speed) * 0.5;
         s.up.last_sent = sent;
         s.up.clock = 0.0;
-        s.up.info = text::raster(&format!("{} · {}/{}", speed_text(s.up.speed), status.index, status.count), -44, 400);
+        s.up.info = text::raster(&format!("{} · {}/{}", speed_text(s.up.speed), index, count), -44, 400);
     }
 }
 
@@ -1782,10 +1796,7 @@ unsafe fn tick(hwnd: HWND) {
         s.pin_fade_goal = 0.0;
     }
     if s.pin_fade != s.pin_fade_goal {
-        s.pin_fade += (s.pin_fade_goal - s.pin_fade) * (1.0 - (-dt * PIN_FADE_RATE).exp());
-        if (s.pin_fade - s.pin_fade_goal).abs() < 0.004 {
-            s.pin_fade = s.pin_fade_goal;
-        }
+        approach(&mut s.pin_fade, s.pin_fade_goal, PIN_FADE_RATE, dt, 0.004);
     }
     if !s.lyric_pts.is_empty() && s.kind == Kind::Pinned {
         let ahead = s.cfg.lyric_ahead_ms as f32 / 1000.0;
@@ -1873,10 +1884,7 @@ unsafe fn tick(hwnd: HWND) {
     }
 
     let want = s.want();
-    s.disp += (want - s.disp) * (1.0 - (-dt * 14.0).exp());
-    if (want - s.disp).abs() < 0.0005 {
-        s.disp = want;
-    }
+    approach(&mut s.disp, want, 14.0, dt, 0.0005);
     if s.kind == Kind::Upload && s.up.phase == UploadPhase::Uploading {
         upload_tick(s, dt);
     }
@@ -1893,23 +1901,14 @@ unsafe fn tick(hwnd: HWND) {
     if let Some(x) = s.setup.as_mut() {
         let goals = [f32::from(u8::from(x.autostart)), f32::from(u8::from(x.auto_update))];
         for (t, goal) in x.toggles.iter_mut().zip(goals) {
-            *t += (goal - *t) * (1.0 - (-dt * 16.0).exp());
-            if (goal - *t).abs() < 0.003 {
-                *t = goal;
-            }
+            approach(t, goal, 16.0, dt, 0.003);
         }
         setup_idle = x.toggles == goals;
     }
-    s.unit += (s.unit_goal - s.unit) * (1.0 - (-dt * 14.0).exp());
-    if (s.unit_goal - s.unit).abs() < 0.002 {
-        s.unit = s.unit_goal;
-    }
+    approach(&mut s.unit, s.unit_goal, 14.0, dt, 0.002);
     let targets = s.toggle_targets();
     for (t, goal) in s.toggles.iter_mut().zip(targets) {
-        *t += (goal - *t) * (1.0 - (-dt * 16.0).exp());
-        if (goal - *t).abs() < 0.003 {
-            *t = goal;
-        }
+        approach(t, goal, 16.0, dt, 0.003);
     }
 
     if vanish && s.fade_in < HIDDEN_BELOW {
@@ -1949,23 +1948,29 @@ unsafe fn tick(hwnd: HWND) {
     let scrolling = s.scrolls();
     let viz = s.kind == Kind::Pinned && settled && (scrolling || media::playing() || s.viz_moving());
     if viz && s.steady_drawn {
-        if scrolling || s.lyric_fill.is_some() {
+        if s.pin_fade >= 1.0 {
+            // faded out under the pointer: nothing to see, nothing to draw (a full draw follows when it comes back)
+        } else if scrolling {
             draw_and_present_region(hwnd, (0.0, s.h), Some((46.0, s.w))); // the cover stays as it is
+            s.lyric_drawn = s.lyric_fill;
         } else {
             let c = if s.pin_tall { 28.0 } else { ui::PINNED.1 / 2.0 };
             draw_and_present_region(hwnd, (c - 15.0, c + 15.0), Some((s.w - 48.0, s.w - 4.0)));
+            lyric_redraw(hwnd, s);
         }
     } else {
         draw_and_present(hwnd);
         s.steady_drawn = settled;
+        s.lyric_drawn = s.lyric_fill;
     }
 
+    let frame_ms = if s.cfg.low_power { LOW_POWER_FRAME_MS } else { MARQUEE_FRAME_MS }; // "30 FPS" means it
     if viz {
         pace::start(hwnd, VIZ_FRAME_MS);
-    } else if settled && !s.scrolls() {
+    } else if settled && !scrolling {
         pace::stop(); // nothing moves any more
     } else if settled {
-        pace::start(hwnd, MARQUEE_FRAME_MS);
+        pace::start(hwnd, frame_ms);
     }
 }
 
@@ -2044,12 +2049,12 @@ fn draw(rows: Option<(f32, f32)>, cols: Option<(f32, f32)>) {
         frame: s.notice.is_some() && s.notice_icon == 1,
         check: s.notice.is_some() && s.notice_icon == 2,
         drop_hint: s.drop_hint.as_ref(),
-        pin: shows(Kind::Pinned).then(|| {
+        pin: shows(Kind::Pinned).then_some({
             render::PinView { song: s.song.as_deref(), prev: s.song_prev.as_deref(), swap: s.song_swap, bars: s.viz, lyric: s.lyric.as_deref(), lyric_old: s.lyric_old.as_deref(), lyric_swap: s.lyric_swap, lyric_fill: s.lyric_fill, tall: s.pin_tall || s.h > 50.0 }
         }),
         sub: s.sub(),
         song: if s.kind == Kind::Knob { s.song.as_deref() } else { s.shown_song() },
-        upload: shows(Kind::Upload).then(|| UploadView {
+        upload: shows(Kind::Upload).then_some(UploadView {
             phase: s.up.phase,
             progress: s.up.progress,
             name: s.up.name.as_ref(),

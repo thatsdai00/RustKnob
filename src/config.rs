@@ -163,7 +163,12 @@ lyric_words={}\nauto_update={}\n\
             let _ = std::fs::create_dir_all(&dir);
             dir.join("rustknob.ini")
         });
-        let _ = std::fs::write(path, text);
+        // written beside it, then swapped in: a crash halfway cannot leave an empty settings file
+        let tmp = path.with_extension("ini.tmp");
+        if std::fs::write(&tmp, &text).is_err() || std::fs::rename(&tmp, &path).is_err() {
+            let _ = std::fs::remove_file(&tmp);
+            let _ = std::fs::write(&path, text);
+        }
     }
 
     /// Wheel / key volume step as a 0..1 fraction.

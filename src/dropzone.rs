@@ -64,15 +64,24 @@ impl IDropTarget_Impl for DropZone_Impl {
     fn Drop(&self, data: Option<&IDataObject>, _: MODIFIERKEYS_FLAGS, _: &POINTL, effect: *mut DROPEFFECT) -> Result<()> {
         unsafe {
             if !accept(data, effect) {
+                self.tell(0); // no DragLeave follows a drop
                 return Ok(());
             }
-            let mut medium = data.unwrap().GetData(&file_format())?;
+            let Some(data) = data else { return Ok(()) };
+            let mut medium = match data.GetData(&file_format()) {
+                Ok(m) => m,
+                Err(e) => {
+                    self.tell(0); // the capsule leaves its drop state
+                    return Err(e);
+                }
+            };
             let drop = HDROP(medium.u.hGlobal.0);
             let mut files: Vec<PathBuf> = Vec::new();
             for i in 0..DragQueryFileW(drop, u32::MAX, None) {
-                let mut buf = [0u16; 520];
+                // sized for this path: long paths (\\?\...) are longer than MAX_PATH
+                let mut buf = vec![0u16; DragQueryFileW(drop, i, None) as usize + 1];
                 let len = DragQueryFileW(drop, i, Some(&mut buf)) as usize;
-                files.push(PathBuf::from(String::from_utf16_lossy(&buf[..len])));
+                files.push(PathBuf::from(String::from_utf16_lossy(&buf[..len.min(buf.len())])));
             }
             ReleaseStgMedium(&mut medium);
             files.retain(|p| p.is_file());

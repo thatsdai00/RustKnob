@@ -70,7 +70,11 @@ pub unsafe fn add(hwnd: HWND) -> bool {
     for (i, c) in "RustKnob".encode_utf16().enumerate() {
         nid.szTip[i] = c;
     }
-    Shell_NotifyIconW(NIM_ADD, &nid).as_bool()
+    let added = Shell_NotifyIconW(NIM_ADD, &nid).as_bool();
+    if !nid.hIcon.is_invalid() {
+        let _ = DestroyIcon(nid.hIcon); // the shell keeps its own copy (and this runs again on every retry)
+    }
+    added
 }
 
 pub unsafe fn remove(hwnd: HWND) {

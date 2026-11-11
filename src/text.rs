@@ -135,7 +135,7 @@ pub fn raster_face(s: &str, height: i32, weight: i32, face: &'static str) -> Opt
                 let _ = GdiFlush();
                 // white on black: the green channel is the coverage
                 let px = std::slice::from_raw_parts(bits as *const u8, (bw * bh * 4) as usize);
-                let a: Vec<u8> = px.chunks_exact(4).map(|c| c[1]).collect();
+                let a: Vec<u8> = px.as_chunks::<4>().0.iter().map(|c| c[1]).collect();
                 out = Some(TextBmp { w: bw as usize, h: bh as usize, a });
                 SelectObject(dc, old_bmp);
             }
