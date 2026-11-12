@@ -1445,7 +1445,13 @@ unsafe fn other_event(hwnd: HWND, model: usize, why: isize) {
     let rows = followed.into_iter().chain(all.into_iter().filter(|x| x.model != o.model)).collect();
     s.mouse.set_others(t, rows);
     if why != mouse::OTHER_LOW {
-        s.mouse.sub = text::raster(if why == mouse::OTHER_CHARGING { t.mouse_charging } else { t.mouse_unplugged }, -48, 400);
+        let sub = match why {
+            mouse::OTHER_CHARGING => t.mouse_charging,
+            mouse::OTHER_UNPLUGGED => t.mouse_unplugged,
+            _ if o.charging => t.mouse_charging,
+            _ => t.mouse_connected,
+        };
+        s.mouse.sub = text::raster(sub, -48, 400);
         s.mouse.fill = 0.0;
         if s.live() && s.kind == Kind::MouseLink {
             s.mouse.intro = 0.0;

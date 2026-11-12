@@ -25,7 +25,7 @@ use crate::mouse::{Error, HidIo, HidInfo};
 const VID: u16 = 0x046d;
 const PID: u16 = 0x0adf;
 const ANSWER_WITHIN: Duration = Duration::from_millis(1500);
-const LINK_EVERY: Duration = Duration::from_secs(5); // the mouse thread asks every 400 ms: the dongle less often
+const LINK_EVERY: Duration = Duration::from_secs(2); // the mouse thread asks every 400 ms: the dongle less often
 const CHARGER_EVERY: Duration = Duration::from_secs(10); // the voltage, looked at for a charger jump
 const JUMP_MV: u16 = 100; // a step this big between two looks is the charger, not the cell running down
 

@@ -115,6 +115,7 @@ pub const EV_OTHER: usize = 6; // another plugged-in device: lparam its Model | 
 pub const OTHER_CHARGING: isize = 0;
 pub const OTHER_UNPLUGGED: isize = 1;
 pub const OTHER_LOW: isize = 2;
+pub const OTHER_CONNECTED: isize = 3; // it woke up (was switched on)
 
 static STATUS: Mutex<Option<Status>> = Mutex::new(None);
 static OTHERS: Mutex<Vec<Other>> = Mutex::new(Vec::new());
@@ -410,7 +411,22 @@ fn read_others(devices: &mut Vec<Watched>, full: bool) {
                 Err(Error::Io) => return false,
             }
         } else {
-            let Some(last) = w.last else { return true };
+            let Some(last) = w.last else {
+                // asleep (or switched off) at the last look: awake now? then everything, and a card
+                return match w.device.dpi() {
+                    Ok(_) => {
+                        let (battery, charging) = w.device.battery().unwrap_or((None, false));
+                        let n = Other { model: w.device.model(), battery, charging };
+                        w.last = Some(n);
+                        load_picture(n.model);
+                        let why = if level(&n) > 0 { OTHER_LOW } else { OTHER_CONNECTED };
+                        post_with(EV_OTHER, n.model as isize | why << 8);
+                        true
+                    }
+                    Err(Error::Asleep) => true,
+                    Err(Error::Io) => false,
+                };
+            };
             match w.device.charging() {
                 // the charger came or went: the level now too
                 Ok(c) if c != last.charging => Some(Other { charging: c, battery: w.device.battery().ok().and_then(|b| b.0).or(last.battery), ..last }),
