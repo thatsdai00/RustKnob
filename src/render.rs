@@ -323,7 +323,8 @@ fn picture_at(p: &mut Px, pic: &Picture, x: f32, y: f32, h: f32, unit: f32, alph
     let [r, g, b, a] = pic.sample(x / w + 0.5, y / h + 0.5, h * unit);
     if a > 0.002 {
         let k = if light { 0.84 / a } else { 1.0 / a };
-        p.over([r * k, g * k, b * k], alpha * a);
+        let (k, lift) = if !light && pic.dark { (k * 0.8, 0.24) } else { (k, 0.0) }; // dark on dark: a shade lighter
+        p.over([r * k + lift, g * k + lift, b * k + lift], alpha * a);
     }
 }
 

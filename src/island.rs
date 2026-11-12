@@ -1248,7 +1248,14 @@ fn is_mouse(kind: Kind) -> bool {
 /// The battery warning's text: "charge your mouse" (red) or "battery low" (yellow).
 fn mouse_warning(s: &mut State, critical: bool) {
     let t = s.strings();
-    s.mouse.warn = text::raster(if critical { t.battery_critical } else { t.battery_low }, -66, 700);
+    let headset = s.mouse.model.is_some_and(mouse::Model::is_headset);
+    let text = match (critical, headset) {
+        (true, false) => t.battery_critical,
+        (false, false) => t.battery_low,
+        (true, true) => t.headset_battery_critical,
+        (false, true) => t.headset_battery_low,
+    };
+    s.mouse.warn = text::raster(text, -66, 700);
     s.mouse.intro = 0.0;
 }
 

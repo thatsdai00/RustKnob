@@ -5,6 +5,7 @@
 //   Razer Viper V3 Pro           (here)         a 90-byte packet as feature report 0, ported from rustdriver/razer
 //   Logitech PRO X SUPERLIGHT 2  (logitech.rs)  HID++ 2.0 reports on the receiver's vendor collection
 //   ATK A9 Plus                  (atk.rs)       ATK V HUB reports (two families: Compx, BitMouse)
+//   Logitech G435 headset        (g435.rs)      its LIGHTSPEED dongle's own reports (battery only, no DPI)
 //
 // Razer packet (report id first): [1] status 0 new, 1 busy, 2 ok, 3 failed, 4 no answer (asleep / out of
 // range), 5 not supported; [2] transaction id 0x1F; [6] argument size; [7] class; [8] id (bit 7: get);
@@ -31,6 +32,7 @@ use windows::Win32::Storage::FileSystem::*;
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 use crate::atk::Atk;
+use crate::g435::G435;
 use crate::logitech::Logi;
 
 const VID: u16 = 0x1532;
@@ -55,6 +57,7 @@ pub enum Model {
     ViperV3Pro,
     Superlight2,
     AtkA9Plus,
+    G435, // a headset: no DPI, only on/off and its battery
 }
 
 impl Model {
@@ -63,7 +66,12 @@ impl Model {
             Model::ViperV3Pro => "Viper V3 Pro",
             Model::Superlight2 => "Superlight 2",
             Model::AtkA9Plus => "ATK A9 Plus",
+            Model::G435 => "G435",
         }
+    }
+
+    pub fn is_headset(self) -> bool {
+        self == Model::G435
     }
 
     /// Its picture's file name, in the repository's assets folder and in the local copy.
@@ -72,6 +80,7 @@ impl Model {
             Model::ViperV3Pro => "viper-side.png",
             Model::Superlight2 => "superlight2-side.png",
             Model::AtkA9Plus => "atk-a9-side.png",
+            Model::G435 => "g435-side.png",
         }
     }
 }
@@ -328,7 +337,7 @@ fn watch(m: &mut Device) {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Error {
     Io,     // transfer failed: unplugged
     Asleep, // the receiver answers for the mouse: asleep, off or out of range (or it did not answer at all)
@@ -359,6 +368,7 @@ enum Device {
     Razer(Razer),
     Logitech(Logi),
     Atk(Atk),
+    Headset(G435),
 }
 
 impl Device {
@@ -368,6 +378,7 @@ impl Device {
             .map(|p| (Model::ViperV3Pro, p))
             .or_else(|| Logi::preferred().map(|p| (Model::Superlight2, p)))
             .or_else(|| Atk::preferred().map(|p| (Model::AtkA9Plus, p)))
+            .or_else(|| G435::preferred().map(|p| (Model::G435, p)))
     }
 
     /// Every brand's mouse that is plugged in, in the same order.
@@ -376,6 +387,7 @@ impl Device {
             Razer::preferred().map(|p| (Model::ViperV3Pro, p)),
             Logi::preferred().map(|p| (Model::Superlight2, p)),
             Atk::preferred().map(|p| (Model::AtkA9Plus, p)),
+            G435::preferred().map(|p| (Model::G435, p)),
         ]
         .into_iter()
         .flatten()
@@ -387,6 +399,7 @@ impl Device {
             Model::ViperV3Pro => Razer::open(path).map(Device::Razer),
             Model::Superlight2 => Logi::open(path).map(Device::Logitech),
             Model::AtkA9Plus => Atk::open(path).map(Device::Atk),
+            Model::G435 => G435::open(path).map(Device::Headset),
         }
     }
 
@@ -395,6 +408,7 @@ impl Device {
             Device::Razer(_) => Model::ViperV3Pro,
             Device::Logitech(_) => Model::Superlight2,
             Device::Atk(_) => Model::AtkA9Plus,
+            Device::Headset(_) => Model::G435,
         }
     }
 
@@ -403,6 +417,7 @@ impl Device {
             Device::Razer(m) => &m.path,
             Device::Logitech(m) => &m.path,
             Device::Atk(m) => &m.path,
+            Device::Headset(m) => &m.path,
         }
     }
 
@@ -411,6 +426,7 @@ impl Device {
             Device::Razer(m) => m.dpi(),
             Device::Logitech(m) => m.dpi(),
             Device::Atk(m) => m.dpi(),
+            Device::Headset(m) => m.awake(),
         }
     }
 
@@ -420,6 +436,7 @@ impl Device {
             Device::Razer(m) => m.stages(),
             Device::Logitech(_) => Ok((0, 0)),
             Device::Atk(m) => m.stages(),
+            Device::Headset(_) => Ok((0, 0)),
         }
     }
 
@@ -429,6 +446,7 @@ impl Device {
             Device::Razer(m) => Ok((Some(m.battery()?), m.charging().unwrap_or(false))),
             Device::Logitech(m) => m.battery(),
             Device::Atk(m) => m.battery(),
+            Device::Headset(m) => m.battery(),
         }
     }
 
@@ -437,6 +455,7 @@ impl Device {
             Device::Razer(m) => m.charging(),
             Device::Logitech(m) => m.battery().map(|b| b.1),
             Device::Atk(m) => m.battery().map(|b| b.1),
+            Device::Headset(_) => Ok(false), // not told
         }
     }
 }
@@ -681,6 +700,32 @@ impl HidIo {
         }
     }
 
+    /// Sends `report` (its id first) as a plain write.
+    pub fn write(&mut self, report: &[u8]) -> Result<(), Error> {
+        let mut out = report.to_vec();
+        out.resize(self.out_len.max(report.len()), 0);
+        let mut n = 0u32;
+        match unsafe { self.overlapped(500, |h, ov| WriteFile(h, Some(&out), None, Some(ov)), &mut n)? } {
+            true => Ok(()),
+            false => Err(Error::Asleep),
+        }
+    }
+
+    /// The next input report within `within` (None: none came).
+    pub fn read(&mut self, within: Duration) -> Result<Option<Vec<u8>>, Error> {
+        let mut buf = vec![0u8; self.in_len.max(2)];
+        let mut n = 0u32;
+        let got = unsafe { self.overlapped(within.as_millis().max(1) as u32, |h, ov| ReadFile(h, Some(&mut buf), None, Some(ov)), &mut n)? };
+        buf.truncate(n as usize);
+        Ok(got.then_some(buf))
+    }
+
+    /// Input report 0, asked for over the control pipe.
+    pub fn input_report(&mut self) -> Option<Vec<u8>> {
+        let mut buf = vec![0u8; self.in_len.max(2)];
+        unsafe { HidD_GetInputReport(self.handle, buf.as_mut_ptr() as *mut _, buf.len() as u32) }.as_bool().then_some(buf)
+    }
+
     /// One overlapped transfer, waited for at most `ms`; false when it did not finish in time.
     unsafe fn overlapped(&self, ms: u32, start: impl FnOnce(HANDLE, &mut windows::Win32::System::IO::OVERLAPPED) -> windows::core::Result<()>, n: &mut u32) -> Result<bool, Error> {
         use windows::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
@@ -708,6 +753,7 @@ impl HidIo {
 /// A small premultiplied picture (0xAARRGGBB), with halved copies of it for small sizes on screen.
 pub struct Picture {
     levels: Vec<Level>, // full size first
+    pub dark: bool,     // mostly dark (a black headset): lifted a little on the dark theme, or it would vanish
 }
 
 struct Level {
@@ -732,7 +778,14 @@ impl Picture {
                 .collect();
             levels.push(Level { w, h, px });
         }
-        Picture { levels }
+        // average lightness of the covered pixels
+        let (mut sum, mut cover) = (0f32, 0f32);
+        for p in &levels[0].px {
+            sum += (p[0] as f32 + p[1] as f32 + p[2] as f32) / 3.0;
+            cover += p[3] as f32;
+        }
+        let dark = cover > 0.0 && sum / cover < 0.3;
+        Picture { levels, dark }
     }
 
     /// Width / height.
@@ -756,7 +809,7 @@ impl Picture {
     }
 }
 
-static PICTURES: [OnceLock<Picture>; 3] = [OnceLock::new(), OnceLock::new(), OnceLock::new()];
+static PICTURES: [OnceLock<Picture>; 4] = [OnceLock::new(), OnceLock::new(), OnceLock::new(), OnceLock::new()];
 
 /// The mouse from the side, once `load_picture` has it (no file or network work here: the UI asks each frame).
 pub fn picture(model: Model) -> Option<&'static Picture> {

@@ -16,6 +16,7 @@ mod install;
 mod json;
 mod lyrics;
 mod atk;
+mod g435;
 mod logitech;
 mod mouse;
 mod menu;
