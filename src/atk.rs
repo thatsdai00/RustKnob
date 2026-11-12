@@ -21,7 +21,7 @@
 // is checked before it is shown (a percent over 100, a DPI out of the sensor's range): a wrong reading shows
 // nothing rather than nonsense.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::mouse::{Error, HidIo, HidInfo};
 
@@ -34,6 +34,9 @@ const BITMOUSE: [u16; 32] = [
 ];
 const MICE: [u16; 6] = [0x1115, 0x1224, 0x1263, 0x1300, 0x1337, 0x134f]; // the rest are receivers
 const ANSWER_WITHIN: Duration = Duration::from_millis(250);
+// On the charger the mouse tells a percent lifted by the charger's voltage: it starts from the one before and
+// climbs no faster than this (the A9 Plus fills in about an hour and a half).
+const PERCENT_PER_MINUTE: f32 = 1.1;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Family {
@@ -46,6 +49,10 @@ pub struct Atk {
     pub path: Vec<u16>,
     family: Family,
     receiver: bool,
+    last_dpi: u16,                  // the last believable reading: a garbled one shows this instead
+    last_stages: (usize, usize),
+    last_percent: Option<u8>,       // off the charger
+    plugged: Option<(Instant, u8)>, // on the charger: since when, and the percent then
 }
 
 impl Atk {
@@ -60,7 +67,7 @@ impl Atk {
         let io = HidIo::open(&path)?;
         let family = if COMPX.contains(&io.pid) { Family::Compx } else { Family::BitMouse };
         let receiver = !MICE.contains(&io.pid);
-        Some(Atk { io, path, family, receiver })
+        Some(Atk { io, path, family, receiver, last_dpi: 0, last_stages: (0, 0), last_percent: None, plugged: None })
     }
 
     // ---- Compx -----------------------------------------------------------------
@@ -73,8 +80,9 @@ impl Atk {
         r[5] = length;
         r[16] = 0x55u8.wrapping_sub(r[..16].iter().fold(0u8, |s, &b| s.wrapping_add(b)));
         self.io.ask(&r, ANSWER_WITHIN, |a| {
-            // any report id: the driver matches on the command only
-            (a.len() >= 17 && a[1] == command).then(|| {
+            // any report id; the answer echoes the command and the address (a late answer to another read of the
+            // EEPROM, left waiting in the queue, is not this one)
+            (a.len() >= 17 && a[1] == command && a[3..5] == r[3..5]).then(|| {
                 if a[2] != 0 {
                     return Err(Error::Asleep); // failed or not supported
                 }
@@ -134,11 +142,15 @@ impl Atk {
         }
     }
 
-    /// (active stage, how many).
+    /// (active stage, how many); a garbled answer gives the last good one.
     pub fn stages(&mut self) -> Result<(usize, usize), Error> {
         let (active, count) = match self.family {
             Family::Compx => {
+                // each value is followed by 0x55 less it
                 let d = self.compx(0x08, 0x00, 10)?;
+                if d[2].wrapping_add(d[3]) != 0x55 || d[4].wrapping_add(d[5]) != 0x55 {
+                    return Ok(self.last_stages);
+                }
                 (d[4] as usize, d[2] as usize)
             }
             Family::BitMouse => {
@@ -147,14 +159,25 @@ impl Atk {
             }
         };
         if count == 0 || count > 8 {
-            return Ok((0, 0)); // not a believable answer: no markers
+            return Ok(self.last_stages); // not a believable answer
         }
-        Ok((if active >= count { active.saturating_sub(1).min(count - 1) } else { active }, count))
+        self.last_stages = (if active >= count { active.saturating_sub(1).min(count - 1) } else { active }, count);
+        Ok(self.last_stages)
     }
 
-    /// The DPI of the active stage (0 when it cannot be told); answering at all means it is awake.
+    /// The DPI of the active stage (0 when it was never told); answering at all means it is awake. A reading
+    /// that makes no sense gives the last good one: the card shows a change only when there is one.
     pub fn dpi(&mut self) -> Result<u16, Error> {
         self.online()?;
+        match self.read_dpi() {
+            Ok(dpi) if dpi > 0 => self.last_dpi = dpi,
+            Ok(_) | Err(Error::Asleep) => {} // garbled or not answered in time: it did answer online
+            Err(e) => return Err(e),
+        }
+        Ok(self.last_dpi)
+    }
+
+    fn read_dpi(&mut self) -> Result<u16, Error> {
         let (stage, count) = self.stages()?;
         if count == 0 {
             return Ok(0);
@@ -193,7 +216,27 @@ impl Atk {
                 (p, c)
             }
         };
-        Ok(((percent <= 100).then_some(percent), charging))
+        if percent > 100 {
+            return Ok((None, charging));
+        }
+        let shown = match (charging, self.plugged) {
+            (false, _) => {
+                self.plugged = None;
+                self.last_percent = Some(percent);
+                percent
+            }
+            (true, None) => {
+                // just plugged in: from the percent before (found charging: what it tells, nothing better)
+                let from = self.last_percent.unwrap_or(percent);
+                self.plugged = Some((Instant::now(), from));
+                from
+            }
+            (true, Some((at, from))) => {
+                let most = from as f32 + at.elapsed().as_secs_f32() / 60.0 * PERCENT_PER_MINUTE;
+                (percent as f32).min(most).max(from as f32).min(100.0) as u8
+            }
+        };
+        Ok((Some(shown), charging))
     }
 }
 
