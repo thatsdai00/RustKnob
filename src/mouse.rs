@@ -611,8 +611,11 @@ impl HidIo {
         use windows::Win32::System::Threading::{ResetEvent, WaitForSingleObject};
         let mut ov = OVERLAPPED { hEvent: self.event, ..Default::default() };
         let _ = ResetEvent(self.event);
-        if start(self.handle, &mut ov).is_err() && GetLastError() != ERROR_IO_PENDING {
-            return Err(Error::Io);
+        if let Err(e) = start(self.handle, &mut ov) {
+            // the error carries the code: GetLastError afterwards may already say something else
+            if e.code() != ERROR_IO_PENDING.to_hresult() {
+                return Err(Error::Io);
+            }
         }
         if WaitForSingleObject(self.event, ms) != WAIT_OBJECT_0 {
             let _ = CancelIoEx(self.handle, Some(&ov));
