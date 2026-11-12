@@ -37,6 +37,7 @@ const ANSWER_WITHIN: Duration = Duration::from_millis(250);
 // On the charger the mouse tells a percent lifted by the charger's voltage: it starts from the one before and
 // climbs no faster than this (the A9 Plus fills in about an hour and a half).
 const PERCENT_PER_MINUTE: f32 = 1.1;
+const AWAY: Duration = Duration::from_secs(600); // the level is read every minute: a gap this long, it was away (maybe charged)
 
 #[derive(Clone, Copy, PartialEq)]
 enum Family {
@@ -51,9 +52,15 @@ pub struct Atk {
     receiver: bool,
     last_dpi: u16,                  // the last believable reading: a garbled one shows this instead
     last_stages: (usize, usize),
-    last_percent: Option<u8>,       // off the charger
+}
+
+/// What the battery showed: kept apart from the open device, so a mouse that comes back on its cable (a device
+/// opened anew) carries on from it.
+struct Shown {
+    off: Option<(Instant, u8)>,     // off the charger, and when
     plugged: Option<(Instant, u8)>, // on the charger: since when, and the percent then
 }
+static SHOWN: std::sync::Mutex<Shown> = std::sync::Mutex::new(Shown { off: None, plugged: None });
 
 impl Atk {
     /// The collection to talk to: a mouse on its cable before a receiver.
@@ -67,7 +74,7 @@ impl Atk {
         let io = HidIo::open(&path)?;
         let family = if COMPX.contains(&io.pid) { Family::Compx } else { Family::BitMouse };
         let receiver = !MICE.contains(&io.pid);
-        Some(Atk { io, path, family, receiver, last_dpi: 0, last_stages: (0, 0), last_percent: None, plugged: None })
+        Some(Atk { io, path, family, receiver, last_dpi: 0, last_stages: (0, 0) })
     }
 
     // ---- Compx -----------------------------------------------------------------
@@ -219,22 +226,23 @@ impl Atk {
         if percent > 100 {
             return Ok((None, charging));
         }
-        let shown = match (charging, self.plugged) {
-            (false, _) => {
-                self.plugged = None;
-                self.last_percent = Some(percent);
-                percent
+        let mut s = SHOWN.lock().unwrap_or_else(|e| e.into_inner());
+        let shown = if !charging {
+            if s.plugged.take().is_some() {
+                s.off = None; // the charger just went: what the mouse tells is the charge again
             }
-            (true, None) => {
-                // just plugged in: from the percent before (found charging: what it tells, nothing better)
-                let from = self.last_percent.unwrap_or(percent);
-                self.plugged = Some((Instant::now(), from));
-                from
-            }
-            (true, Some((at, from))) => {
-                let most = from as f32 + at.elapsed().as_secs_f32() / 60.0 * PERCENT_PER_MINUTE;
-                (percent as f32).min(most).max(from as f32).min(100.0) as u8
-            }
+            // off the charger the cell only runs down: a rise is the charger's lift, told a moment before the
+            // charging flag (55 % read as 75 % on plugging in)
+            let p = s.off.filter(|(at, _)| at.elapsed() < AWAY).map_or(percent, |(_, off)| off.min(percent));
+            s.off = Some((Instant::now(), p));
+            p
+        } else {
+            // on the charger: from the percent before (found charging: what it tells, nothing better), climbing
+            // with time, never past what the mouse tells
+            let off = s.off;
+            let (at, from) = *s.plugged.get_or_insert_with(|| (Instant::now(), off.filter(|(at, _)| at.elapsed() < AWAY).map_or(percent, |(_, p)| p)));
+            let most = from as f32 + at.elapsed().as_secs_f32() / 60.0 * PERCENT_PER_MINUTE;
+            (percent as f32).min(most).max(from as f32).min(100.0) as u8
         };
         Ok((Some(shown), charging))
     }
