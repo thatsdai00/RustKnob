@@ -3,7 +3,7 @@
 
 pub const TOP: f32 = 12.0; // gap between the screen edge and the capsule
 pub const WIN_W: f32 = 460.0;
-pub const WIN_H: f32 = 640.0;
+pub const WIN_H: f32 = 660.0;
 pub const SHADOW: f32 = 22.0; // how far the shadow reaches around the capsule
 
 // capsule sizes per content: one row is as big as the volume capsule, two rows share one size
@@ -17,6 +17,9 @@ pub const UPLOAD: (f32, f32) = TWO_ROWS;
 pub const PINNED: (f32, f32) = (VOLUME_W, VOLUME_H); // cover | title and artist | visualizer
 pub const PINNED_TALL: (f32, f32) = (340.0, 80.0); // ... with the current lyric line in a row of its own below
 pub const DROP: (f32, f32) = (VOLUME_W, VOLUME_H); // shown while a file is dragged: drop it here
+pub const MOUSE_DPI: (f32, f32) = (250.0, VOLUME_H); // picture | the DPI | stage markers
+pub const MOUSE_BATTERY: (f32, f32) = (VOLUME_W, VOLUME_H); // battery | "battery low" | percent
+pub const MOUSE_LINK: (f32, f32) = TWO_ROWS; // picture | name and "connected" | battery
 
 pub const KNOB: (f32, f32) = (252.0, 252.0); // the capsule morphs into this disc
 pub const KNOB_RADIUS: f32 = 126.0;
@@ -24,21 +27,21 @@ pub const CAPSULE_RADIUS: f32 = 34.0;
 
 // ---- settings panel --------------------------------------------------------
 
-pub const ROWS: usize = 22;
+pub const ROWS: usize = 23;
 pub const ROW_H: f32 = 26.0;
 pub const PAD: f32 = 12.0;
 pub const SETTINGS: (f32, f32) = (380.0, PAD * 2.0 + ROWS as f32 * ROW_H);
 
-pub const TOGGLES: usize = 13; // rows 0..12 are on/off switches
-pub const TOGGLE_AUTOSTART: usize = 12;
-pub const ROW_STEP: usize = 13;
-pub const ROW_TOPIC: usize = 14; // ntfy topic, server and token are text fields
-pub const ROW_TOKEN: usize = 16;
-pub const ROW_SOUND: usize = 17; // notification sound file picker
-pub const ROW_VOLUME: usize = 18; // notification sound level
-pub const ROW_LANG: usize = 19; // click cycles auto / English / Türkçe
-pub const ROW_THEME: usize = 20; // click cycles auto / dark / light
-pub const ROW_QUIT: usize = 21;
+pub const TOGGLES: usize = 14; // rows 0..13 are on/off switches
+pub const TOGGLE_AUTOSTART: usize = 13;
+pub const ROW_STEP: usize = 14;
+pub const ROW_TOPIC: usize = 15; // ntfy topic, server and token are text fields
+pub const ROW_TOKEN: usize = 17;
+pub const ROW_SOUND: usize = 18; // notification sound file picker
+pub const ROW_VOLUME: usize = 19; // notification sound level
+pub const ROW_LANG: usize = 20; // click cycles auto / English / Türkçe
+pub const ROW_THEME: usize = 21; // click cycles auto / dark / light
+pub const ROW_QUIT: usize = 22;
 
 // stepper control geometry, measured from the panel's right edge
 pub const STEP_MINUS_X: f32 = 86.0;

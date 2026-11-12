@@ -15,6 +15,7 @@ mod hook;
 mod install;
 mod json;
 mod lyrics;
+mod razer;
 mod menu;
 mod i18n;
 mod island;

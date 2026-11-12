@@ -47,6 +47,10 @@ pub struct Strings {
     pub setup_update_sub: &'static str,
     pub setup_update: &'static str,
     pub setup_portable: &'static str,
+    pub mouse_connected: &'static str,
+    pub battery_low: &'static str,
+    pub battery_critical: &'static str,
+    pub percent_first: bool, // "%31" (Turkish) or "31%"
 }
 
 static EN: Strings = Strings {
@@ -62,6 +66,7 @@ static EN: Strings = Strings {
         "Pin over full-screen apps",
         "Synced lyrics",
         "Word-by-word lyrics (beta)",
+        "Razer mouse (Viper V3 Pro)",
         "Update automatically",
         "Start with Windows",
         "Wheel step (%)",
@@ -109,6 +114,10 @@ static EN: Strings = Strings {
     setup_update_sub: "Update",
     setup_update: "Update",
     setup_portable: "Just run",
+    mouse_connected: "Connected",
+    battery_low: "Mouse battery low",
+    battery_critical: "Charge your mouse",
+    percent_first: false,
 };
 
 static TR: Strings = Strings {
@@ -124,6 +133,7 @@ static TR: Strings = Strings {
         "Tam ekranda da sabitle",
         "Senkron şarkı sözleri",
         "Kelime kelime sözler (beta)",
+        "Razer fare (Viper V3 Pro)",
         "Otomatik güncelle",
         "Windows ile başlat",
         "Tekerlek adımı (%)",
@@ -171,6 +181,10 @@ static TR: Strings = Strings {
     setup_update_sub: "Güncelleme",
     setup_update: "Güncelle",
     setup_portable: "Sadece çalıştır",
+    mouse_connected: "Bağlandı",
+    battery_low: "Fare pili azaldı",
+    battery_critical: "Fareyi şarj et",
+    percent_first: true,
 };
 
 pub fn strings(lang: Lang) -> &'static Strings {

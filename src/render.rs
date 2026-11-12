@@ -5,6 +5,7 @@
 
 use crate::gfx::*;
 use crate::media::{Song, ART_PX};
+use crate::razer::Picture;
 use crate::text::{TextBmp, TEXT_R};
 use crate::theme::Palette;
 use crate::ui::{self, SHADOW, TOP};
@@ -20,6 +21,28 @@ pub enum Kind {
     Setup,
     Drop, // "drop to upload" while a file is dragged
     Pinned, // the media pinned: cover, title and artist, visualizer
+    MouseDpi,     // the Razer mouse's DPI changed: the number rolls, the stage marker slides
+    MouseBattery, // its battery is low (yellow) or nearly empty (red, stays)
+    MouseLink,    // it woke up: its picture, "connected", the battery
+}
+
+/// What the mouse capsules show (see razer.rs).
+pub struct MouseView<'a> {
+    pub picture: Option<&'a Picture>,
+    pub dpi: Option<&'a TextBmp>,     // the DPI now
+    pub dpi_old: Option<&'a TextBmp>, // the one it rolls away from, while `roll` < 1
+    pub roll: f32,
+    pub dpi_label: Option<&'a TextBmp>, // "DPI"
+    pub stage: f32,                      // active stage, animated between whole numbers
+    pub stages: usize,
+    pub title: Option<&'a TextBmp>, // the mouse's name (the "connected" card)
+    pub sub: Option<&'a TextBmp>,   // "Connected"
+    pub warn: Option<&'a TextBmp>,  // "Battery low" / "Charge your mouse"
+    pub percent: Option<&'a TextBmp>,
+    pub fill: f32,     // battery 0..1, animated
+    pub level: u8,     // 0 fine, 1 low (yellow), 2 critical (red)
+    pub charging: bool,
+    pub intro: f32, // 0..1 since the capsule came up
 }
 
 /// What the pinned capsule shows.
@@ -105,6 +128,7 @@ pub struct Scene<'a> {
     pub upload: Option<UploadView<'a>>,
     pub history: Option<HistoryView<'a>>,
     pub setup: Option<SetupView<'a>>,
+    pub mouse: Option<MouseView<'a>>,
 }
 
 /// One piece of content on show with its opacity: old content fades out, new content fades in.
@@ -227,6 +251,169 @@ fn switch(p: &mut Px, lx: f32, ry: f32, t: f32, pal: &Palette, ca: f32, aa: f32)
         let off = pal.mix(0.72);
         let knob: [f32; 3] = std::array::from_fn(|i| lerp(off[i], pal.bg[i], t));
         p.over(knob, ca * cov((lx - lerp(-9.0, 9.0, t)).hypot(ry) - 8.5, aa));
+    }
+}
+
+// ---- the Razer mouse ---------------------------------------------------------
+
+/// Battery colors: low, nearly empty, charging (darker on the light theme, so they read on it).
+fn battery_color(pal: &Palette, level: u8, charging: bool) -> [f32; 3] {
+    match (charging, level, pal.light) {
+        (true, _, false) => [0.32, 0.86, 0.47],
+        (true, _, true) => [0.10, 0.58, 0.26],
+        (_, 2, false) => [1.0, 0.31, 0.27],
+        (_, 2, true) => [0.86, 0.16, 0.13],
+        (_, 1, false) => [1.0, 0.79, 0.20],
+        (_, 1, true) => [0.80, 0.55, 0.0],
+        _ => pal.fg,
+    }
+}
+
+/// A battery: outline, nub, and the charge inside it (`fill` 0..1), with a bolt while it charges.
+/// (x, y) from its center, `k` its size (1 = 22 x 12 units).
+#[allow(clippy::too_many_arguments)]
+fn battery_icon(p: &mut Px, x: f32, y: f32, k: f32, fill: f32, color: [f32; 3], charging: bool, pal: &Palette, ca: f32, aa: f32) {
+    let (x, y, aa) = (x / k, y / k, aa / k);
+    if x.abs() > 15.0 || y.abs() > 8.0 {
+        return;
+    }
+    let outline = if color == pal.fg { pal.mix(0.55) } else { color };
+    p.over(outline, ca * 0.9 * cov(rrect(x, y, 11.0, 6.0, 2.6).abs() - 0.7, aa));
+    p.over(outline, ca * 0.9 * cov(rrect(x - 12.4, y, 1.0, 2.4, 1.0), aa));
+    let half = 8.9 * fill.clamp(0.0, 1.0); // the charge grows from the left end
+    if half > 0.05 {
+        p.over(color, ca * cov(rrect(x + 8.9 - half, y, half, 4.0, half.min(1.6)), aa));
+    }
+    if charging {
+        let bolt = seg(x, y, (1.6, -4.2), (-1.4, 0.4), 0.75).min(seg(x, y, (-1.4, 0.4), (1.4, -0.4), 0.75)).min(seg(x, y, (1.4, -0.4), (-1.6, 4.2), 0.75));
+        p.over(pal.bg, ca * cov(bolt - 0.55, aa)); // a gap around the bolt, then the bolt
+        p.over(pal.fg, ca * cov(bolt, aa));
+    }
+}
+
+/// The mouse's picture, `h` tall, centered on (x, y) = 0. Premultiplied samples, from the level of detail that
+/// suits the size on screen (a sharp downscale would shimmer).
+/// On the light theme the (white) mouse is drawn a shade darker so it stands out from the capsule.
+#[allow(clippy::too_many_arguments)]
+fn picture_at(p: &mut Px, pic: &Picture, x: f32, y: f32, h: f32, unit: f32, alpha: f32, light: bool) {
+    let w = h * pic.aspect();
+    if x.abs() >= w / 2.0 || y.abs() >= h / 2.0 || alpha <= 0.003 {
+        return;
+    }
+    let [r, g, b, a] = pic.sample(x / w + 0.5, y / h + 0.5, h * unit);
+    if a > 0.002 {
+        let k = if light { 0.84 / a } else { 1.0 / a };
+        p.over([r * k, g * k, b * k], alpha * a);
+    }
+}
+
+/// A line of text `view` wide, centered on (x, y) = 0, that rolls: `dy` moves it, `a` fades it, and it is cut
+/// at `clip` above and below.
+fn rolling_text(tb: &TextBmp, x: f32, y: f32, dy: f32, clip: f32, unit: f32) -> f32 {
+    if y.abs() > clip {
+        return 0.0;
+    }
+    let wl = tb.size().0;
+    let edge = sstep(clip, clip - 4.0, y.abs()); // soft at the cut
+    edge * text_left(tb, x + wl / 2.0, y - dy, wl, 0.0, unit)
+}
+
+fn mouse_dpi_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) {
+    let (Some(m), pal) = (&s.mouse, &s.pal) else { return };
+    let unit = 1.0 / aa;
+    let ry = ty - s.h / 2.0;
+    let e = 1.0 - (1.0 - m.intro.clamp(0.0, 1.0)).powi(3);
+
+    if let Some(pic) = m.picture {
+        picture_at(p, pic, tx - 40.0 + (1.0 - e) * 10.0, ry, 25.0, unit, ca * e, pal.light);
+    }
+
+    // the number and "DPI" after it, centered between the picture and the stage markers
+    let right = s.w - 14.0 - 8.0 * m.stages.max(1) as f32;
+    let label_w = m.dpi_label.map_or(0.0, |l| l.size().0 + 5.0);
+    let number_w = m.dpi.map_or(0.0, |d| d.size().0);
+    let cx = (74.0 + right) / 2.0;
+    let left = cx - (number_w + label_w) / 2.0;
+    let rise = 1.0 - (1.0 - m.roll.clamp(0.0, 1.0)).powi(3);
+    let leave = sstep(0.0, 0.7, m.roll);
+    const TRAVEL: f32 = 13.0;
+    if let Some(old) = m.dpi_old.filter(|_| m.roll < 1.0) {
+        let w = old.size().0; // where it sat, by its own width
+        let old_left = cx - (w + label_w) / 2.0;
+        p.over(pal.fg, ca * (1.0 - leave) * rolling_text(old, tx - (old_left + w / 2.0), ry, -leave * TRAVEL, 15.0, unit));
+    }
+    if let Some(now) = m.dpi {
+        p.over(pal.fg, ca * rise * rolling_text(now, tx - (left + number_w / 2.0), ry, (1.0 - rise) * TRAVEL, 15.0, unit));
+    }
+    if let Some(label) = m.dpi_label {
+        let end = |w: f32| cx - (w + label_w) / 2.0 + w + 5.0; // where the label starts after a number this wide
+        let at = match m.dpi_old.filter(|_| m.roll < 1.0) {
+            Some(old) => lerp(end(old.size().0), end(number_w), rise),
+            None => end(number_w),
+        };
+        p.over(pal.dim, ca * text_left(label, tx - at, ry - 2.5, label.size().0, 0.0, unit));
+    }
+
+    // the stages: a dot each, the active one a bar that slides to its place
+    if m.stages > 1 && ry.abs() < 5.0 {
+        let x0 = s.w - 22.0 - 8.0 * (m.stages - 1) as f32;
+        let lx = tx - x0;
+        if lx > -8.0 && lx < 8.0 * m.stages as f32 + 8.0 {
+            for i in 0..m.stages {
+                p.over(pal.mix(0.32), ca * cov((lx - 8.0 * i as f32).hypot(ry) - 2.1, aa));
+            }
+            let at = 8.0 * m.stage;
+            let stretch = 4.6 + 2.5 * (m.stage - m.stage.round()).abs(); // longer while it travels
+            p.over(pal.fg, ca * cov(rrect(lx - at, ry, stretch, 2.3, 2.3), aa));
+        }
+    }
+}
+
+fn mouse_battery_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) {
+    let (Some(m), pal) = (&s.mouse, &s.pal) else { return };
+    let unit = 1.0 / aa;
+    let ry = ty - s.h / 2.0;
+    let color = battery_color(pal, m.level, m.charging);
+    let e = 1.0 - (1.0 - m.intro.clamp(0.0, 1.0)).powi(3);
+    let pop = 0.82 + 0.18 * e + 0.06 * (std::f32::consts::PI * e).sin(); // a little overshoot as it lands
+    battery_icon(p, tx - 34.0, ry, 1.2 * pop, m.fill, color, m.charging, pal, ca, aa);
+    let percent_w = m.percent.map_or(0.0, |t| t.size().0);
+    if let Some(warn) = m.warn {
+        let view = s.w - 62.0 - percent_w - 26.0;
+        p.over(if m.level == 2 { color } else { pal.fg }, ca * text_left(warn, tx - 62.0, ry, view, 0.0, unit));
+    }
+    if let Some(percent) = m.percent {
+        p.over(color, ca * text_left(percent, tx - (s.w - 22.0 - percent_w), ry, percent_w, 0.0, unit));
+    }
+}
+
+fn mouse_link_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) {
+    let (Some(m), pal) = (&s.mouse, &s.pal) else { return };
+    let unit = 1.0 / aa;
+    let ry = ty - s.h / 2.0;
+    let e = 1.0 - (1.0 - m.intro.clamp(0.0, 1.0)).powi(3);
+
+    // the picture glides in from the left
+    if let Some(pic) = m.picture {
+        let h = 40.0;
+        let w = h * pic.aspect();
+        picture_at(p, pic, tx - (16.0 + w / 2.0) + (1.0 - e) * 22.0, ry + 1.0, h, unit, ca * e, pal.light);
+    }
+    let left = 16.0 + 40.0 * m.picture.map_or(0.0, |pic| pic.aspect()) + 12.0;
+    let right = s.w - 92.0;
+    if let Some(title) = m.title {
+        p.over(pal.fg, ca * text_left(title, tx - left, ty - 28.0, right - left, s.marq, unit));
+    }
+    if let Some(sub) = m.sub {
+        p.over(pal.dim, ca * 0.95 * text_left(sub, tx - left, ty - 50.0, right - left, s.marq, unit));
+    }
+
+    // the battery fills up as the card comes in
+    let color = battery_color(pal, m.level, m.charging);
+    battery_icon(p, tx - (s.w - 66.0), ty - 28.0, 1.25, m.fill, color, m.charging, pal, ca, aa);
+    if let Some(percent) = m.percent {
+        let w = percent.size().0;
+        p.over(color, ca * text_left(percent, tx - (s.w - 66.0 - w / 2.0), ty - 50.0, w, 0.0, unit));
     }
 }
 
@@ -362,6 +549,9 @@ pub fn render(buf: &mut [u32], pw: usize, ph: usize, rect: (usize, usize, usize,
                 Kind::History => history_content(p, tx, ty, aa, s, ca),
                 Kind::Setup => setup_content(p, tx, ty, aa, s, ca),
                 Kind::Drop => drop_content(p, tx, ty, aa, s, ca),
+                Kind::MouseDpi => mouse_dpi_content(p, tx, ty, aa, s, ca),
+                Kind::MouseBattery => mouse_battery_content(p, tx, ty, aa, s, ca),
+                Kind::MouseLink => mouse_link_content(p, tx, ty, aa, s, ca),
                 Kind::Pinned => {
                     if let Some(pin) = &pin {
                         pinned_content(p, tx, ty, aa, s, ca, pin)
