@@ -2,7 +2,7 @@
 // mouse.rs like the other brands; only the talking is here. ATK ships the A9 Plus with two different
 // protocols, both read from ATK's own web driver (hub.atk.pro, its JavaScript), vendor id 0x373B:
 //
-// Compx (vendor page 0xFF04, usage 2): output / input report 8, 16 bytes after the id:
+// Compx (vendor page 0xFF04, usage 2): feature report 8 out, input report 8 back, 16 bytes after the id:
 //   [0] command  [1] status (0 ok)  [2..4] EEPROM address (big endian)  [4] length  [5..15] data
 //   [15] 0x55 - (8 + sum of [0..15])
 //   0x04 battery: data [percent, charging]      0x03 online (receiver): data[0] == 1
@@ -70,8 +70,10 @@ impl Atk {
         r[3..5].copy_from_slice(&address.to_be_bytes());
         r[5] = length;
         r[16] = 0x55u8.wrapping_sub(r[..16].iter().fold(0u8, |s, &b| s.wrapping_add(b)));
-        self.io.ask(&r, ANSWER_WITHIN, |a| {
-            (a.len() >= 17 && a[0] == 8 && a[1] == command).then(|| {
+        // the web driver sends these as feature reports; the answer comes as an input report
+        self.io.ask_feature(&r, ANSWER_WITHIN, |a| {
+            // any report id: the driver matches on the command only
+            (a.len() >= 17 && a[1] == command).then(|| {
                 if a[2] != 0 {
                     return Err(Error::Asleep); // failed or not supported
                 }
