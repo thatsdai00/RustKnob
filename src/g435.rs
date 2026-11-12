@@ -14,6 +14,8 @@
 // The percent comes from the cell's voltage. The charger is not told: plugging it in lifts the voltage by a few
 // hundred millivolts at once (48 % read as 91 % here), pulling it drops it as fast, so a jump either way is taken
 // for the charger coming or going (a headset found already charging counts as not charging until it is pulled).
+// While it charges, the jump itself is taken off the voltage before the percent is read from it (and the
+// percent never goes below what it was when the charger came), so 40 % does not show as 92 %.
 // The first G435 receiver (046D:0ACB, Realtek bridge) speaks something else and is not supported.
 
 use std::time::{Duration, Instant};
@@ -34,6 +36,8 @@ pub struct G435 {
     linked: Option<(Instant, Result<(), Error>)>, // the last look at the headset, and when
     millivolts: Option<(Instant, u16)>,           // the last voltage, and when
     charging: bool,
+    charger_lift: u16, // how much the charger lifted the voltage when it came (taken off while it charges)
+    plugged_at: u8,    // the percent just before it came
 }
 
 impl G435 {
@@ -46,7 +50,7 @@ impl G435 {
 
     pub fn open(path: Vec<u16>) -> Option<G435> {
         let io = HidIo::open(&path)?;
-        let mut g = G435 { io, path, transmission: 0, linked: None, millivolts: None, charging: false };
+        let mut g = G435 { io, path, transmission: 0, linked: None, millivolts: None, charging: false, charger_lift: 0, plugged_at: 0 };
         let _ = g.command(0x85, &[1], false);
         Some(g)
     }
@@ -160,14 +164,18 @@ impl G435 {
             return Ok((None, self.charging));
         }
         if let Some((_, before)) = self.millivolts {
-            if mv >= before + JUMP_MV {
-                self.charging = true;
-            } else if mv + JUMP_MV <= before {
-                self.charging = false;
+            if mv >= before + JUMP_MV && !self.charging {
+                (self.charging, self.charger_lift, self.plugged_at) = (true, mv - before, percent(before));
+            } else if mv + JUMP_MV <= before && self.charging {
+                (self.charging, self.charger_lift) = (false, 0);
             }
         }
         self.millivolts = Some((Instant::now(), mv));
-        Ok((Some(percent(mv)), self.charging))
+        let shown = match self.charging {
+            true => percent(mv.saturating_sub(self.charger_lift)).max(self.plugged_at),
+            false => percent(mv),
+        };
+        Ok((Some(shown), self.charging))
     }
 }
 
