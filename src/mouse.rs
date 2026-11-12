@@ -13,6 +13,11 @@
 // A thread of its own owns the handle. With no receiver or cable present it sleeps until Windows reports a
 // device change; while the mouse sleeps it asks once every 1.5 s; while it is awake it reads the DPI every
 // 400 ms (so a press of the DPI button shows quickly), the charger every 3 s and the battery once a minute.
+// The first mouse found is the one followed; any other supported one that is plugged in has its battery read
+// once a minute too, and shows in a row of its own under the card (see `others`).
+//
+// The pictures are not in the exe: the first time a mouse shows up, its picture comes from the repository on
+// GitHub and is kept in %LOCALAPPDATA%\RustKnob\pictures (offline, the card shows without it).
 
 use std::sync::atomic::{AtomicIsize, Ordering};
 use std::sync::{Condvar, Mutex, OnceLock};
@@ -60,6 +65,23 @@ impl Model {
             Model::AtkA9Plus => "ATK A9 Plus",
         }
     }
+
+    /// Its picture's file name, in the repository's assets folder and in the local copy.
+    fn picture_file(self) -> &'static str {
+        match self {
+            Model::ViperV3Pro => "viper-side.png",
+            Model::Superlight2 => "superlight2-side.png",
+            Model::AtkA9Plus => "atk-a9-side.png",
+        }
+    }
+}
+
+/// Another plugged-in mouse: only its battery.
+#[derive(Clone, Copy, PartialEq)]
+pub struct Other {
+    pub model: Model,
+    pub battery: Option<u8>,
+    pub charging: bool,
 }
 
 /// What the mouse said last.
@@ -81,6 +103,7 @@ pub const EV_SLEEP: usize = 4; // it stopped answering: asleep or out of range
 pub const EV_GONE: usize = 5; // receiver / cable unplugged
 
 static STATUS: Mutex<Option<Status>> = Mutex::new(None);
+static OTHERS: Mutex<Vec<Other>> = Mutex::new(Vec::new());
 static TARGET: AtomicIsize = AtomicIsize::new(0);
 static MSG: AtomicIsize = AtomicIsize::new(0);
 
@@ -94,6 +117,17 @@ static CONTROL: (Mutex<Control>, Condvar) = (Mutex::new(Control { on: false, res
 /// The last status, while the mouse is awake.
 pub fn status() -> Option<Status> {
     STATUS.lock().ok().and_then(|s| *s)
+}
+
+/// The other plugged-in mice that answered at their last look (not the one `status` is about).
+pub fn others() -> Vec<Other> {
+    OTHERS.lock().map(|o| o.clone()).unwrap_or_default()
+}
+
+fn set_others(o: Vec<Other>) {
+    if let Ok(mut g) = OTHERS.lock() {
+        *g = o;
+    }
 }
 
 /// Turns the mouse support on or off; `msg` is posted to `hwnd` with an EV_* code.
@@ -184,6 +218,7 @@ fn run() {
         };
         watch(&mut mouse);
         publish(None);
+        set_others(Vec::new());
         // it went away (or stopped answering transfers): give it a moment rather than looking again at once
         wait(Some(Duration::from_secs(2)));
     }
@@ -201,7 +236,13 @@ fn watch(m: &mut Device) {
     let mut now: Option<Status> = None; // None while asleep
     let (mut battery_at, mut charging_at) = (Instant::now(), Instant::now());
     let (mut quiet, mut asleep_since) = (0u32, Instant::now());
+    let mut others = open_others(m.model());
+    let mut others_at: Option<Instant> = None; // when they were last read (None: now)
     loop {
+        if others_at.is_none_or(|at| at.elapsed() >= BATTERY_EVERY) {
+            others_at = Some(Instant::now());
+            read_others(&mut others);
+        }
         match m.dpi() {
             Ok(dpi) => match now.as_mut() {
                 None => {
@@ -211,7 +252,7 @@ fn watch(m: &mut Device) {
                     let (battery, charging) = m.battery().unwrap_or((None, false));
                     let s = Status { model: m.model(), dpi, stage, stages, battery, charging };
                     battery_at = Instant::now();
-                    let _ = picture(s.model); // decoded here, not on the UI thread when the card first draws
+                    load_picture(s.model); // fetched and decoded here, not on the UI thread when the card first draws
                     now = Some(s);
                     publish(now);
                     post(EV_WAKE);
@@ -280,6 +321,9 @@ fn watch(m: &mut Device) {
                 }
                 return;
             }
+            // the same mouse: another one may have come or gone
+            others = open_others(m.model());
+            others_at = None;
         }
     }
 }
@@ -288,6 +332,26 @@ fn watch(m: &mut Device) {
 pub enum Error {
     Io,     // transfer failed: unplugged
     Asleep, // the receiver answers for the mouse: asleep, off or out of range (or it did not answer at all)
+}
+
+/// Every other plugged-in mouse (one per brand: the followed one's brand is left out).
+fn open_others(followed: Model) -> Vec<Device> {
+    Device::present().into_iter().filter(|(model, _)| *model != followed).filter_map(Device::open).collect()
+}
+
+/// Reads the other mice's batteries; one that is gone (unplugged) is dropped.
+fn read_others(devices: &mut Vec<Device>) {
+    let mut seen = Vec::new();
+    devices.retain_mut(|d| match d.dpi() {
+        Ok(_) => {
+            let (battery, charging) = d.battery().unwrap_or((None, false));
+            seen.push(Other { model: d.model(), battery, charging });
+            true
+        }
+        Err(Error::Asleep) => true,
+        Err(Error::Io) => false,
+    });
+    set_others(seen);
 }
 
 /// The mouse, whichever brand: all the thread needs from it.
@@ -304,6 +368,18 @@ impl Device {
             .map(|p| (Model::ViperV3Pro, p))
             .or_else(|| Logi::preferred().map(|p| (Model::Superlight2, p)))
             .or_else(|| Atk::preferred().map(|p| (Model::AtkA9Plus, p)))
+    }
+
+    /// Every brand's mouse that is plugged in, in the same order.
+    fn present() -> Vec<(Model, Vec<u16>)> {
+        [
+            Razer::preferred().map(|p| (Model::ViperV3Pro, p)),
+            Logi::preferred().map(|p| (Model::Superlight2, p)),
+            Atk::preferred().map(|p| (Model::AtkA9Plus, p)),
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
     }
 
     fn open((model, path): (Model, Vec<u16>)) -> Option<Device> {
@@ -680,17 +756,49 @@ impl Picture {
     }
 }
 
-/// The mouse from the side, decoded once per model (on a thread of its own: the decoder is WinRT).
+static PICTURES: [OnceLock<Picture>; 3] = [OnceLock::new(), OnceLock::new(), OnceLock::new()];
+
+/// The mouse from the side, once `load_picture` has it (no file or network work here: the UI asks each frame).
 pub fn picture(model: Model) -> Option<&'static Picture> {
-    static VIPER: OnceLock<Option<Picture>> = OnceLock::new();
-    static SUPERLIGHT: OnceLock<Option<Picture>> = OnceLock::new();
-    static ATK: OnceLock<Option<Picture>> = OnceLock::new();
-    let (cell, png): (&OnceLock<Option<Picture>>, &'static [u8]) = match model {
-        Model::ViperV3Pro => (&VIPER, include_bytes!("../assets/viper-side.png")),
-        Model::Superlight2 => (&SUPERLIGHT, include_bytes!("../assets/superlight2-side.png")),
-        Model::AtkA9Plus => (&ATK, include_bytes!("../assets/atk-a9-side.png")),
-    };
-    cell.get_or_init(|| std::thread::spawn(move || decode(png)).join().ok().flatten()).as_ref()
+    PICTURES[model as usize].get()
+}
+
+/// Gets the picture ready: from the local copy, else from GitHub (kept for next time). Called off the UI
+/// thread; a failed download is tried again the next time the mouse wakes up.
+pub fn load_picture(model: Model) {
+    let cell = &PICTURES[model as usize];
+    if cell.get().is_some() {
+        return;
+    }
+    let Some(png) = picture_bytes(model) else { return };
+    // the decoder is WinRT: a thread of its own, so this thread's COM state does not matter
+    if let Some(p) = std::thread::spawn(move || decode(&png)).join().ok().flatten() {
+        let _ = cell.set(p);
+    }
+}
+
+/// The README pictures are drawn from the project's own assets.
+#[cfg(feature = "demo")]
+fn picture_bytes(model: Model) -> Option<Vec<u8>> {
+    std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join(model.picture_file())).ok()
+}
+
+#[cfg(not(feature = "demo"))]
+fn picture_bytes(model: Model) -> Option<Vec<u8>> {
+    const PNG: &[u8] = b"\x89PNG\r\n\x1a\n";
+    let dir = std::path::PathBuf::from(std::env::var_os("LOCALAPPDATA").filter(|v| !v.is_empty())?).join("RustKnob").join("pictures");
+    let file = dir.join(model.picture_file());
+    if let Some(png) = std::fs::read(&file).ok().filter(|b| b.starts_with(PNG)) {
+        return Some(png);
+    }
+    let url = format!("https://raw.githubusercontent.com/{}/main/assets/{}", crate::update::REPO, model.picture_file());
+    let png = crate::update::get(&url, 1 << 20).filter(|b| b.starts_with(PNG))?;
+    // written whole, then renamed: a half-written file is never taken for the picture
+    let part = file.with_extension("part");
+    if std::fs::create_dir_all(&dir).is_ok() && std::fs::write(&part, &png).is_ok() && std::fs::rename(&part, &file).is_err() {
+        let _ = std::fs::remove_file(&part);
+    }
+    Some(png)
 }
 
 fn decode(png: &[u8]) -> Option<Picture> {
@@ -731,6 +839,8 @@ mod tests {
         println!("stages {:?}", m.stages());
         println!("battery {:?}", m.battery());
         println!("{:?} for 4 reads", t.elapsed());
+        super::load_picture(super::Model::ViperV3Pro);
+        super::load_picture(super::Model::Superlight2);
         let p = super::picture(super::Model::ViperV3Pro).expect("picture");
         let q = super::picture(super::Model::Superlight2).expect("superlight picture");
         println!("superlight aspect {}", q.aspect());

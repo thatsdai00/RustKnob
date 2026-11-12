@@ -21,6 +21,18 @@ pub const DROP: (f32, f32) = (VOLUME_W, VOLUME_H); // shown while a file is drag
 pub const MOUSE_DPI: (f32, f32) = (VOLUME_W, VOLUME_H_SUB); // picture | the DPI | stage markers
 pub const MOUSE_BATTERY: (f32, f32) = (VOLUME_W, VOLUME_H_SUB); // battery | "battery low" | percent
 pub const MOUSE_LINK: (f32, f32) = (VOLUME_W, VOLUME_H_SUB); // picture | name and "connected" | battery
+pub const MOUSE_ROW_H: f32 = VOLUME_H_SUB; // the card's own row; other plugged-in mice get a row each below it
+pub const OTHER_ROW_H: f32 = 24.0;
+pub const OTHERS_GAP: f32 = 6.0; // between the card's row and the others' rows (a hairline sits there)
+
+/// A mouse card with `others` rows for the other plugged-in mice.
+pub fn mouse_size(base: (f32, f32), others: usize) -> (f32, f32) {
+    if others == 0 {
+        base
+    } else {
+        (base.0, MOUSE_ROW_H + OTHERS_GAP + others as f32 * OTHER_ROW_H + 8.0)
+    }
+}
 
 pub const KNOB: (f32, f32) = (252.0, 252.0); // the capsule morphs into this disc
 pub const KNOB_RADIUS: f32 = 126.0;

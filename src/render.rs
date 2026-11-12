@@ -27,8 +27,19 @@ pub enum Kind {
 }
 
 /// What the mouse capsules show (see razer.rs).
+/// Another plugged-in mouse in a mouse card: its name and battery.
+#[derive(Default)]
+pub struct MouseOther {
+    pub name: Option<TextBmp>,
+    pub percent: Option<TextBmp>,
+    pub fill: f32,
+    pub level: u8, // 0 fine, 1 low, 2 critical (as the card's own battery)
+    pub charging: bool,
+}
+
 pub struct MouseView<'a> {
     pub picture: Option<&'a Picture>,
+    pub others: &'a [MouseOther], // the other plugged-in mice, a row each under the card
     pub dpi: Option<&'a TextBmp>,     // the DPI now
     pub dpi_old: Option<&'a TextBmp>, // the one it rolls away from, while `roll` < 1
     pub roll: f32,
@@ -338,10 +349,38 @@ fn rolling_text(tb: &TextBmp, x: f32, y: f32, dy: f32, clip: f32, unit: f32) -> 
     edge * text_left(tb, x + wl / 2.0, y - dy, wl, 0.0, unit)
 }
 
+/// The other plugged-in mice, a row each under the card's own row: battery, name, percent.
+fn mouse_others(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) {
+    let (Some(m), pal) = (&s.mouse, &s.pal) else { return };
+    if m.others.is_empty() || ty < ui::MOUSE_ROW_H {
+        return;
+    }
+    let unit = 1.0 / aa;
+    let line = ty - (ui::MOUSE_ROW_H + ui::OTHERS_GAP / 2.0);
+    if line.abs() < 1.5 && tx > 18.0 && tx < s.w - 18.0 {
+        p.over(pal.mix(0.16), ca * cov(line.abs() - 0.5, aa));
+        return;
+    }
+    let top = ui::MOUSE_ROW_H + ui::OTHERS_GAP;
+    let i = ((ty - top) / ui::OTHER_ROW_H).floor();
+    let Some(o) = (i >= 0.0).then(|| m.others.get(i as usize)).flatten() else { return };
+    let ry = ty - (top + ui::OTHER_ROW_H * (i + 0.5));
+    let color = battery_color(pal, o.level, o.charging);
+    battery_icon(p, tx - 36.0, ry, 0.9, o.fill, color, o.charging.then_some(s.marq), pal, ca, aa);
+    let percent_w = o.percent.as_ref().map_or(0.0, |t| t.size().0);
+    if let Some(name) = &o.name {
+        p.over(pal.dim, ca * text_left(name, tx - 60.0, ry, s.w - 60.0 - percent_w - 34.0, 0.0, unit));
+    }
+    if let Some(percent) = &o.percent {
+        p.over(color, ca * text_left(percent, tx - (s.w - 24.0 - percent_w), ry, percent_w, 0.0, unit));
+    }
+}
+
 fn mouse_dpi_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) {
     let (Some(m), pal) = (&s.mouse, &s.pal) else { return };
+    mouse_others(p, tx, ty, aa, s, ca);
     let unit = 1.0 / aa;
-    let ry = ty - s.h / 2.0;
+    let ry = ty - s.h.min(ui::MOUSE_ROW_H) / 2.0; // the card's own row (others may follow below)
     let e = 1.0 - (1.0 - m.intro.clamp(0.0, 1.0)).powi(3);
 
     mouse_art(p, m, tx - 16.0 + (1.0 - e) * 14.0, ry + 1.0, 38.0, unit, ca * e, pal.light);
@@ -389,8 +428,9 @@ fn mouse_dpi_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) 
 
 fn mouse_battery_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) {
     let (Some(m), pal) = (&s.mouse, &s.pal) else { return };
+    mouse_others(p, tx, ty, aa, s, ca);
     let unit = 1.0 / aa;
-    let ry = ty - s.h / 2.0;
+    let ry = ty - s.h.min(ui::MOUSE_ROW_H) / 2.0;
     let color = battery_color(pal, m.level, m.charging);
     let e = 1.0 - (1.0 - m.intro.clamp(0.0, 1.0)).powi(3);
     let pop = 0.82 + 0.18 * e + 0.06 * (std::f32::consts::PI * e).sin(); // a little overshoot as it lands
@@ -407,8 +447,9 @@ fn mouse_battery_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f
 
 fn mouse_link_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) {
     let (Some(m), pal) = (&s.mouse, &s.pal) else { return };
+    mouse_others(p, tx, ty, aa, s, ca);
     let unit = 1.0 / aa;
-    let ry = ty - s.h / 2.0;
+    let ry = ty - s.h.min(ui::MOUSE_ROW_H) / 2.0;
     let e = 1.0 - (1.0 - m.intro.clamp(0.0, 1.0)).powi(3);
 
     // the picture glides in from the left

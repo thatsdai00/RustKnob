@@ -461,9 +461,9 @@ impl State {
             Kind::Knob => ui::KNOB,
             Kind::Upload => ui::UPLOAD,
             Kind::Drop => ui::DROP,
-            Kind::MouseDpi => ui::MOUSE_DPI,
-            Kind::MouseBattery => ui::MOUSE_BATTERY,
-            Kind::MouseLink => ui::MOUSE_LINK,
+            Kind::MouseDpi => ui::mouse_size(ui::MOUSE_DPI, self.mouse.others.len()),
+            Kind::MouseBattery => ui::mouse_size(ui::MOUSE_BATTERY, self.mouse.others.len()),
+            Kind::MouseLink => ui::mouse_size(ui::MOUSE_LINK, self.mouse.others.len()),
             Kind::Pinned => if self.pin_tall { ui::PINNED_TALL } else { ui::PINNED },
             Kind::History => (ui::HISTORY.0, ui::PAD * 2.0 + ui::HEAD_H + self.hist.len().clamp(2, ui::HIST_ROWS) as f32 * ui::HIST_ROW_H),
             Kind::Setup => ui::SETUP,
@@ -1172,6 +1172,8 @@ struct MouseUi {
     low_pending: bool, // a yellow warning waits for the "connected" card to close
     charging_seen: bool, // on the charger when last looked (the card shows when that turns on)
     battery_text: Option<(u8, bool)>, // what `percent` was made from
+    others: Vec<render::MouseOther>, // the other plugged-in mice, a row each under the card
+    others_from: Vec<mouse::Other>,  // what `others` was made from
 }
 
 impl MouseUi {
@@ -1182,6 +1184,7 @@ impl MouseUi {
     fn view(&self) -> render::MouseView<'_> {
         render::MouseView {
             picture: self.model.and_then(mouse::picture),
+            others: &self.others,
             dpi: self.dpi.as_ref(),
             dpi_old: self.dpi_old.as_ref(),
             roll: self.roll,
@@ -1211,6 +1214,30 @@ impl MouseUi {
             self.battery_text = now.battery.map(|b| (b, t.percent_first));
             self.percent = now.battery.and_then(|b| text::raster(&if t.percent_first { format!("%{b}") } else { format!("{b}%") }, -60, 700));
         }
+    }
+}
+
+impl MouseUi {
+    /// The rows for the other plugged-in mice (made again only when what they say changed).
+    fn set_others(&mut self, t: &i18n::Strings, now: Vec<mouse::Other>) {
+        if now == self.others_from {
+            return;
+        }
+        self.others = now
+            .iter()
+            .map(|o| render::MouseOther {
+                name: text::raster(o.model.name(), -46, 400),
+                percent: o.battery.and_then(|b| text::raster(&if t.percent_first { format!("%{b}") } else { format!("{b}%") }, -46, 700)),
+                fill: o.battery.map_or(0.0, |b| b as f32 / 100.0),
+                level: match o.battery {
+                    Some(p) if !o.charging && p <= 5 => 2,
+                    Some(p) if !o.charging && p < 25 => 1,
+                    _ => 0,
+                },
+                charging: o.charging,
+            })
+            .collect();
+        self.others_from = now;
     }
 }
 
@@ -1283,6 +1310,11 @@ unsafe fn mouse_event(hwnd: HWND, ev: usize) {
     };
     let t = s.strings();
     s.mouse.set_battery(t, &now);
+    let rows = s.mouse.others.len();
+    s.mouse.set_others(t, mouse::others());
+    if rows != s.mouse.others.len() && s.live() && is_mouse(s.kind) {
+        s.apply_targets(); // a row more or less: the card on show grows or shrinks
+    }
     if s.mouse.model != Some(now.model) {
         s.mouse.model = Some(now.model);
         s.mouse.title = text::raster(now.model.name(), -64, 700);
@@ -2255,7 +2287,7 @@ unsafe fn tick(hwnd: HWND) {
         && s.song_prev.is_none()
         && s.lyric_swap >= 1.0
         && s.mouse.settled()
-        && !(s.mouse.charging && is_mouse(s.kind)) // the charging animation runs while its card is up
+        && !((s.mouse.charging || s.mouse.others.iter().any(|o| o.charging)) && is_mouse(s.kind)) // the charging animation runs while its card is up
         && s.pin_fade == s.pin_fade_goal
         && s.toggles == targets;
     if settled {

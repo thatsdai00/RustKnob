@@ -698,6 +698,9 @@ pub fn run(dir: &str) {
     );
 
     // 5b. the Razer mouse
+    for m in [crate::mouse::Model::ViperV3Pro, crate::mouse::Model::Superlight2, crate::mouse::Model::AtkA9Plus] {
+        crate::mouse::load_picture(m);
+    }
     let pic = crate::mouse::picture(crate::mouse::Model::ViperV3Pro);
     let (dpi, dpi_label) = (raster("1600", -100, 700), raster("DPI", -48, 700));
     let (name, linked, pct) = (raster("Viper V3 Pro", -64, 700), raster(en.mouse_connected, -48, 400), raster("82%", -60, 700));
@@ -707,7 +710,7 @@ pub fn run(dir: &str) {
         sc.mouse = Some(view);
         shoot(&sc)
     };
-    let base = |level: u8, fill: f32| MouseView { picture: pic, dpi: None, dpi_old: None, roll: 1.0, dpi_label: None, stage: 1.0, stages: 3, title: None, sub: None, warn: None, percent: None, fill, level, charging: false, intro: 1.0 };
+    let base = |level: u8, fill: f32| MouseView { picture: pic, others: &[], dpi: None, dpi_old: None, roll: 1.0, dpi_label: None, stage: 1.0, stages: 3, title: None, sub: None, warn: None, percent: None, fill, level, charging: false, intro: 1.0 };
     // leak the bitmaps: the pictures live as long as the program anyway
     let keep = |t: Option<TextBmp>| -> Option<&'static TextBmp> { t.map(|t| &*Box::leak(Box::new(t))) };
     let (dpi, dpi_label, name, linked, pct, low, low_pct, crit, crit_pct) = (keep(dpi), keep(dpi_label), keep(name), keep(linked), keep(pct), keep(low), keep(low_pct), keep(crit), keep(crit_pct));
