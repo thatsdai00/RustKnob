@@ -48,6 +48,7 @@ pub struct Strings {
     pub setup_update: &'static str,
     pub setup_portable: &'static str,
     pub mouse_connected: &'static str,
+    pub mouse_charging: &'static str,
     pub battery_low: &'static str,
     pub battery_critical: &'static str,
     pub percent_first: bool, // "%31" (Turkish) or "31%"
@@ -115,6 +116,7 @@ static EN: Strings = Strings {
     setup_update: "Update",
     setup_portable: "Just run",
     mouse_connected: "Connected",
+    mouse_charging: "Charging",
     battery_low: "Mouse battery low",
     battery_critical: "Charge your mouse",
     percent_first: false,
@@ -182,6 +184,7 @@ static TR: Strings = Strings {
     setup_update: "Güncelle",
     setup_portable: "Sadece çalıştır",
     mouse_connected: "Bağlandı",
+    mouse_charging: "Şarj oluyor",
     battery_low: "Fare pili azaldı",
     battery_critical: "Fareyi şarj et",
     percent_first: true,

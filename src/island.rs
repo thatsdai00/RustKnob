@@ -1142,6 +1142,7 @@ struct MouseUi {
     intro: f32,
     crit: bool, // the red warning is on: it stays until the mouse charges, sleeps or is gone
     low_pending: bool, // a yellow warning waits for the "connected" card to close
+    charging_seen: bool, // on the charger when last looked (the card shows when that turns on)
     battery_text: Option<(u8, bool)>, // what `percent` was made from
 }
 
@@ -1264,6 +1265,7 @@ unsafe fn mouse_event(hwnd: HWND, ev: usize) {
         s.mouse.seen = if level > 0 { level.max(was) } else if low_over { 0 } else { was };
     }
     let showing = s.live() && is_mouse(s.kind);
+    let plugged = now.charging && !std::mem::replace(&mut s.mouse.charging_seen, now.charging);
 
     // the DPI and its stage, always up to date (a wake-up brings them too)
     let dpi_changed = now.dpi != s.mouse.dpi_value;
@@ -1290,7 +1292,7 @@ unsafe fn mouse_event(hwnd: HWND, ev: usize) {
             if s.mouse.title.is_none() {
                 s.mouse.title = text::raster(MOUSE_NAME, -64, 700);
             }
-            s.mouse.sub = text::raster(t.mouse_connected, -48, 400);
+            s.mouse.sub = text::raster(if now.charging { t.mouse_charging } else { t.mouse_connected }, -48, 400);
             s.mouse.fill = 0.0; // it fills up as the card comes in
             if s.mouse.crit {
                 mouse_warning(s, true);
@@ -1302,6 +1304,28 @@ unsafe fn mouse_event(hwnd: HWND, ev: usize) {
                 s.mouse.stage = s.mouse.stage_goal;
             }
             mouse_show(hwnd, Kind::MouseDpi, Some(MOUSE_DPI_MS));
+        }
+        razer::EV_BATTERY if plugged => {
+            // on the charger: the card again, saying so, its battery green with a bolt (any warning ends)
+            (s.mouse.crit, s.mouse.low_pending) = (false, false);
+            if s.mouse.title.is_none() {
+                s.mouse.title = text::raster(MOUSE_NAME, -64, 700);
+            }
+            s.mouse.sub = text::raster(t.mouse_charging, -48, 400);
+            s.mouse.fill = 0.0;
+            if s.live() && s.kind == Kind::MouseBattery {
+                s.set_kind(Kind::MouseLink); // the warning turns into the card
+                s.mouse.intro = 0.0;
+                s.apply_targets();
+                s.sync_hooks();
+                hide_after(hwnd, Some(MOUSE_LINK_MS));
+                frames(hwnd);
+            } else {
+                if s.live() && s.kind == Kind::MouseLink {
+                    s.mouse.intro = 0.0; // plays again with the new text
+                }
+                mouse_show(hwnd, Kind::MouseLink, Some(MOUSE_LINK_MS));
+            }
         }
         razer::EV_BATTERY => {
             if level == 2 && !s.mouse.crit {

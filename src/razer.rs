@@ -37,7 +37,7 @@ const ASLEEP_EVERY: Duration = Duration::from_millis(1500);
 const ASLEEP_LONG_EVERY: Duration = Duration::from_secs(4); // after a long sleep (overnight): less often
 const ASLEEP_LONG: Duration = Duration::from_secs(300);
 const BATTERY_EVERY: Duration = Duration::from_secs(60);
-const CHARGING_EVERY: Duration = Duration::from_secs(3); // while the battery is low: is it on the charger yet?
+const CHARGING_EVERY: Duration = Duration::from_secs(3); // is it on the charger (now)? One small read.
 const QUIET_FOR_SLEEP: u32 = 3; // polls in a row without an answer before it counts as asleep (radio hiccups)
 
 /// What the mouse said last.
@@ -176,7 +176,7 @@ fn settle_rescans() {
 /// Follows one plugged-in receiver (or cable) until it goes away or the support is switched off.
 fn watch(m: &mut Mouse) {
     let mut now: Option<Status> = None; // None while asleep
-    let mut battery_at = Instant::now();
+    let (mut battery_at, mut charging_at) = (Instant::now(), Instant::now());
     let (mut quiet, mut asleep_since) = (0u32, Instant::now());
     loop {
         match m.dpi() {
@@ -199,15 +199,27 @@ fn watch(m: &mut Mouse) {
                         publish(Some(*s));
                         post(EV_DPI);
                     }
-                    let low = s.battery.is_some_and(|b| b < 25) && !s.charging;
-                    if battery_at.elapsed() >= if low { CHARGING_EVERY } else { BATTERY_EVERY } {
-                        battery_at = Instant::now();
-                        let (b, c) = (m.battery().ok().or(s.battery), m.charging().unwrap_or(s.charging));
-                        if (b, c) != (s.battery, s.charging) {
-                            (s.battery, s.charging) = (b, c);
-                            publish(Some(*s));
-                            post(EV_BATTERY);
+                    // the charger: looked at every few seconds (plugging it in shows a card); the level once a minute,
+                    // and at once when the charger comes or goes
+                    let mut changed = false;
+                    if charging_at.elapsed() >= CHARGING_EVERY {
+                        charging_at = Instant::now();
+                        let c = m.charging().unwrap_or(s.charging);
+                        if c != s.charging {
+                            s.charging = c;
+                            changed = true;
+                            battery_at = Instant::now().checked_sub(BATTERY_EVERY).unwrap_or(battery_at); // the level now too
                         }
+                    }
+                    if battery_at.elapsed() >= BATTERY_EVERY {
+                        battery_at = Instant::now();
+                        let b = m.battery().ok().or(s.battery);
+                        changed |= b != s.battery;
+                        s.battery = b;
+                    }
+                    if changed {
+                        publish(Some(*s));
+                        post(EV_BATTERY);
                     }
                 }
             },
