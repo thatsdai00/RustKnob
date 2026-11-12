@@ -14,8 +14,9 @@
 // A thread of its own owns the handle. With no receiver or cable present it sleeps until Windows reports a
 // device change; while the mouse sleeps it asks once every 1.5 s; while it is awake it reads the DPI every
 // 400 ms (so a press of the DPI button shows quickly), the charger every 3 s and the battery once a minute.
-// The first mouse found is the one followed; any other supported one that is plugged in has its battery read
-// once a minute too, and shows in a row of its own under the card (see `others`).
+// The first device found is the one followed; any other supported one that is plugged in has its charger looked
+// at every few seconds and its battery once a minute too, shows in a row of its own under the cards (see
+// `others`), and gets a card of its own when it goes on the charger or runs low (EV_OTHER).
 //
 // The pictures are not in the exe: the first time a mouse shows up, its picture comes from the repository on
 // GitHub and is kept in %LOCALAPPDATA%\RustKnob\pictures (offline, the card shows without it).
@@ -110,6 +111,7 @@ pub const EV_BATTERY: usize = 2; // battery level or charging changed
 pub const EV_WAKE: usize = 3; // the mouse woke up (or was found awake)
 pub const EV_SLEEP: usize = 4; // it stopped answering: asleep or out of range
 pub const EV_GONE: usize = 5; // receiver / cable unplugged
+pub const EV_OTHER: usize = 6; // another plugged-in device went on the charger or ran low; lparam: its Model
 
 static STATUS: Mutex<Option<Status>> = Mutex::new(None);
 static OTHERS: Mutex<Vec<Other>> = Mutex::new(Vec::new());
@@ -164,8 +166,12 @@ pub fn rescan() {
 }
 
 fn post(ev: usize) {
+    post_with(ev, 0);
+}
+
+fn post_with(ev: usize, lp: isize) {
     unsafe {
-        let _ = PostMessageW(HWND(TARGET.load(Ordering::Relaxed) as _), MSG.load(Ordering::Relaxed) as u32, WPARAM(ev), LPARAM(0));
+        let _ = PostMessageW(HWND(TARGET.load(Ordering::Relaxed) as _), MSG.load(Ordering::Relaxed) as u32, WPARAM(ev), LPARAM(lp));
     }
 }
 
@@ -246,11 +252,16 @@ fn watch(m: &mut Device) {
     let (mut battery_at, mut charging_at) = (Instant::now(), Instant::now());
     let (mut quiet, mut asleep_since) = (0u32, Instant::now());
     let mut others = open_others(m.model());
-    let mut others_at: Option<Instant> = None; // when they were last read (None: now)
+    let mut others_at: Option<Instant> = None; // when their batteries were last read (None: now)
+    let mut others_charger_at = Instant::now();
     loop {
         if others_at.is_none_or(|at| at.elapsed() >= BATTERY_EVERY) {
             others_at = Some(Instant::now());
-            read_others(&mut others);
+            others_charger_at = Instant::now();
+            read_others(&mut others, true);
+        } else if others_charger_at.elapsed() >= CHARGING_EVERY {
+            others_charger_at = Instant::now();
+            read_others(&mut others, false);
         }
         match m.dpi() {
             Ok(dpi) => match now.as_mut() {
@@ -330,9 +341,9 @@ fn watch(m: &mut Device) {
                 }
                 return;
             }
-            // the same mouse: another one may have come or gone
-            others = open_others(m.model());
-            others_at = None;
+            // the same device: another one may have come or gone (those still there keep what they said:
+            // the G435 tells its charger from a change since the last look)
+            refresh_others(&mut others, m.model());
         }
     }
 }
@@ -343,24 +354,78 @@ pub enum Error {
     Asleep, // the receiver answers for the mouse: asleep, off or out of range (or it did not answer at all)
 }
 
-/// Every other plugged-in mouse (one per brand: the followed one's brand is left out).
-fn open_others(followed: Model) -> Vec<Device> {
-    Device::present().into_iter().filter(|(model, _)| *model != followed).filter_map(Device::open).collect()
+/// Another plugged-in device, and what it said last (None: asleep, or not looked at yet).
+struct Watched {
+    device: Device,
+    last: Option<Other>,
 }
 
-/// Reads the other mice's batteries; one that is gone (unplugged) is dropped.
-fn read_others(devices: &mut Vec<Device>) {
-    let mut seen = Vec::new();
-    devices.retain_mut(|d| match d.dpi() {
-        Ok(_) => {
-            let (battery, charging) = d.battery().unwrap_or((None, false));
-            seen.push(Other { model: d.model(), battery, charging });
-            true
+/// Every other plugged-in device (one per brand: the followed one's brand is left out).
+fn open_others(followed: Model) -> Vec<Watched> {
+    Device::present()
+        .into_iter()
+        .filter(|(model, _)| *model != followed)
+        .filter_map(Device::open)
+        .map(|device| Watched { device, last: None })
+        .collect()
+}
+
+/// After a device change: drops the others that are gone, opens the new ones, keeps the rest as they are.
+fn refresh_others(devices: &mut Vec<Watched>, followed: Model) {
+    let present: Vec<(Model, Vec<u16>)> = Device::present().into_iter().filter(|(model, _)| *model != followed).collect();
+    devices.retain(|w| present.iter().any(|(_, p)| p.as_slice() == w.device.path()));
+    for p in present {
+        if !devices.iter().any(|w| w.device.path() == p.1.as_slice()) {
+            if let Some(device) = Device::open(p) {
+                devices.push(Watched { device, last: None });
+            }
         }
-        Err(Error::Asleep) => true,
-        Err(Error::Io) => false,
+    }
+    set_others(devices.iter().filter_map(|w| w.last).collect());
+}
+
+/// 0 fine, 1 low, 2 nearly empty (as the cards count it).
+fn level(o: &Other) -> u8 {
+    match o.battery {
+        Some(p) if !o.charging && p <= 5 => 2,
+        Some(p) if !o.charging && p < 25 => 1,
+        _ => 0,
+    }
+}
+
+/// Reads the other devices: `full` wakes and batteries, else only the charger of those awake at the last look.
+/// One that went on the charger or got lower gets a card (EV_OTHER); one that is gone (unplugged) is dropped.
+fn read_others(devices: &mut Vec<Watched>, full: bool) {
+    devices.retain_mut(|w| {
+        let now = if full {
+            match w.device.dpi() {
+                Ok(_) => {
+                    let (battery, charging) = w.device.battery().unwrap_or((None, false));
+                    Some(Other { model: w.device.model(), battery, charging })
+                }
+                Err(Error::Asleep) => None,
+                Err(Error::Io) => return false,
+            }
+        } else {
+            let Some(last) = w.last else { return true };
+            match w.device.charging() {
+                // the charger came or went: the level now too
+                Ok(c) if c != last.charging => Some(Other { charging: c, battery: w.device.battery().ok().and_then(|b| b.0).or(last.battery), ..last }),
+                Ok(_) => Some(last),
+                Err(Error::Asleep) => None,
+                Err(Error::Io) => return false,
+            }
+        };
+        if let (Some(n), Some(l)) = (now, w.last) {
+            if (n.charging && !l.charging) || level(&n) > level(&l) {
+                load_picture(n.model);
+                post_with(EV_OTHER, n.model as isize);
+            }
+        }
+        w.last = now;
+        true
     });
-    set_others(seen);
+    set_others(devices.iter().filter_map(|w| w.last).collect());
 }
 
 /// The mouse, whichever brand: all the thread needs from it.

@@ -1414,6 +1414,45 @@ unsafe fn mouse_event(hwnd: HWND, ev: usize) {
     }
 }
 
+/// Another plugged-in device went on the charger or ran low: a card about it, with every other device
+/// (the followed one too) in the rows under it.
+unsafe fn other_event(hwnd: HWND, model: usize) {
+    let s = st();
+    if !s.cfg.mouse {
+        return;
+    }
+    let all = mouse::others();
+    let Some(o) = all.iter().copied().find(|o| o.model as usize == model) else { return };
+    let t = s.strings();
+    let as_status = mouse::Status { model: o.model, battery: o.battery, charging: o.charging, ..Default::default() };
+    s.mouse.set_battery(t, &as_status);
+    if s.mouse.model != Some(o.model) {
+        s.mouse.model = Some(o.model);
+        s.mouse.title = text::raster(o.model.name(), -64, 700);
+    }
+    let followed = mouse::status().map(|p| mouse::Other { model: p.model, battery: p.battery, charging: p.charging });
+    let rows = followed.into_iter().chain(all.into_iter().filter(|x| x.model != o.model)).collect();
+    s.mouse.set_others(t, rows);
+    if o.charging {
+        s.mouse.sub = text::raster(t.mouse_charging, -48, 400);
+        s.mouse.fill = 0.0;
+        if s.live() && s.kind == Kind::MouseLink {
+            s.mouse.intro = 0.0;
+        }
+        if s.live() && is_mouse(s.kind) {
+            s.apply_targets(); // the rows may differ from the card on show
+        }
+        mouse_show(hwnd, Kind::MouseLink, Some(MOUSE_LINK_MS));
+    } else {
+        if s.live() && is_mouse(s.kind) {
+            s.apply_targets();
+        }
+        let critical = s.mouse.level == 2;
+        mouse_warning(s, critical);
+        mouse_show(hwnd, Kind::MouseBattery, Some(MOUSE_LOW_MS));
+    }
+}
+
 /// A full-screen app in front hides the pinned capsule (unless "pin over full-screen apps" is on); it comes
 /// back when that app is gone.
 unsafe fn pin_poll(hwnd: HWND) {
@@ -2462,6 +2501,7 @@ pub unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPAR
         WM_APP_SONG => song_changed(hwnd),
         WM_APP_DEVICE => device_changed(hwnd),
         WM_APP_NTFY => push_notice(hwnd),
+        WM_APP_MOUSE if wp.0 == mouse::EV_OTHER => other_event(hwnd, lp.0 as usize),
         WM_APP_MOUSE => mouse_event(hwnd, wp.0),
         WM_DEVICECHANGE => {
             if matches!(wp.0, 0x0007 | 0x8000 | 0x8004) {
