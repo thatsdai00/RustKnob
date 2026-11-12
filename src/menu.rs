@@ -3,7 +3,6 @@
 // capsule replaced both, so installing, updating and uninstalling clean them up. Also removes the older
 // FFUploader (see `remove_ffuploader`).
 
-use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 
 use windows::core::{w, PCWSTR, PWSTR};
@@ -15,7 +14,6 @@ const OLD_VERB: PCWSTR = w!(r"Software\Classes\*\shell\RustKnobUpload");
 const OLD_VERB_COMMAND: PCWSTR = w!(r"Software\Classes\*\shell\RustKnobUpload\command");
 const FFUPLOADER_KEY: PCWSTR = w!(r"Software\FFUploader");
 const PACKAGE_NAME: &str = "RustKnob.Shell";
-const NO_WINDOW: u32 = 0x0800_0000; // CREATE_NO_WINDOW
 
 /// Removes the classic "Upload" verb and the first-level package, when they are there.
 pub fn remove_old_entries() {
@@ -24,10 +22,8 @@ pub fn remove_old_entries() {
         let _ = RegDeleteKeyW(HKEY_CURRENT_USER, OLD_VERB);
     }
     if package_registered() {
-        let _ = std::process::Command::new("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-Command", &format!("Get-AppxPackage -Name '{PACKAGE_NAME}' | Remove-AppxPackage")])
-            .creation_flags(NO_WINDOW)
-            .status();
+        let script = format!("Get-AppxPackage -Name '{PACKAGE_NAME}' | Remove-AppxPackage");
+        crate::install::start(&crate::install::powershell(), &["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-Command", &script], true, true);
     }
     notify_shell();
 }
@@ -88,10 +84,8 @@ pub fn remove_ffuploader() {
     history::import_from(&PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_default()).join("FFUploader").join("linkler.txt"));
 
     // the sparse package that put "Upload" into the Windows 11 menu
-    let _ = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", "Get-AppxPackage -Name 'FFUploader.Shell' | Remove-AppxPackage"])
-        .creation_flags(NO_WINDOW)
-        .status();
+    let script = "Get-AppxPackage -Name 'FFUploader.Shell' | Remove-AppxPackage";
+    crate::install::start(&crate::install::powershell(), &["-NoProfile", "-WindowStyle", "Hidden", "-Command", script], true, true);
 
     unsafe {
         for key in [

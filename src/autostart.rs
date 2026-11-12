@@ -56,7 +56,6 @@ fn set_entry(on: bool, exe: &Path) {
 /// Windows did not always run the Run entry at login, so a logon task starts it too
 /// (a second start just finds the first one and exits).
 fn set_task(on: bool, exe: &Path) {
-    use std::os::windows::process::CommandExt;
     // PowerShell also ends a '...' string at the typographic single quotes: double them all
     let exe = exe.to_string_lossy().replace(['\'', '\u{2018}', '\u{2019}', '\u{201A}', '\u{201B}'], "''");
     let script = if on {
@@ -66,8 +65,5 @@ fn set_task(on: bool, exe: &Path) {
     } else {
         "Unregister-ScheduledTask -TaskName RustKnob -Confirm:$false -ErrorAction SilentlyContinue".to_string()
     };
-    let _ = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-Command", &script])
-        .creation_flags(0x0800_0000)
-        .status();
+    crate::install::start(&crate::install::powershell(), &["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-Command", &script], true, true);
 }

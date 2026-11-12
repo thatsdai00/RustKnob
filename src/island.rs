@@ -956,7 +956,7 @@ unsafe fn update_ready(hwnd: HWND, outcome: usize) {
         };
         update_row(hwnd, &text);
         if let Some((_, path)) = s.pending_update.clone() {
-            let _ = std::process::Command::new(path).arg("--update").spawn(); // closes this copy, installs, starts again
+            crate::install::launch_with(&path, "--update"); // closes this copy, installs, starts again
         }
         return;
     }
@@ -989,7 +989,7 @@ unsafe fn update_apply(hwnd: HWND) {
         return;
     }
     // the new copy closes this one, installs over it and starts again
-    let _ = std::process::Command::new(path).arg("--update").spawn();
+    crate::install::launch_with(&path, "--update");
 }
 
 /// "RustKnob updated · v1.2.3", once, after an automatic update.
@@ -2489,7 +2489,7 @@ pub unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPAR
                 tray::CMD_UNINSTALL => {
                     // a separate process asks, closes this one and cleans up
                     if let Ok(exe) = std::env::current_exe() {
-                        let _ = std::process::Command::new(exe).arg("--uninstall").spawn();
+                        crate::install::launch_with(&exe, "--uninstall");
                     }
                 }
                 _ => {}

@@ -2,7 +2,6 @@
 // %LOCALAPPDATA%\Programs\RustKnob, starts with Windows, gets a Start menu shortcut and an
 // "Apps & features" entry. All per-user: no admin rights.
 
-use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 
 use windows::core::{w, Interface, HSTRING, PCWSTR};
@@ -16,7 +15,6 @@ use crate::i18n::Strings;
 use crate::{autostart, menu, CLASS};
 
 const UNINSTALL_KEY: PCWSTR = w!(r"Software\Microsoft\Windows\CurrentVersion\Uninstall\RustKnob");
-const NO_WINDOW: u32 = 0x0800_0000; // CREATE_NO_WINDOW
 
 fn env_path(name: &str) -> PathBuf {
     PathBuf::from(std::env::var(name).unwrap_or_default())
@@ -163,12 +161,82 @@ pub fn install(opts: Options, _t: &Strings) -> std::io::Result<PathBuf> {
 }
 
 pub fn launch(exe: &Path) {
-    let _ = std::process::Command::new(exe).spawn();
+    start(exe, &[], false, false);
 }
 
 /// Starts `exe` with one argument (the updater starts the new copy with `--updated`).
 pub fn launch_with(exe: &Path, arg: &str) {
-    let _ = std::process::Command::new(exe).arg(arg).spawn();
+    start(exe, &[arg], false, false);
+}
+
+/// A program in Windows' own folder (powershell, cmd): never one that happens to sit in the current folder.
+pub fn system_exe(relative: &str) -> PathBuf {
+    PathBuf::from(std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into())).join(relative)
+}
+
+pub fn powershell() -> PathBuf {
+    system_exe(r"System32\WindowsPowerShell\v1.0\powershell.exe")
+}
+
+/// Starts `exe` with `args` (quoted the way programs split their command line); `wait` until it ends, `hidden`
+/// without a console window. A small stand-in for std::process::Command, which adds ~40 KB to the exe.
+pub fn start(exe: &Path, args: &[&str], wait: bool, hidden: bool) -> bool {
+    let mut line = quote(&exe.to_string_lossy());
+    for a in args {
+        line.push(' ');
+        line.push_str(&quote(a));
+    }
+    start_line(exe, &line, wait, hidden)
+}
+
+/// Like `start`, with the whole command line (its first word the program) given as it is.
+pub fn start_line(exe: &Path, line: &str, wait: bool, hidden: bool) -> bool {
+    use windows::Win32::System::Threading::*;
+    let app = HSTRING::from(exe.as_os_str());
+    let mut line: Vec<u16> = line.encode_utf16().chain([0]).collect();
+    let startup = STARTUPINFOW { cb: std::mem::size_of::<STARTUPINFOW>() as u32, ..Default::default() };
+    let mut info = PROCESS_INFORMATION::default();
+    let flags = if hidden { CREATE_NO_WINDOW } else { PROCESS_CREATION_FLAGS(0) };
+    unsafe {
+        if CreateProcessW(&app, windows::core::PWSTR(line.as_mut_ptr()), None, None, false, flags, None, PCWSTR::null(), &startup, &mut info).is_err() {
+            return false;
+        }
+        if wait {
+            WaitForSingleObject(info.hProcess, INFINITE);
+        }
+        let _ = CloseHandle(info.hThread);
+        let _ = CloseHandle(info.hProcess);
+    }
+    true
+}
+
+/// One argument as the C runtime reads it back: quoted when it has spaces or quotes, backslashes doubled
+/// only where they stand before a quote.
+fn quote(a: &str) -> String {
+    if !a.is_empty() && !a.contains([' ', '\t', '"']) {
+        return a.to_string();
+    }
+    let mut out = String::from('"');
+    let mut slashes = 0;
+    for c in a.chars() {
+        match c {
+            '\\' => slashes += 1,
+            '"' => {
+                out.extend(std::iter::repeat('\\').take(slashes * 2 + 1));
+                slashes = 0;
+            }
+            _ => {
+                out.extend(std::iter::repeat('\\').take(slashes));
+                slashes = 0;
+            }
+        }
+        if c != '\\' {
+            out.push(c);
+        }
+    }
+    out.extend(std::iter::repeat('\\').take(slashes * 2));
+    out.push('"');
+    out
 }
 
 pub fn launch_installed() {
@@ -258,8 +326,18 @@ pub fn delete_later(dir: &Path) {
     if !dir.is_absolute() {
         return;
     }
-    let _ = std::process::Command::new("cmd")
-        .raw_arg(format!("/C ping 127.0.0.1 -n 4 >nul & rmdir /S /Q \"{}\"", dir.display()))
-        .creation_flags(NO_WINDOW)
-        .spawn();
+    let cmd = system_exe(r"System32\cmd.exe");
+    start_line(&cmd, &format!("\"{}\" /C ping 127.0.0.1 -n 4 >nul & rmdir /S /Q \"{}\"", cmd.display(), dir.display()), false, true);
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn quote() {
+        assert_eq!(super::quote("--update"), "--update");
+        assert_eq!(super::quote(r"C:\Program Files\a.exe"), r#""C:\Program Files\a.exe""#);
+        assert_eq!(super::quote(r"a b\"), r#""a b\\""#);
+        assert_eq!(super::quote(r#"say "hi""#), "\"say \\\"hi\\\"\"");
+        assert_eq!(super::quote(""), "\"\"");
+    }
 }
