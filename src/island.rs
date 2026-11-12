@@ -1181,7 +1181,7 @@ impl MouseUi {
         self.fill_goal = now.battery.map_or(0.0, |b| b as f32 / 100.0);
         if now.battery.map(|b| (b, t.percent_first)) != self.battery_text {
             self.battery_text = now.battery.map(|b| (b, t.percent_first));
-            self.percent = now.battery.and_then(|b| text::raster(&if t.percent_first { format!("%{b}") } else { format!("{b}%") }, -56, 700));
+            self.percent = now.battery.and_then(|b| text::raster(&if t.percent_first { format!("%{b}") } else { format!("{b}%") }, -60, 700));
         }
     }
 }
@@ -1193,7 +1193,7 @@ fn is_mouse(kind: Kind) -> bool {
 /// The battery warning's text: "charge your mouse" (red) or "battery low" (yellow).
 fn mouse_warning(s: &mut State, critical: bool) {
     let t = s.strings();
-    s.mouse.warn = text::raster(if critical { t.battery_critical } else { t.battery_low }, -60, 700);
+    s.mouse.warn = text::raster(if critical { t.battery_critical } else { t.battery_low }, -66, 700);
     s.mouse.intro = 0.0;
 }
 
@@ -1273,11 +1273,11 @@ unsafe fn mouse_event(hwnd: HWND, ev: usize) {
         let rolls = ev == razer::EV_DPI && s.live() && s.kind == Kind::MouseDpi;
         s.mouse.dpi_old = if rolls { s.mouse.dpi.take() } else { None };
         s.mouse.roll = if rolls { 0.0 } else { 1.0 };
-        s.mouse.dpi = text::raster(&now.dpi.to_string(), -76, 700);
+        s.mouse.dpi = text::raster(&now.dpi.to_string(), -100, 700);
         s.mouse.dpi_value = now.dpi;
     }
     if s.mouse.dpi_label.is_none() {
-        s.mouse.dpi_label = text::raster("DPI", -40, 700);
+        s.mouse.dpi_label = text::raster("DPI", -48, 700);
     }
     s.mouse.stage_goal = now.stage as f32;
     if s.mouse.stages != now.stages || ev != razer::EV_DPI {
@@ -2222,6 +2222,7 @@ unsafe fn tick(hwnd: HWND) {
         && s.song_prev.is_none()
         && s.lyric_swap >= 1.0
         && s.mouse.settled()
+        && !(s.mouse.charging && is_mouse(s.kind)) // the charging animation runs while its card is up
         && s.pin_fade == s.pin_fade_goal
         && s.toggles == targets;
     if settled {

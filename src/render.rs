@@ -269,25 +269,34 @@ fn battery_color(pal: &Palette, level: u8, charging: bool) -> [f32; 3] {
     }
 }
 
-/// A battery: outline, nub, and the charge inside it (`fill` 0..1), with a bolt while it charges.
-/// (x, y) from its center, `k` its size (1 = 22 x 12 units).
+/// A battery: outline, nub, and the charge inside it (`fill` 0..1). (x, y) from its center, `k` its size
+/// (1 = 22 x 12 units). `charging`: the clock (seconds) while it charges: light runs through the charge from
+/// the left end to its tip, over and over, the tip glows, and the outline breathes.
 #[allow(clippy::too_many_arguments)]
-fn battery_icon(p: &mut Px, x: f32, y: f32, k: f32, fill: f32, color: [f32; 3], charging: bool, pal: &Palette, ca: f32, aa: f32) {
+fn battery_icon(p: &mut Px, x: f32, y: f32, k: f32, fill: f32, color: [f32; 3], charging: Option<f32>, pal: &Palette, ca: f32, aa: f32) {
     let (x, y, aa) = (x / k, y / k, aa / k);
     if x.abs() > 15.0 || y.abs() > 8.0 {
         return;
     }
+    let breathe = charging.map_or(1.0, |t| 0.72 + 0.28 * (0.5 + 0.5 * (t * std::f32::consts::TAU / 1.6).cos()));
     let outline = if color == pal.fg { pal.mix(0.55) } else { color };
-    p.over(outline, ca * 0.9 * cov(rrect(x, y, 11.0, 6.0, 2.6).abs() - 0.7, aa));
-    p.over(outline, ca * 0.9 * cov(rrect(x - 12.4, y, 1.0, 2.4, 1.0), aa));
+    p.over(outline, ca * 0.9 * breathe * cov(rrect(x, y, 11.0, 6.0, 2.6).abs() - 0.7, aa));
+    p.over(outline, ca * 0.9 * breathe * cov(rrect(x - 12.4, y, 1.0, 2.4, 1.0), aa));
     let half = 8.9 * fill.clamp(0.0, 1.0); // the charge grows from the left end
     if half > 0.05 {
-        p.over(color, ca * cov(rrect(x + 8.9 - half, y, half, 4.0, half.min(1.6)), aa));
-    }
-    if charging {
-        let bolt = seg(x, y, (1.6, -4.2), (-1.4, 0.4), 0.75).min(seg(x, y, (-1.4, 0.4), (1.4, -0.4), 0.75)).min(seg(x, y, (1.4, -0.4), (-1.6, 4.2), 0.75));
-        p.over(pal.bg, ca * cov(bolt - 0.55, aa)); // a gap around the bolt, then the bolt
-        p.over(pal.fg, ca * cov(bolt, aa));
+        let body = cov(rrect(x + 8.9 - half, y, half, 4.0, half.min(1.6)), aa);
+        p.over(color, ca * body);
+        if let (Some(t), true) = (charging, body > 0.0) {
+            // a soft band of light sweeps from the left end to the tip of the charge every 1.6 s
+            let len = 2.0 * half;
+            let phase = (t / 1.6).fract();
+            let at = -8.9 + (len + 8.0) * sstep(0.0, 1.0, phase) - 4.0;
+            let band = (-((x - at) / 2.4).powi(2)).exp() * (1.0 - sstep(0.75, 1.0, phase));
+            // the tip glows, brighter as the band reaches it
+            let tip = (-((x - (-8.9 + len)) / 1.4).powi(2)).exp() * (0.35 + 0.65 * (-((at - (-8.9 + len)) / 3.0).powi(2)).exp());
+            let glow = (0.55 * band + 0.45 * tip).min(1.0);
+            p.over([1.0, 1.0, 1.0], ca * body * glow * if pal.light { 0.6 } else { 0.75 });
+        }
     }
 }
 
@@ -325,25 +334,25 @@ fn mouse_dpi_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) 
     let e = 1.0 - (1.0 - m.intro.clamp(0.0, 1.0)).powi(3);
 
     if let Some(pic) = m.picture {
-        picture_at(p, pic, tx - 40.0 + (1.0 - e) * 10.0, ry, 25.0, unit, ca * e, pal.light);
+        picture_at(p, pic, tx - (16.0 + 19.0 * pic.aspect()) + (1.0 - e) * 14.0, ry + 1.0, 38.0, unit, ca * e, pal.light);
     }
 
     // the number and "DPI" after it, centered between the picture and the stage markers
-    let right = s.w - 14.0 - 8.0 * m.stages.max(1) as f32;
+    let right = s.w - 18.0 - 10.0 * m.stages.max(1) as f32;
     let label_w = m.dpi_label.map_or(0.0, |l| l.size().0 + 5.0);
     let number_w = m.dpi.map_or(0.0, |d| d.size().0);
-    let cx = (74.0 + right) / 2.0;
+    let cx = (16.0 + 38.0 * m.picture.map_or(1.5, |pic| pic.aspect()) + 10.0 + right) / 2.0;
     let left = cx - (number_w + label_w) / 2.0;
     let rise = 1.0 - (1.0 - m.roll.clamp(0.0, 1.0)).powi(3);
     let leave = sstep(0.0, 0.7, m.roll);
-    const TRAVEL: f32 = 13.0;
+    const TRAVEL: f32 = 17.0;
     if let Some(old) = m.dpi_old.filter(|_| m.roll < 1.0) {
         let w = old.size().0; // where it sat, by its own width
         let old_left = cx - (w + label_w) / 2.0;
-        p.over(pal.fg, ca * (1.0 - leave) * rolling_text(old, tx - (old_left + w / 2.0), ry, -leave * TRAVEL, 15.0, unit));
+        p.over(pal.fg, ca * (1.0 - leave) * rolling_text(old, tx - (old_left + w / 2.0), ry, -leave * TRAVEL, 21.0, unit));
     }
     if let Some(now) = m.dpi {
-        p.over(pal.fg, ca * rise * rolling_text(now, tx - (left + number_w / 2.0), ry, (1.0 - rise) * TRAVEL, 15.0, unit));
+        p.over(pal.fg, ca * rise * rolling_text(now, tx - (left + number_w / 2.0), ry, (1.0 - rise) * TRAVEL, 21.0, unit));
     }
     if let Some(label) = m.dpi_label {
         let end = |w: f32| cx - (w + label_w) / 2.0 + w + 5.0; // where the label starts after a number this wide
@@ -351,20 +360,20 @@ fn mouse_dpi_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) 
             Some(old) => lerp(end(old.size().0), end(number_w), rise),
             None => end(number_w),
         };
-        p.over(pal.dim, ca * text_left(label, tx - at, ry - 2.5, label.size().0, 0.0, unit));
+        p.over(pal.dim, ca * text_left(label, tx - at, ry - 3.5, label.size().0, 0.0, unit));
     }
 
     // the stages: a dot each, the active one a bar that slides to its place
     if m.stages > 1 && ry.abs() < 5.0 {
-        let x0 = s.w - 22.0 - 8.0 * (m.stages - 1) as f32;
+        let x0 = s.w - 28.0 - 10.0 * (m.stages - 1) as f32;
         let lx = tx - x0;
-        if lx > -8.0 && lx < 8.0 * m.stages as f32 + 8.0 {
+        if lx > -10.0 && lx < 10.0 * m.stages as f32 + 10.0 {
             for i in 0..m.stages {
-                p.over(pal.mix(0.32), ca * cov((lx - 8.0 * i as f32).hypot(ry) - 2.1, aa));
+                p.over(pal.mix(0.32), ca * cov((lx - 10.0 * i as f32).hypot(ry) - 2.6, aa));
             }
-            let at = 8.0 * m.stage;
-            let stretch = 4.6 + 2.5 * (m.stage - m.stage.round()).abs(); // longer while it travels
-            p.over(pal.fg, ca * cov(rrect(lx - at, ry, stretch, 2.3, 2.3), aa));
+            let at = 10.0 * m.stage;
+            let stretch = 5.8 + 3.0 * (m.stage - m.stage.round()).abs(); // longer while it travels
+            p.over(pal.fg, ca * cov(rrect(lx - at, ry, stretch, 2.9, 2.9), aa));
         }
     }
 }
@@ -376,14 +385,14 @@ fn mouse_battery_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f
     let color = battery_color(pal, m.level, m.charging);
     let e = 1.0 - (1.0 - m.intro.clamp(0.0, 1.0)).powi(3);
     let pop = 0.82 + 0.18 * e + 0.06 * (std::f32::consts::PI * e).sin(); // a little overshoot as it lands
-    battery_icon(p, tx - 34.0, ry, 1.2 * pop, m.fill, color, m.charging, pal, ca, aa);
+    battery_icon(p, tx - 42.0, ry, 1.65 * pop, m.fill, color, m.charging.then_some(s.marq), pal, ca, aa);
     let percent_w = m.percent.map_or(0.0, |t| t.size().0);
     if let Some(warn) = m.warn {
-        let view = s.w - 62.0 - percent_w - 26.0;
-        p.over(if m.level == 2 { color } else { pal.fg }, ca * text_left(warn, tx - 62.0, ry, view, 0.0, unit));
+        let view = s.w - 76.0 - percent_w - 28.0;
+        p.over(if m.level == 2 { color } else { pal.fg }, ca * text_left(warn, tx - 76.0, ry, view, 0.0, unit));
     }
     if let Some(percent) = m.percent {
-        p.over(color, ca * text_left(percent, tx - (s.w - 22.0 - percent_w), ry, percent_w, 0.0, unit));
+        p.over(color, ca * text_left(percent, tx - (s.w - 24.0 - percent_w), ry, percent_w, 0.0, unit));
     }
 }
 
@@ -395,12 +404,12 @@ fn mouse_link_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32)
 
     // the picture glides in from the left
     if let Some(pic) = m.picture {
-        let h = 40.0;
+        let h = 38.0;
         let w = h * pic.aspect();
         picture_at(p, pic, tx - (16.0 + w / 2.0) + (1.0 - e) * 22.0, ry + 1.0, h, unit, ca * e, pal.light);
     }
-    let left = 16.0 + 40.0 * m.picture.map_or(0.0, |pic| pic.aspect()) + 12.0;
-    let right = s.w - 92.0;
+    let left = 16.0 + 38.0 * m.picture.map_or(0.0, |pic| pic.aspect()) + 10.0;
+    let right = s.w - 72.0;
     if let Some(title) = m.title {
         p.over(pal.fg, ca * text_left(title, tx - left, ty - 28.0, right - left, s.marq, unit));
     }
@@ -410,10 +419,10 @@ fn mouse_link_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32)
 
     // the battery fills up as the card comes in
     let color = battery_color(pal, m.level, m.charging);
-    battery_icon(p, tx - (s.w - 66.0), ty - 28.0, 1.25, m.fill, color, m.charging, pal, ca, aa);
+    battery_icon(p, tx - (s.w - 42.0), ty - 28.0, 1.3, m.fill, color, m.charging.then_some(s.marq), pal, ca, aa);
     if let Some(percent) = m.percent {
         let w = percent.size().0;
-        p.over(color, ca * text_left(percent, tx - (s.w - 66.0 - w / 2.0), ty - 50.0, w, 0.0, unit));
+        p.over(color, ca * text_left(percent, tx - (s.w - 42.0 - w / 2.0), ty - 50.0, w, 0.0, unit));
     }
 }
 

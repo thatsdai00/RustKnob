@@ -17,9 +17,10 @@ pub const UPLOAD: (f32, f32) = TWO_ROWS;
 pub const PINNED: (f32, f32) = (VOLUME_W, VOLUME_H); // cover | title and artist | visualizer
 pub const PINNED_TALL: (f32, f32) = (340.0, 80.0); // ... with the current lyric line in a row of its own below
 pub const DROP: (f32, f32) = (VOLUME_W, VOLUME_H); // shown while a file is dragged: drop it here
-pub const MOUSE_DPI: (f32, f32) = (250.0, VOLUME_H); // picture | the DPI | stage markers
-pub const MOUSE_BATTERY: (f32, f32) = (VOLUME_W, VOLUME_H); // battery | "battery low" | percent
-pub const MOUSE_LINK: (f32, f32) = TWO_ROWS; // picture | name and "connected" | battery
+// the mouse's capsules are as big as the volume capsule (with its line underneath)
+pub const MOUSE_DPI: (f32, f32) = (VOLUME_W, VOLUME_H_SUB); // picture | the DPI | stage markers
+pub const MOUSE_BATTERY: (f32, f32) = (VOLUME_W, VOLUME_H_SUB); // battery | "battery low" | percent
+pub const MOUSE_LINK: (f32, f32) = (VOLUME_W, VOLUME_H_SUB); // picture | name and "connected" | battery
 
 pub const KNOB: (f32, f32) = (252.0, 252.0); // the capsule morphs into this disc
 pub const KNOB_RADIUS: f32 = 126.0;

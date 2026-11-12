@@ -699,11 +699,11 @@ pub fn run(dir: &str) {
 
     // 5b. the Razer mouse
     let pic = crate::razer::picture();
-    let (dpi, dpi_label) = (raster("1600", -76, 700), raster("DPI", -40, 700));
-    let (name, linked, pct) = (raster("Viper V3 Pro", -64, 700), raster(en.mouse_connected, -48, 400), raster("82%", -56, 700));
-    let (low, low_pct, crit, crit_pct) = (raster(en.battery_low, -60, 700), raster("22%", -56, 700), raster(en.battery_critical, -60, 700), raster("4%", -56, 700));
+    let (dpi, dpi_label) = (raster("1600", -100, 700), raster("DPI", -48, 700));
+    let (name, linked, pct) = (raster("Viper V3 Pro", -64, 700), raster(en.mouse_connected, -48, 400), raster("82%", -60, 700));
+    let (low, low_pct, crit, crit_pct) = (raster(en.battery_low, -66, 700), raster("22%", -60, 700), raster(en.battery_critical, -66, 700), raster("4%", -60, 700));
     let mouse = |kind: Kind, size: (f32, f32), view: MouseView<'static>| {
-        let mut sc = capsule(size, kind, 1.9);
+        let mut sc = capsule(size, kind, 1.55);
         sc.mouse = Some(view);
         shoot(&sc)
     };
@@ -712,16 +712,22 @@ pub fn run(dir: &str) {
     let keep = |t: Option<TextBmp>| -> Option<&'static TextBmp> { t.map(|t| &*Box::leak(Box::new(t))) };
     let (dpi, dpi_label, name, linked, pct, low, low_pct, crit, crit_pct) = (keep(dpi), keep(dpi_label), keep(name), keep(linked), keep(pct), keep(low), keep(low_pct), keep(crit), keep(crit_pct));
     let link_img = mouse(Kind::MouseLink, ui::MOUSE_LINK, MouseView { title: name, sub: linked, percent: pct, ..base(0, 0.82) });
+    let charging_txt = keep(raster(en.mouse_charging, -48, 400));
+    let charge_img = {
+        let mut sc = capsule(ui::MOUSE_LINK, Kind::MouseLink, 1.55);
+        sc.marq = 0.62;
+        sc.mouse = Some(MouseView { title: name, sub: charging_txt, percent: keep(raster("46%", -60, 700)), charging: true, ..base(0, 0.46) });
+        shoot(&sc)
+    };
     let dpi_img = mouse(Kind::MouseDpi, ui::MOUSE_DPI, MouseView { dpi, dpi_label, stage: 1.0, ..base(0, 0.82) });
     let low_img = mouse(Kind::MouseBattery, ui::MOUSE_BATTERY, MouseView { warn: low, percent: low_pct, ..base(1, 0.22) });
     let crit_img = mouse(Kind::MouseBattery, ui::MOUSE_BATTERY, MouseView { warn: crit, percent: crit_pct, ..base(2, 0.04) });
     save(
         "card-mouse",
         &card("Your mouse, at a glance.", "Razer Viper V3 Pro, no Synapse: it says hello when it wakes, rolls the DPI as you switch, and warns before the battery runs out.", green, |c, cx, cy| {
-            show(c, &link_img, cx, cy - 360.0);
-            show(c, &dpi_img, cx, cy - 210.0);
-            show(c, &low_img, cx, cy - 95.0);
-            show(c, &crit_img, cx, cy + 20.0);
+            for (i, img) in [&link_img, &charge_img, &dpi_img, &low_img, &crit_img].into_iter().enumerate() {
+                show(c, img, cx, cy - 410.0 + i as f32 * 120.0);
+            }
         }),
     );
 
