@@ -1336,7 +1336,9 @@ unsafe fn mouse_event(hwnd: HWND, ev: usize) {
         s.mouse.seen = if level > 0 { level.max(was) } else if low_over { 0 } else { was };
     }
     let showing = s.live() && is_mouse(s.kind);
-    let plugged = now.charging && !std::mem::replace(&mut s.mouse.charging_seen, now.charging);
+    let was_charging = std::mem::replace(&mut s.mouse.charging_seen, now.charging);
+    let plugged = now.charging && !was_charging;
+    let unplugged = !now.charging && was_charging && ev == mouse::EV_BATTERY;
 
     // the DPI and its stage, always up to date (a wake-up brings them too)
     let dpi_changed = now.dpi != s.mouse.dpi_value;
@@ -1392,6 +1394,15 @@ unsafe fn mouse_event(hwnd: HWND, ev: usize) {
                 mouse_show(hwnd, Kind::MouseLink, Some(MOUSE_LINK_MS));
             }
         }
+        mouse::EV_BATTERY if unplugged && level == 0 => {
+            // off the charger (and not low: then the warning comes instead): the card says so
+            s.mouse.sub = text::raster(t.mouse_unplugged, -48, 400);
+            s.mouse.fill = 0.0;
+            if s.live() && s.kind == Kind::MouseLink {
+                s.mouse.intro = 0.0;
+            }
+            mouse_show(hwnd, Kind::MouseLink, Some(MOUSE_LINK_MS));
+        }
         mouse::EV_BATTERY => {
             if level == 2 && !s.mouse.crit {
                 s.mouse.crit = true;
@@ -1414,9 +1425,9 @@ unsafe fn mouse_event(hwnd: HWND, ev: usize) {
     }
 }
 
-/// Another plugged-in device went on the charger or ran low: a card about it, with every other device
-/// (the followed one too) in the rows under it.
-unsafe fn other_event(hwnd: HWND, model: usize) {
+/// Another plugged-in device went on or off the charger or ran low (`why`, mouse::OTHER_*): a card about it,
+/// with every other device (the followed one too) in the rows under it.
+unsafe fn other_event(hwnd: HWND, model: usize, why: isize) {
     let s = st();
     if !s.cfg.mouse {
         return;
@@ -1433,8 +1444,8 @@ unsafe fn other_event(hwnd: HWND, model: usize) {
     let followed = mouse::status().map(|p| mouse::Other { model: p.model, battery: p.battery, charging: p.charging });
     let rows = followed.into_iter().chain(all.into_iter().filter(|x| x.model != o.model)).collect();
     s.mouse.set_others(t, rows);
-    if o.charging {
-        s.mouse.sub = text::raster(t.mouse_charging, -48, 400);
+    if why != mouse::OTHER_LOW {
+        s.mouse.sub = text::raster(if why == mouse::OTHER_CHARGING { t.mouse_charging } else { t.mouse_unplugged }, -48, 400);
         s.mouse.fill = 0.0;
         if s.live() && s.kind == Kind::MouseLink {
             s.mouse.intro = 0.0;
@@ -2501,7 +2512,7 @@ pub unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPAR
         WM_APP_SONG => song_changed(hwnd),
         WM_APP_DEVICE => device_changed(hwnd),
         WM_APP_NTFY => push_notice(hwnd),
-        WM_APP_MOUSE if wp.0 == mouse::EV_OTHER => other_event(hwnd, lp.0 as usize),
+        WM_APP_MOUSE if wp.0 == mouse::EV_OTHER => other_event(hwnd, (lp.0 & 0xff) as usize, lp.0 >> 8),
         WM_APP_MOUSE => mouse_event(hwnd, wp.0),
         WM_DEVICECHANGE => {
             if matches!(wp.0, 0x0007 | 0x8000 | 0x8004) {

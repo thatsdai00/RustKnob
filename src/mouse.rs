@@ -16,7 +16,7 @@
 // 400 ms (so a press of the DPI button shows quickly), the charger every 3 s and the battery once a minute.
 // The first device found is the one followed; any other supported one that is plugged in has its charger looked
 // at every few seconds and its battery once a minute too, shows in a row of its own under the cards (see
-// `others`), and gets a card of its own when it goes on the charger or runs low (EV_OTHER).
+// `others`), and gets a card of its own when it goes on or off the charger or runs low (EV_OTHER).
 //
 // The pictures are not in the exe: the first time a mouse shows up, its picture comes from the repository on
 // GitHub and is kept in %LOCALAPPDATA%\RustKnob\pictures (offline, the card shows without it).
@@ -111,7 +111,10 @@ pub const EV_BATTERY: usize = 2; // battery level or charging changed
 pub const EV_WAKE: usize = 3; // the mouse woke up (or was found awake)
 pub const EV_SLEEP: usize = 4; // it stopped answering: asleep or out of range
 pub const EV_GONE: usize = 5; // receiver / cable unplugged
-pub const EV_OTHER: usize = 6; // another plugged-in device went on the charger or ran low; lparam: its Model
+pub const EV_OTHER: usize = 6; // another plugged-in device: lparam its Model | why << 8 (the OTHER_* below)
+pub const OTHER_CHARGING: isize = 0;
+pub const OTHER_UNPLUGGED: isize = 1;
+pub const OTHER_LOW: isize = 2;
 
 static STATUS: Mutex<Option<Status>> = Mutex::new(None);
 static OTHERS: Mutex<Vec<Other>> = Mutex::new(Vec::new());
@@ -417,9 +420,18 @@ fn read_others(devices: &mut Vec<Watched>, full: bool) {
             }
         };
         if let (Some(n), Some(l)) = (now, w.last) {
-            if (n.charging && !l.charging) || level(&n) > level(&l) {
+            let why = if n.charging && !l.charging {
+                Some(OTHER_CHARGING)
+            } else if level(&n) > level(&l) {
+                Some(OTHER_LOW) // off the charger and low at once: the warning says more
+            } else if l.charging && !n.charging {
+                Some(OTHER_UNPLUGGED)
+            } else {
+                None
+            };
+            if let Some(why) = why {
                 load_picture(n.model);
-                post_with(EV_OTHER, n.model as isize);
+                post_with(EV_OTHER, n.model as isize | why << 8);
             }
         }
         w.last = now;
