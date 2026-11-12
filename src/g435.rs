@@ -11,8 +11,10 @@
 //   in reports: [size] then frames 'P' 'I' type seq timestamp (u32) length (u16 LE) payload
 //
 // The battery is only told in the dongle's remote mode: it is switched there for the read and back after.
-// The percent comes from the cell's voltage (it reads high while charging; the charger is not told). The
-// first G435 receiver (046D:0ACB, Realtek bridge) speaks something else and is not supported.
+// The percent comes from the cell's voltage. The charger is not told: plugging it in lifts the voltage by a few
+// hundred millivolts at once (48 % read as 91 % here), pulling it drops it as fast, so a jump either way is taken
+// for the charger coming or going (a headset found already charging counts as not charging until it is pulled).
+// The first G435 receiver (046D:0ACB, Realtek bridge) speaks something else and is not supported.
 
 use std::time::{Duration, Instant};
 
@@ -22,12 +24,16 @@ const VID: u16 = 0x046d;
 const PID: u16 = 0x0adf;
 const ANSWER_WITHIN: Duration = Duration::from_millis(1500);
 const LINK_EVERY: Duration = Duration::from_secs(5); // the mouse thread asks every 400 ms: the dongle less often
+const CHARGER_EVERY: Duration = Duration::from_secs(10); // the voltage, looked at for a charger jump
+const JUMP_MV: u16 = 100; // a step this big between two looks is the charger, not the cell running down
 
 pub struct G435 {
     io: HidIo,
     pub path: Vec<u16>,
     transmission: u8,
     linked: Option<(Instant, Result<(), Error>)>, // the last look at the headset, and when
+    millivolts: Option<(Instant, u16)>,           // the last voltage, and when
+    charging: bool,
 }
 
 impl G435 {
@@ -40,7 +46,7 @@ impl G435 {
 
     pub fn open(path: Vec<u16>) -> Option<G435> {
         let io = HidIo::open(&path)?;
-        let mut g = G435 { io, path, transmission: 0, linked: None };
+        let mut g = G435 { io, path, transmission: 0, linked: None, millivolts: None, charging: false };
         let _ = g.command(0x85, &[1], false);
         Some(g)
     }
@@ -131,7 +137,15 @@ impl G435 {
         self.wait(|p| (p.len() >= 5 && p[0] == 0x06 && p[1] & 0x7f == t && p[2] == 0).then(|| u16::from_le_bytes([p[3], p[4]])))
     }
 
-    /// (percent, on the charger: never told).
+    /// On the charger? From a voltage jump (see the top); the voltage is read again every few seconds.
+    pub fn charging(&mut self) -> Result<bool, Error> {
+        if self.millivolts.is_none_or(|(at, _)| at.elapsed() >= CHARGER_EVERY) {
+            self.battery()?;
+        }
+        Ok(self.charging)
+    }
+
+    /// (percent, on the charger).
     pub fn battery(&mut self) -> Result<(Option<u8>, bool), Error> {
         let remote = self.link(0xe0, &[])? == 1;
         if !remote {
@@ -142,7 +156,18 @@ impl G435 {
             let _ = self.set_remote(false); // as it was: the dongle's own mode
         }
         let mv = mv?;
-        Ok(((2500..=4600).contains(&mv).then(|| percent(mv)), false))
+        if !(2500..=4600).contains(&mv) {
+            return Ok((None, self.charging));
+        }
+        if let Some((_, before)) = self.millivolts {
+            if mv >= before + JUMP_MV {
+                self.charging = true;
+            } else if mv + JUMP_MV <= before {
+                self.charging = false;
+            }
+        }
+        self.millivolts = Some((Instant::now(), mv));
+        Ok((Some(percent(mv)), self.charging))
     }
 }
 
@@ -192,3 +217,4 @@ mod tests {
         println!("battery {:?} in {:?}", g.battery(), t.elapsed());
     }
 }
+

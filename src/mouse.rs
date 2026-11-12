@@ -455,7 +455,7 @@ impl Device {
             Device::Razer(m) => m.charging(),
             Device::Logitech(m) => m.battery().map(|b| b.1),
             Device::Atk(m) => m.battery().map(|b| b.1),
-            Device::Headset(_) => Ok(false), // not told
+            Device::Headset(m) => m.charging(),
         }
     }
 }
