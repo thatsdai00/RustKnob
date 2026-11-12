@@ -13,9 +13,10 @@
 // The battery is only told in the dongle's remote mode: it is switched there for the read and back after.
 // The percent comes from the cell's voltage. The charger is not told: plugging it in lifts the voltage by a few
 // hundred millivolts at once (48 % read as 91 % here), pulling it drops it as fast, so a jump either way is taken
-// for the charger coming or going (a headset found already charging counts as not charging until it is pulled).
-// While it charges, the jump itself is taken off the voltage before the percent is read from it (and the
-// percent never goes below what it was when the charger came), so 40 % does not show as 92 %.
+// for the charger coming or going. A headset found already charging (no jump seen) is told by its voltage
+// climbing over a few minutes. While it charges the voltage says nothing about the charge (40 % reads as 92 %,
+// 68 % as 100 %): the percent starts from the one just before the charger came (found charging: the voltage less
+// a typical charger lift) and climbs with time at the rate the G435 charges, until the charger goes.
 // The first G435 receiver (046D:0ACB, Realtek bridge) speaks something else and is not supported.
 
 use std::time::{Duration, Instant};
@@ -28,6 +29,10 @@ const ANSWER_WITHIN: Duration = Duration::from_millis(1500);
 const LINK_EVERY: Duration = Duration::from_secs(2); // the mouse thread asks every 400 ms: the dongle less often
 const CHARGER_EVERY: Duration = Duration::from_secs(10); // the voltage, looked at for a charger jump
 const JUMP_MV: u16 = 100; // a step this big between two looks is the charger, not the cell running down
+const CLIMB: (Duration, u16) = (Duration::from_secs(180), 30); // a climb this big over this long: charging
+const SETTLE: Duration = Duration::from_secs(600); // after the charger goes the cell recovers a little: no climb test
+const TYPICAL_LIFT_MV: u16 = 250; // what the charger adds, as seen here (taken off when found already charging)
+const PERCENT_PER_MINUTE: f32 = 0.8; // empty to full in about two hours
 
 pub struct G435 {
     io: HidIo,
@@ -36,8 +41,9 @@ pub struct G435 {
     linked: Option<(Instant, Result<(), Error>)>, // the last look at the headset, and when
     millivolts: Option<(Instant, u16)>,           // the last voltage, and when
     charging: bool,
-    charger_lift: u16, // how much the charger lifted the voltage when it came (taken off while it charges)
-    plugged_at: u8,    // the percent just before it came
+    plugged: Option<(Instant, u8)>,  // while charging: when it began, and the percent then
+    climb_from: Option<(Instant, u16)>, // not charging: the voltage a while ago (a steady climb means a charger)
+    unplugged_at: Option<Instant>,
 }
 
 impl G435 {
@@ -50,7 +56,7 @@ impl G435 {
 
     pub fn open(path: Vec<u16>) -> Option<G435> {
         let io = HidIo::open(&path)?;
-        let mut g = G435 { io, path, transmission: 0, linked: None, millivolts: None, charging: false, charger_lift: 0, plugged_at: 0 };
+        let mut g = G435 { io, path, transmission: 0, linked: None, millivolts: None, charging: false, plugged: None, climb_from: None, unplugged_at: None };
         let _ = g.command(0x85, &[1], false);
         Some(g)
     }
@@ -163,17 +169,36 @@ impl G435 {
         if !(2500..=4600).contains(&mv) {
             return Ok((None, self.charging));
         }
+        let now = Instant::now();
         if let Some((_, before)) = self.millivolts {
             if mv >= before + JUMP_MV && !self.charging {
-                (self.charging, self.charger_lift, self.plugged_at) = (true, mv - before, percent(before));
+                (self.charging, self.plugged) = (true, Some((now, percent(before))));
             } else if mv + JUMP_MV <= before && self.charging {
-                (self.charging, self.charger_lift) = (false, 0);
+                (self.charging, self.plugged, self.unplugged_at) = (false, None, Some(now));
             }
         }
-        self.millivolts = Some((Instant::now(), mv));
-        let shown = match self.charging {
-            true => percent(mv.saturating_sub(self.charger_lift)).max(self.plugged_at),
-            false => percent(mv),
+        if self.charging {
+            self.climb_from = None;
+        } else if self.unplugged_at.is_some_and(|at| at.elapsed() < SETTLE) {
+            self.climb_from = Some((now, mv)); // still recovering from the charger
+        } else {
+            match self.climb_from {
+                Some((at, from)) if at.elapsed() >= CLIMB.0 => {
+                    if mv >= from + CLIMB.1 {
+                        // charging since before it was first looked at
+                        (self.charging, self.plugged) = (true, Some((now, percent(mv.saturating_sub(TYPICAL_LIFT_MV)))));
+                    }
+                    self.climb_from = Some((now, mv));
+                }
+                Some((_, from)) if mv < from => self.climb_from = Some((now, mv)), // running down: measure from here
+                None => self.climb_from = Some((now, mv)),
+                _ => {}
+            }
+        }
+        self.millivolts = Some((now, mv));
+        let shown = match self.plugged.filter(|_| self.charging) {
+            Some((at, from)) => (from as f32 + at.elapsed().as_secs_f32() / 60.0 * PERCENT_PER_MINUTE).min(100.0) as u8,
+            None => percent(mv),
         };
         Ok((Some(shown), self.charging))
     }
