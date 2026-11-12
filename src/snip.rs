@@ -7,7 +7,7 @@
 // fades in and out through the compositor, and everything is freed when it closes. The look follows the
 // capsule: pure black pills, the same top margin, springy entrances.
 
-use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering::*};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicPtr, Ordering::*};
 use std::time::Instant;
 
 use windows::core::{w, PCWSTR};
@@ -30,7 +30,7 @@ pub static ACTIVE: AtomicBool = AtomicBool::new(false);
 
 const CLASS: PCWSTR = w!("RustKnobSnip");
 const T_FADE: usize = 1; // window opacity in / out
-const T_ANIM: usize = 2; // pills, handles, the thumbnail's flight
+const WM_SNIP_FRAME: u32 = WM_APP + 60; // one animation frame (pills, handles, the thumbnail's flight), on the vblank
 const FADE_STEPS: f32 = 7.0; // frames of the fade in / out
 const MIN_SIDE: i32 = 4; // a smaller drag counts as a mis-click
 const STRIP_H: i32 = 128; // rows drawn at once
@@ -270,7 +270,7 @@ unsafe fn close() {
     let s = Box::from_raw(p);
     let (main, taken) = (s.main, s.taken);
     let _ = KillTimer(s.hwnd, T_FADE);
-    let _ = KillTimer(s.hwnd, T_ANIM);
+    beat_stop();
     let _ = DestroyWindow(s.hwnd);
     SetCursor(LoadCursorW(None, IDC_ARROW).unwrap_or_default()); // not the crosshair
     drop(s); // frees the screen grab
@@ -325,7 +325,10 @@ unsafe extern "system" fn proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> 
                 let _ = KillTimer(hwnd, T_FADE);
             }
         }
-        WM_TIMER if wp.0 == T_ANIM => s.animate(),
+        WM_SNIP_FRAME => {
+            BEAT_PENDING.store(false, Release);
+            s.animate();
+        }
         _ => return DefWindowProcW(hwnd, msg, wp, lp),
     }
     LRESULT(0)
@@ -337,7 +340,7 @@ const VK_ESC: usize = 0x1B;
 
 impl Snip {
     fn kick(&self) {
-        unsafe { SetTimer(self.hwnd, T_ANIM, 12, None) };
+        beat_start(self.hwnd);
     }
 
     fn leave(&mut self) {
@@ -410,11 +413,11 @@ impl Snip {
                 f.t = (f.t + dt / 0.46).min(1.0);
                 (f.shown.take(), f.t, f.told)
             };
-            if let Some(old) = old {
-                self.pending.push(old);
-            }
             let (now, _) = self.fly_rect();
-            self.pending.push(now);
+            self.pending.push(match old {
+                Some(o) => (o.0.min(now.0), o.1.min(now.1), o.2.max(now.2), o.3.max(now.3)),
+                None => now,
+            });
             if let Some(f) = self.fly.as_mut() {
                 f.shown = Some(now);
                 f.told = told || t > 0.82;
@@ -429,9 +432,7 @@ impl Snip {
         }
         self.flush();
         if !busy {
-            unsafe {
-                let _ = KillTimer(self.hwnd, T_ANIM);
-            }
+            beat_stop();
         }
     }
 
@@ -576,29 +577,51 @@ impl Snip {
         let reach = (14.0 * self.scale) as i32;
         let (sx, sy) = (fw / w, fh / h); // source pixels per thumbnail pixel
         let (ww, back, orig, strip_y) = (self.w as usize, self.back.pixels(), self.orig.pixels(), self.strip_y);
-        for y in ((ry as i32) - reach).max(d.1)..((ry + h).ceil() as i32 + reach).min(d.3) {
-            for x in ((rx as i32) - reach).max(d.0)..((rx + w).ceil() as i32 + reach).min(d.2) {
-                let (px, py) = (x as f32 + 0.5, y as f32 + 0.5);
+        let (xa, xb) = (((rx as i32) - reach).max(d.0), ((rx + w).ceil() as i32 + reach).min(d.2));
+        let (ya, yb) = (((ry as i32) - reach).max(d.1), ((ry + h).ceil() as i32 + reach).min(d.3));
+        if xa >= xb || ya >= yb {
+            return;
+        }
+        // the source columns (two per pixel: a 2 x 2 patch is averaged) under each pixel of this stretch
+        let source = |at: f32, scale: f32, from: i32, max: i32| {
+            [-0.25f32, 0.25].map(|o| ((at * scale + from as f32 + o * scale) as i32).clamp(0, max - 1) as usize)
+        };
+        let cols: Vec<[usize; 2]> = (xa..xb).map(|x| source(x as f32 + 0.5 - rx, sx, from.0, self.w)).collect();
+        let (inner, r_in) = (hh - radius, radius - 1.5); // inside this, the pixel is all picture
+        for y in ya..yb {
+            let py = y as f32 + 0.5;
+            let rows = source(py - ry, sy, from.1, self.h).map(|r| r * ww);
+            let dy = (py - cy).abs();
+            let half = if dy <= inner { hw - 1.5 } else if dy - inner < r_in { (hw - radius) + (r_in * r_in - (dy - inner).powi(2)).sqrt() } else { -1.0 };
+            let (solid_a, solid_b) = ((cx - half).ceil() as i32, (cx + half).floor() as i32);
+            let line = &mut back[(y - strip_y) as usize * ww..][..ww];
+            for x in xa..xb {
+                let c = cols[(x - xa) as usize];
+                let average = || {
+                    let (mut r, mut g, mut b) = (0u32, 0u32, 0u32);
+                    for p in [orig[rows[0] + c[0]], orig[rows[0] + c[1]], orig[rows[1] + c[0]], orig[rows[1] + c[1]]] {
+                        r += (p >> 16) & 0xFF;
+                        g += (p >> 8) & 0xFF;
+                        b += p & 0xFF;
+                    }
+                    (r / 4, g / 4, b / 4)
+                };
+                let target = &mut line[x as usize];
+                if half > 0.0 && x >= solid_a && x < solid_b {
+                    let (r, g, b) = average(); // inside: no shadow, no edge, no hairline
+                    *target = r << 16 | g << 8 | b;
+                    continue;
+                }
+                let px = x as f32 + 0.5;
                 let sdf = rrect(px - cx, py - cy, hw, hh, radius);
-                let target = &mut back[(y - strip_y) as usize * ww + x as usize];
                 let shadow = (1.0 - sstep(-2.0, reach as f32, rrect(px - cx, py - cy - 3.0 * self.scale, hw, hh, radius))) * 0.34;
                 if shadow > 0.0 {
                     mix(target, BLACK, shadow);
                 }
                 let a = cov(sdf, 1.0);
                 if a > 0.0 {
-                    // average a 2 x 2 patch of the source under this pixel
-                    let (u, v) = ((px - rx) * sx + from.0 as f32, (py - ry) * sy + from.1 as f32);
-                    let (mut r, mut g, mut b) = (0.0, 0.0, 0.0);
-                    for (ox, oy) in [(-0.25, -0.25), (0.25, -0.25), (-0.25, 0.25), (0.25, 0.25)] {
-                        let sxp = ((u + ox * sx) as i32).clamp(0, self.w - 1) as usize;
-                        let syp = ((v + oy * sy) as i32).clamp(0, self.h - 1) as usize;
-                        let p = orig[syp * ww + sxp];
-                        r += ((p >> 16) & 0xFF) as f32;
-                        g += ((p >> 8) & 0xFF) as f32;
-                        b += (p & 0xFF) as f32;
-                    }
-                    mix(target, [r / 4.0, g / 4.0, b / 4.0], a);
+                    let (r, g, b) = average();
+                    mix(target, [r as f32, g as f32, b as f32], a);
                 }
                 let hair = cov(sdf.abs() - 0.75, 1.0) * 0.55;
                 if hair > 0.0 {
@@ -812,4 +835,37 @@ fn mix(px: &mut u32, color: [f32; 3], a: f32) {
         (from + (to - from) * a) as u32
     };
     *px = (c(16, color[0]) << 16) | (c(8, color[1]) << 8) | c(0, color[2]);
+}
+
+// ---- frames on the display's beat ----------------------------------------------
+
+static BEAT_ON: AtomicBool = AtomicBool::new(false);
+static BEAT_PENDING: AtomicBool = AtomicBool::new(false); // a frame message is on its way
+static BEAT_TARGET: AtomicIsize = AtomicIsize::new(0);
+
+/// While something moves, a small thread waits for each vertical blank (DwmFlush) and posts one frame to the
+/// overlay: the flight to the capsule moves in step with the display, whatever else (a video) is playing.
+fn beat_start(hwnd: HWND) {
+    BEAT_TARGET.store(hwnd.0 as isize, Relaxed);
+    if BEAT_ON.swap(true, AcqRel) {
+        return;
+    }
+    let _ = std::thread::Builder::new().name("snip frames".into()).spawn(|| {
+        while BEAT_ON.load(Acquire) {
+            let before = Instant::now();
+            if unsafe { windows::Win32::Graphics::Dwm::DwmFlush() }.is_err() || before.elapsed() < std::time::Duration::from_micros(500) {
+                std::thread::sleep(std::time::Duration::from_millis(8)); // no compositor: a steady beat
+            }
+            if !BEAT_PENDING.swap(true, AcqRel) {
+                unsafe {
+                    let _ = PostMessageW(HWND(BEAT_TARGET.load(Relaxed) as _), WM_SNIP_FRAME, WPARAM(0), LPARAM(0));
+                }
+            }
+        }
+    });
+}
+
+fn beat_stop() {
+    BEAT_ON.store(false, Release);
+    BEAT_PENDING.store(false, Release);
 }
