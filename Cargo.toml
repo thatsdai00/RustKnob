@@ -1,4 +1,4 @@
-﻿[package]
+[package]
 name = "rustknob"
 version = "1.4.5"
 edition = "2021"
