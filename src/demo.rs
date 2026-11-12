@@ -698,7 +698,7 @@ pub fn run(dir: &str) {
     );
 
     // 5b. the Razer mouse
-    let pic = crate::razer::picture();
+    let pic = crate::mouse::picture(crate::mouse::Model::ViperV3Pro);
     let (dpi, dpi_label) = (raster("1600", -100, 700), raster("DPI", -48, 700));
     let (name, linked, pct) = (raster("Viper V3 Pro", -64, 700), raster(en.mouse_connected, -48, 400), raster("82%", -60, 700));
     let (low, low_pct, crit, crit_pct) = (raster(en.battery_low, -66, 700), raster("22%", -60, 700), raster(en.battery_critical, -66, 700), raster("4%", -60, 700));
@@ -716,7 +716,7 @@ pub fn run(dir: &str) {
     let charge_img = {
         let mut sc = capsule(ui::MOUSE_LINK, Kind::MouseLink, 1.55);
         sc.marq = 0.62;
-        sc.mouse = Some(MouseView { title: name, sub: charging_txt, percent: keep(raster("46%", -60, 700)), charging: true, ..base(0, 0.46) });
+        sc.mouse = Some(MouseView { picture: None, title: keep(raster("PRO X Superlight 2", -64, 700)), sub: charging_txt, percent: keep(raster("46%", -60, 700)), charging: true, ..base(0, 0.46) });
         shoot(&sc)
     };
     let dpi_img = mouse(Kind::MouseDpi, ui::MOUSE_DPI, MouseView { dpi, dpi_label, stage: 1.0, ..base(0, 0.82) });
@@ -724,7 +724,7 @@ pub fn run(dir: &str) {
     let crit_img = mouse(Kind::MouseBattery, ui::MOUSE_BATTERY, MouseView { warn: crit, percent: crit_pct, ..base(2, 0.04) });
     save(
         "card-mouse",
-        &card("Your mouse, at a glance.", "Razer Viper V3 Pro, no Synapse: it says hello when it wakes, rolls the DPI as you switch, and warns before the battery runs out.", green, |c, cx, cy| {
+        &card("Your mouse, at a glance.", "Viper V3 Pro or Superlight 2, no extra software: a hello on wake, the DPI as it changes, a warning before it runs out.", green, |c, cx, cy| {
             for (i, img) in [&link_img, &charge_img, &dpi_img, &low_img, &crit_img].into_iter().enumerate() {
                 show(c, img, cx, cy - 410.0 + i as f32 * 120.0);
             }

@@ -5,7 +5,7 @@
 
 use crate::gfx::*;
 use crate::media::{Song, ART_PX};
-use crate::razer::Picture;
+use crate::mouse::Picture;
 use crate::text::{TextBmp, TEXT_R};
 use crate::theme::Palette;
 use crate::ui::{self, SHADOW, TOP};
@@ -316,6 +316,32 @@ fn picture_at(p: &mut Px, pic: &Picture, x: f32, y: f32, h: f32, unit: f32, alph
     }
 }
 
+/// How wide the mouse is drawn at height `h`: its picture, or the drawn mouse.
+fn art_width(m: &MouseView, h: f32) -> f32 {
+    m.picture.map_or(h * 0.62, |pic| h * pic.aspect())
+}
+
+/// The mouse, `h` tall, its left edge at x = 0 and centered on y = 0: its picture, or (a model without one) a
+/// mouse seen from above, drawn: body, the split between the buttons, the wheel.
+#[allow(clippy::too_many_arguments)]
+fn mouse_art(p: &mut Px, m: &MouseView, x: f32, y: f32, h: f32, unit: f32, alpha: f32, pal: &Palette, aa: f32) {
+    let w = art_width(m, h);
+    if x < -1.0 || x > w + 1.0 || y.abs() > h / 2.0 + 1.0 || alpha <= 0.003 {
+        return;
+    }
+    if let Some(pic) = m.picture {
+        picture_at(p, pic, x - w / 2.0, y, h, unit, alpha, pal.light);
+        return;
+    }
+    let (x, hw, hh) = (x - w / 2.0, w / 2.0 - 1.0, h / 2.0 - 1.0);
+    let body = rrect(x, y, hw, hh, hw);
+    p.over(pal.mix(0.16), alpha * cov(body, aa)); // a faint fill, then the outline
+    p.over(pal.fg, alpha * 0.9 * cov(body.abs() - 0.8, aa));
+    let split = seg(x, y, (0.0, -hh), (0.0, -hh * 0.18), 0.7).min(seg(x, y, (-hw * 0.96, -hh * 0.18), (hw * 0.96, -hh * 0.18), 0.7));
+    p.over(pal.fg, alpha * 0.7 * cov(split, aa));
+    p.over(pal.fg, alpha * cov(rrect(x, y + hh * 0.52, 1.5, hh * 0.16, 1.5), aa)); // the wheel
+}
+
 /// A line of text `view` wide, centered on (x, y) = 0, that rolls: `dy` moves it, `a` fades it, and it is cut
 /// at `clip` above and below.
 fn rolling_text(tb: &TextBmp, x: f32, y: f32, dy: f32, clip: f32, unit: f32) -> f32 {
@@ -333,15 +359,13 @@ fn mouse_dpi_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) 
     let ry = ty - s.h / 2.0;
     let e = 1.0 - (1.0 - m.intro.clamp(0.0, 1.0)).powi(3);
 
-    if let Some(pic) = m.picture {
-        picture_at(p, pic, tx - (16.0 + 19.0 * pic.aspect()) + (1.0 - e) * 14.0, ry + 1.0, 38.0, unit, ca * e, pal.light);
-    }
+    mouse_art(p, m, tx - 16.0 + (1.0 - e) * 14.0, ry + 1.0, 38.0, unit, ca * e, pal, aa);
 
     // the number and "DPI" after it, centered between the picture and the stage markers
     let right = s.w - 18.0 - 10.0 * m.stages.max(1) as f32;
     let label_w = m.dpi_label.map_or(0.0, |l| l.size().0 + 5.0);
     let number_w = m.dpi.map_or(0.0, |d| d.size().0);
-    let cx = (16.0 + 38.0 * m.picture.map_or(1.5, |pic| pic.aspect()) + 10.0 + right) / 2.0;
+    let cx = (16.0 + art_width(m, 38.0) + 10.0 + right) / 2.0;
     let left = cx - (number_w + label_w) / 2.0;
     let rise = 1.0 - (1.0 - m.roll.clamp(0.0, 1.0)).powi(3);
     let leave = sstep(0.0, 0.7, m.roll);
@@ -403,12 +427,8 @@ fn mouse_link_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32)
     let e = 1.0 - (1.0 - m.intro.clamp(0.0, 1.0)).powi(3);
 
     // the picture glides in from the left
-    if let Some(pic) = m.picture {
-        let h = 38.0;
-        let w = h * pic.aspect();
-        picture_at(p, pic, tx - (16.0 + w / 2.0) + (1.0 - e) * 22.0, ry + 1.0, h, unit, ca * e, pal.light);
-    }
-    let left = 16.0 + 38.0 * m.picture.map_or(0.0, |pic| pic.aspect()) + 10.0;
+    mouse_art(p, m, tx - 16.0 + (1.0 - e) * 22.0, ry + 1.0, 38.0, unit, ca * e, pal, aa);
+    let left = 16.0 + art_width(m, 38.0) + 10.0;
     let right = s.w - 72.0;
     if let Some(title) = m.title {
         p.over(pal.fg, ca * text_left(title, tx - left, ty - 28.0, right - left, s.marq, unit));

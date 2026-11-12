@@ -16,7 +16,7 @@ use windows::Win32::System::Threading::*;
 use windows::Win32::UI::HiDpi::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-use crate::razer;
+use crate::mouse;
 use crate::dragsrc;
 use crate::pace;
 use crate::spectrum;
@@ -34,11 +34,10 @@ use crate::theme::{self, Palette};
 use crate::{autostart, clipboard, device, history, install, ntfy, tray, ui, upload};
 
 const WM_APP_WARM: u32 = WM_APP + 25;
-const WM_APP_MOUSE: u32 = WM_APP + 41; // razer.rs: wparam razer::EV_*
+const WM_APP_MOUSE: u32 = WM_APP + 41; // razer.rs: wparam mouse::EV_*
 const MOUSE_DPI_MS: u32 = 1700; // the DPI capsule stays this long after the last change
 const MOUSE_LINK_MS: u32 = 3800; // "connected"
 const MOUSE_LOW_MS: u32 = 5000; // battery low (the critical one stays)
-const MOUSE_NAME: &str = "Viper V3 Pro";
 const WM_APP_UPDATE: u32 = WM_APP + 28; // update.rs: a newer release is downloaded and checked
 const T_UPDATE: usize = 8; // look for a new release
 const T_UPDATE_APPLY: usize = 9; // install a downloaded one once nothing is going on
@@ -357,7 +356,7 @@ pub unsafe fn init(cfg: Config, hwnd: HWND) {
     media::set_pin(st().cfg.pin_media);
     media::set_lyrics(st().cfg.pin_lyrics);
     media::start(hwnd.0 as isize, WM_APP_SONG, WM_APP_PIN);
-    razer::set_enabled(st().cfg.razer, hwnd.0 as isize, WM_APP_MOUSE);
+    mouse::set_enabled(st().cfg.mouse, hwnd.0 as isize, WM_APP_MOUSE);
     ntfy::start(&st().cfg, hwnd.0 as isize, WM_APP_NTFY);
     if !tray::add(hwnd) {
         SetTimer(hwnd, T_TRAY, 2000, None);
@@ -538,7 +537,7 @@ impl State {
 
     fn toggle_targets(&self) -> [f32; ui::TOGGLES] {
         let c = &self.cfg;
-        [c.click_sound, c.notify_song, c.notify_device, c.volume_keys, c.low_power, c.upload_sound, c.screenshot, c.pin_media, c.pin_fullscreen, c.pin_lyrics, c.lyric_words, c.razer, c.auto_update, self.autostart].map(|b| f32::from(u8::from(b)))
+        [c.click_sound, c.notify_song, c.notify_device, c.volume_keys, c.low_power, c.upload_sound, c.screenshot, c.pin_media, c.pin_fullscreen, c.pin_lyrics, c.lyric_words, c.mouse, c.auto_update, self.autostart].map(|b| f32::from(u8::from(b)))
     }
 
     /// Screen-space rectangle of the shape at its target (for the mouse hook).
@@ -688,7 +687,7 @@ unsafe fn begin_close(hwnd: HWND) {
     }
     end_edit(hwnd, true);
     // a nearly empty mouse battery stays on show: whatever else was up gives way to its warning
-    if s.mouse.crit && s.cfg.razer {
+    if s.mouse.crit && s.cfg.mouse {
         if s.kind == Kind::MouseBattery {
             return; // it stays until the mouse charges (mouse_event clears crit first)
         }
@@ -702,7 +701,7 @@ unsafe fn begin_close(hwnd: HWND) {
         frames(hwnd);
         return;
     }
-    if std::mem::take(&mut s.mouse.low_pending) && s.cfg.razer && s.kind == Kind::MouseLink {
+    if std::mem::take(&mut s.mouse.low_pending) && s.cfg.mouse && s.kind == Kind::MouseLink {
         mouse_warning(s, false);
         s.set_kind(Kind::MouseBattery);
         s.apply_targets();
@@ -1141,6 +1140,7 @@ struct MouseUi {
     charging: bool,
     intro: f32,
     crit: bool, // the red warning is on: it stays until the mouse charges, sleeps or is gone
+    model: Option<mouse::Model>, // the one the name was made for
     low_pending: bool, // a yellow warning waits for the "connected" card to close
     charging_seen: bool, // on the charger when last looked (the card shows when that turns on)
     battery_text: Option<(u8, bool)>, // what `percent` was made from
@@ -1153,7 +1153,7 @@ impl MouseUi {
 
     fn view(&self) -> render::MouseView<'_> {
         render::MouseView {
-            picture: razer::picture(),
+            picture: self.model.and_then(mouse::picture),
             dpi: self.dpi.as_ref(),
             dpi_old: self.dpi_old.as_ref(),
             roll: self.roll,
@@ -1171,7 +1171,7 @@ impl MouseUi {
         }
     }
 
-    fn set_battery(&mut self, t: &i18n::Strings, now: &razer::Status) {
+    fn set_battery(&mut self, t: &i18n::Strings, now: &mouse::Status) {
         self.level = match now.battery {
             Some(p) if !now.charging && p <= 5 => 2,
             Some(p) if !now.charging && p < 25 => 1,
@@ -1240,10 +1240,10 @@ unsafe fn mouse_show(hwnd: HWND, kind: Kind, hide: Option<u32>) {
 /// The Razer mouse said something (razer.rs): its DPI or battery changed, it woke up, or it went quiet.
 unsafe fn mouse_event(hwnd: HWND, ev: usize) {
     let s = st();
-    if !s.cfg.razer {
+    if !s.cfg.mouse {
         return;
     }
-    let Some(now) = razer::status() else {
+    let Some(now) = mouse::status() else {
         // asleep or unplugged: the red warning goes with it (and comes back when it wakes)
         if s.mouse.crit {
             s.mouse.crit = false;
@@ -1255,13 +1255,17 @@ unsafe fn mouse_event(hwnd: HWND, ev: usize) {
     };
     let t = s.strings();
     s.mouse.set_battery(t, &now);
+    if s.mouse.model != Some(now.model) {
+        s.mouse.model = Some(now.model);
+        s.mouse.title = text::raster(now.model.name(), -64, 700);
+    }
     let level = s.mouse.level;
     // a little slack before a warning counts as over: the reading jitters by a percent or so
     let pct = now.battery.unwrap_or(100);
     let crit_over = now.charging || pct >= 8;
     let low_over = now.charging || pct >= 30;
     let was = s.mouse.seen;
-    if ev == razer::EV_BATTERY || ev == razer::EV_WAKE {
+    if ev == mouse::EV_BATTERY || ev == mouse::EV_WAKE {
         s.mouse.seen = if level > 0 { level.max(was) } else if low_over { 0 } else { was };
     }
     let showing = s.live() && is_mouse(s.kind);
@@ -1270,7 +1274,7 @@ unsafe fn mouse_event(hwnd: HWND, ev: usize) {
     // the DPI and its stage, always up to date (a wake-up brings them too)
     let dpi_changed = now.dpi != s.mouse.dpi_value;
     if dpi_changed || s.mouse.dpi.is_none() {
-        let rolls = ev == razer::EV_DPI && s.live() && s.kind == Kind::MouseDpi;
+        let rolls = ev == mouse::EV_DPI && s.live() && s.kind == Kind::MouseDpi;
         s.mouse.dpi_old = if rolls { s.mouse.dpi.take() } else { None };
         s.mouse.roll = if rolls { 0.0 } else { 1.0 };
         s.mouse.dpi = text::raster(&now.dpi.to_string(), -100, 700);
@@ -1280,18 +1284,15 @@ unsafe fn mouse_event(hwnd: HWND, ev: usize) {
         s.mouse.dpi_label = text::raster("DPI", -48, 700);
     }
     s.mouse.stage_goal = now.stage as f32;
-    if s.mouse.stages != now.stages || ev != razer::EV_DPI {
+    if s.mouse.stages != now.stages || ev != mouse::EV_DPI {
         s.mouse.stage = s.mouse.stage_goal; // a new set of stages: no slide from the old one
     }
     s.mouse.stages = now.stages;
 
     match ev {
-        razer::EV_WAKE => {
+        mouse::EV_WAKE => {
             s.mouse.crit = level == 2;
             s.mouse.low_pending = level == 1 && was == 0; // shown once, after the card
-            if s.mouse.title.is_none() {
-                s.mouse.title = text::raster(MOUSE_NAME, -64, 700);
-            }
             s.mouse.sub = text::raster(if now.charging { t.mouse_charging } else { t.mouse_connected }, -48, 400);
             s.mouse.fill = 0.0; // it fills up as the card comes in
             if s.mouse.crit {
@@ -1299,18 +1300,15 @@ unsafe fn mouse_event(hwnd: HWND, ev: usize) {
             }
             mouse_show(hwnd, Kind::MouseLink, Some(MOUSE_LINK_MS));
         }
-        razer::EV_DPI => {
+        mouse::EV_DPI => {
             if !(s.live() && s.kind == Kind::MouseDpi) {
                 s.mouse.stage = s.mouse.stage_goal;
             }
             mouse_show(hwnd, Kind::MouseDpi, Some(MOUSE_DPI_MS));
         }
-        razer::EV_BATTERY if plugged => {
+        mouse::EV_BATTERY if plugged => {
             // on the charger: the card again, saying so, its battery green with a bolt (any warning ends)
             (s.mouse.crit, s.mouse.low_pending) = (false, false);
-            if s.mouse.title.is_none() {
-                s.mouse.title = text::raster(MOUSE_NAME, -64, 700);
-            }
             s.mouse.sub = text::raster(t.mouse_charging, -48, 400);
             s.mouse.fill = 0.0;
             if s.live() && s.kind == Kind::MouseBattery {
@@ -1327,7 +1325,7 @@ unsafe fn mouse_event(hwnd: HWND, ev: usize) {
                 mouse_show(hwnd, Kind::MouseLink, Some(MOUSE_LINK_MS));
             }
         }
-        razer::EV_BATTERY => {
+        mouse::EV_BATTERY => {
             if level == 2 && !s.mouse.crit {
                 s.mouse.crit = true;
                 mouse_warning(s, true);
@@ -1625,11 +1623,11 @@ unsafe fn settings_click(hwnd: HWND, screen: POINT) {
             pin_refresh(hwnd);
         }
         ui::Hit::Toggle(11) => {
-            s.cfg.razer ^= true;
-            razer::set_enabled(s.cfg.razer, hwnd.0 as isize, WM_APP_MOUSE);
-            if !s.cfg.razer {
+            s.cfg.mouse ^= true;
+            mouse::set_enabled(s.cfg.mouse, hwnd.0 as isize, WM_APP_MOUSE);
+            if !s.cfg.mouse {
                 (s.mouse.crit, s.mouse.low_pending) = (false, false); // its warnings go with it
-            } else if razer::status().is_some() {
+            } else if mouse::status().is_some() {
                 s.mouse.crit = s.mouse.level == 2; // already awake: no wake-up will come to say so
             }
         }
@@ -2393,7 +2391,7 @@ pub unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPAR
         WM_APP_MOUSE => mouse_event(hwnd, wp.0),
         WM_DEVICECHANGE => {
             if matches!(wp.0, 0x0007 | 0x8000 | 0x8004) {
-                razer::rescan(); // DBT_DEVNODES_CHANGED / arrival / removal: a receiver or cable may have come or gone
+                mouse::rescan(); // DBT_DEVNODES_CHANGED / arrival / removal: a receiver or cable may have come or gone
             }
             return DefWindowProcW(hwnd, msg, wp, lp);
         }

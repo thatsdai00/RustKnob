@@ -32,7 +32,7 @@
 <td width="50%"><img src="docs/img/card-settings.png" alt="Settings in dark and light"></td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/img/card-mouse.png" alt="Razer Viper V3 Pro: connected, DPI, battery warnings"></td>
+<td width="50%"><img src="docs/img/card-mouse.png" alt="Gaming mouse: connected, charging, DPI, battery warnings"></td>
 <td width="50%"></td>
 </tr>
 </table>
@@ -71,7 +71,7 @@ RustKnob checks this repository's [releases](https://github.com/thatsdai00/RustK
 | **Volume** | Double-click the middle mouse button (or `Ctrl+Alt+K`). Scroll: the capsule turns into a round **knob**, and the page behind does not scroll. Volume keys use it instead of Windows' popup. |
 | **Media** | Song changes show title and artist. Mouse back/forward, left click and right click over the capsule control playback; the side buttons work in a wider area around it. |
 | **Pin media** | The capsule stays while music plays, like a Live Activity: cover, title, artist, and a **real spectrum visualizer** that takes the cover's color. Song changes animate. Optional **synced lyrics** ([LiriQo](https://github.com/AlFarrizi-Studio/LiriQo), with [LRCLIB](https://lrclib.net) as backup) appear under the title, line by line. The **word-by-word** mode (*beta*, its own switch in settings) lights each word as it is sung, like Apple Music, when the song has word timing. It fades when the pointer comes near, and steps aside for full-screen apps unless you say otherwise. |
-| **Razer Viper V3 Pro** | Built in, no Synapse and no second program: RustKnob talks to the mouse over HID itself. When it wakes, a card says hello with its picture and battery. Switch DPI and the number rolls while a marker slides to the new stage. Below 25 % a yellow warning shows once; at 5 % a red one stays until you charge it (it fades when the pointer comes near). Reads only, a few milliseconds every 400 ms while the mouse is awake, nothing while it sleeps or is not there. |
+| **Gaming mouse** (Razer Viper V3 Pro, Logitech PRO X Superlight 2) | Built in, no Synapse, no G HUB and no second program: RustKnob talks to the mouse over HID itself (the Superlight 2 through HID++; not yet tried on one). When it wakes, a card says hello with its picture and battery. Switch DPI and the number rolls while a marker slides to the new stage. Below 25 % a yellow warning shows once; at 5 % a red one stays until you charge it (it fades when the pointer comes near). Reads only, a few milliseconds every 400 ms while the mouse is awake, nothing while it sleeps or is not there. |
 | **Uploads** | Drag a file toward the top of the screen and drop it on the capsule. It uploads to fuckingfast.net with progress and speed, and the link is copied. `Ctrl+Alt+H` opens the history. |
 | **Screenshots** | `Win+Shift+S` freezes and dims the screen. Drag a rectangle: it is copied, shrinks into the island, and `Ctrl+V` later tells you where it was pasted. `Esc` or right click cancels. |
 | **Notifications** | Listens to a [ntfy](https://ntfy.sh) topic and shows messages with their own sound and volume. Device changes show the device name. |
@@ -133,7 +133,7 @@ Needs Rust and the Visual Studio C++ build tools. `package.ps1` writes `dist/Rus
 | **Ses** | Orta tuşa çift tık (veya `Ctrl+Alt+K`), tekerlekle yuvarlak düğmeye dönüşür. |
 | **Medya** | Yeni şarkıda başlık ve sanatçı; fare tuşlarıyla şarkı yönetimi. |
 | **Medyayı sabitle** | Kapak, şarkı, sanatçı ve gerçek spektrum görselleştirici; renkler kapaktan gelir. İsteğe bağlı senkron şarkı sözleri ([LiriQo](https://github.com/AlFarrizi-Studio/LiriQo), yedek olarak [LRCLIB](https://lrclib.net)) başlığın altında satır satır akar. Ayarlardaki ayrı **kelime kelime** anahtarı (*beta*), kelime zamanlaması olan şarkılarda her kelimeyi Apple Music gibi söylendikçe yakar. |
-| **Razer Viper V3 Pro** | Synapse yok, ikinci program yok: RustKnob fareyle HID üzerinden kendisi konuşur. Fare uyanınca görseli ve piliyle bir kart çıkar. DPI değişince sayı yuvarlanır, işaret yeni kademeye kayar. %25'in altında bir kez sarı uyarı, %5'te şarja takana kadar kalan kırmızı uyarı. Sadece okur; fare uyanıkken 400 ms'de bir birkaç milisaniye, uyurken ya da yokken hiç. |
+| **Oyun faresi** (Razer Viper V3 Pro, Logitech PRO X Superlight 2) | Synapse yok, G HUB yok, ikinci program yok: RustKnob fareyle HID üzerinden kendisi konuşur (Superlight 2 HID++ ile; henüz gerçek farede denenmedi). Fare uyanınca görseli ve piliyle bir kart çıkar. DPI değişince sayı yuvarlanır, işaret yeni kademeye kayar. %25'in altında bir kez sarı uyarı, %5'te şarja takana kadar kalan kırmızı uyarı. Sadece okur; fare uyanıkken 400 ms'de bir birkaç milisaniye, uyurken ya da yokken hiç. |
 | **Yükleme** | Dosyayı sürükleyip kapsüle bırak: fuckingfast.net'e yüklenir, link kopyalanır (`Ctrl+Alt+H` geçmiş). |
 | **Ekran görüntüsü** | `Win+Shift+S`: seç, panoya kopyalansın, kapsüle uçsun; `Ctrl+V`'de nereye yapıştırıldığını söyler. |
 | **Bildirimler** | [ntfy](https://ntfy.sh) konusunu dinler. |

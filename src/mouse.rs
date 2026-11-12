@@ -1,18 +1,17 @@
-// Razer Viper V3 Pro, straight over HID (no Synapse, no second program): the DPI it is set to, its battery,
-// and when it wakes up. Ported from the stand-alone Viper driver (rustdriver/razer), reads only.
+// Gaming mice, straight over HID (no Synapse, no G HUB, no second program): the DPI they are set to, their
+// battery, and when they wake up. Reads only. Everything here is shared; only the way of talking to the mouse
+// differs per brand:
 //
-// Every exchange is one 90-byte packet sent as feature report 0 on the mouse's configuration collection
-// (interface MI_00, the only Razer collection with a 91-byte feature report) and read back until the
-// status byte stops saying "busy":
+//   Razer Viper V3 Pro       (here)         a 90-byte packet as feature report 0, ported from rustdriver/razer
+//   Logitech PRO X SUPERLIGHT 2  (logitech.rs)  HID++ 2.0 reports on the receiver's vendor collection
 //
-//   [0] status: 0 new, 1 busy, 2 ok, 3 failed, 4 no answer (asleep / out of range), 5 not supported
-//   [1] transaction id 0x1F   [5] argument size   [6] class   [7] id (bit 7: get)   [8..88] arguments
-//   [88] XOR of bytes 2..87
+// Razer packet (report id first): [1] status 0 new, 1 busy, 2 ok, 3 failed, 4 no answer (asleep / out of
+// range), 5 not supported; [2] transaction id 0x1F; [6] argument size; [7] class; [8] id (bit 7: get);
+// [9..89] arguments; [89] XOR of [3..89]. It is sent, then read back until the status stops saying "busy".
 //
-// A thread of its own owns the handle. With no Razer receiver or cable present it sleeps until Windows
-// reports a device change; while the mouse sleeps it asks once every 1.5 s (the receiver answers "asleep"
-// at once); while it is awake it reads the DPI every 400 ms (so a press of the DPI button shows quickly)
-// and the battery once a minute. Each read is one USB transfer of a few ms on that thread.
+// A thread of its own owns the handle. With no receiver or cable present it sleeps until Windows reports a
+// device change; while the mouse sleeps it asks once every 1.5 s; while it is awake it reads the DPI every
+// 400 ms (so a press of the DPI button shows quickly), the charger every 3 s and the battery once a minute.
 
 use std::sync::atomic::{AtomicIsize, Ordering};
 use std::sync::{Condvar, Mutex, OnceLock};
@@ -24,6 +23,8 @@ use windows::Win32::Devices::HumanInterfaceDevice::*;
 use windows::Win32::Foundation::*;
 use windows::Win32::Storage::FileSystem::*;
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
+
+use crate::logitech::Logi;
 
 const VID: u16 = 0x1532;
 const PID_WIRED: u16 = 0x00c0;
@@ -40,9 +41,27 @@ const BATTERY_EVERY: Duration = Duration::from_secs(60);
 const CHARGING_EVERY: Duration = Duration::from_secs(3); // is it on the charger (now)? One small read.
 const QUIET_FOR_SLEEP: u32 = 3; // polls in a row without an answer before it counts as asleep (radio hiccups)
 
+/// Which mouse it is.
+#[derive(Clone, Copy, PartialEq, Default, Debug)]
+pub enum Model {
+    #[default]
+    ViperV3Pro,
+    Superlight2,
+}
+
+impl Model {
+    pub fn name(self) -> &'static str {
+        match self {
+            Model::ViperV3Pro => "Viper V3 Pro",
+            Model::Superlight2 => "PRO X Superlight 2",
+        }
+    }
+}
+
 /// What the mouse said last.
 #[derive(Clone, Copy, PartialEq, Default)]
 pub struct Status {
+    pub model: Model,
     pub dpi: u16,
     pub stage: usize,  // 0-based active DPI stage
     pub stages: usize, // how many stages there are
@@ -154,7 +173,7 @@ fn run() {
             }
         }
         settle_rescans();
-        let Some(mut mouse) = Mouse::find() else {
+        let Some(mut mouse) = Device::preferred().and_then(Device::open) else {
             publish(None);
             wait(None); // nothing plugged in: until Windows says something changed
             continue;
@@ -174,7 +193,7 @@ fn settle_rescans() {
 }
 
 /// Follows one plugged-in receiver (or cable) until it goes away or the support is switched off.
-fn watch(m: &mut Mouse) {
+fn watch(m: &mut Device) {
     let mut now: Option<Status> = None; // None while asleep
     let (mut battery_at, mut charging_at) = (Instant::now(), Instant::now());
     let (mut quiet, mut asleep_since) = (0u32, Instant::now());
@@ -185,9 +204,10 @@ fn watch(m: &mut Mouse) {
                     // woke up (or found awake): everything once
                     quiet = 0;
                     let (stage, stages) = m.stages().unwrap_or((0, 0));
-                    let s = Status { dpi, stage, stages, battery: m.battery().ok(), charging: m.charging().unwrap_or(false) };
+                    let (battery, charging) = m.battery().unwrap_or((None, false));
+                    let s = Status { model: m.model(), dpi, stage, stages, battery, charging };
                     battery_at = Instant::now();
-                    let _ = picture(); // decoded here, not on the UI thread when the card first draws
+                    let _ = picture(s.model); // decoded here, not on the UI thread when the card first draws
                     now = Some(s);
                     publish(now);
                     post(EV_WAKE);
@@ -213,7 +233,7 @@ fn watch(m: &mut Mouse) {
                     }
                     if battery_at.elapsed() >= BATTERY_EVERY {
                         battery_at = Instant::now();
-                        let b = m.battery().ok().or(s.battery);
+                        let b = m.battery().ok().and_then(|b| b.0).or(s.battery);
                         changed |= b != s.battery;
                         s.battery = b;
                     }
@@ -250,7 +270,7 @@ fn watch(m: &mut Mouse) {
         // a device came or went: is this still the way to the mouse (the cable wins when it is plugged in)?
         if take_rescan() {
             settle_rescans();
-            if Mouse::preferred().as_deref() != Some(&m.path[..]) {
+            if Device::preferred().map(|p| p.1).as_deref() != Some(m.path()) {
                 if now.is_some() {
                     post(EV_GONE);
                 }
@@ -261,17 +281,81 @@ fn watch(m: &mut Mouse) {
 }
 
 #[derive(Debug, PartialEq)]
-enum Error {
+pub enum Error {
     Io,     // transfer failed: unplugged
     Asleep, // the receiver answers for the mouse: asleep, off or out of range (or it did not answer at all)
 }
 
-struct Mouse {
+/// The mouse, whichever brand: all the thread needs from it.
+enum Device {
+    Razer(Razer),
+    Logitech(Logi),
+}
+
+impl Device {
+    /// The model and path to talk to: a Razer first, else a Logitech (each prefers its cable to its receiver).
+    fn preferred() -> Option<(Model, Vec<u16>)> {
+        Razer::preferred().map(|p| (Model::ViperV3Pro, p)).or_else(|| Logi::preferred().map(|p| (Model::Superlight2, p)))
+    }
+
+    fn open((model, path): (Model, Vec<u16>)) -> Option<Device> {
+        match model {
+            Model::ViperV3Pro => Razer::open(path).map(Device::Razer),
+            Model::Superlight2 => Logi::open(path).map(Device::Logitech),
+        }
+    }
+
+    fn model(&self) -> Model {
+        match self {
+            Device::Razer(_) => Model::ViperV3Pro,
+            Device::Logitech(_) => Model::Superlight2,
+        }
+    }
+
+    fn path(&self) -> &[u16] {
+        match self {
+            Device::Razer(m) => &m.path,
+            Device::Logitech(m) => &m.path,
+        }
+    }
+
+    fn dpi(&mut self) -> Result<u16, Error> {
+        match self {
+            Device::Razer(m) => m.dpi(),
+            Device::Logitech(m) => m.dpi(),
+        }
+    }
+
+    /// (active stage, how many); the Logitech does not tell its stages (0 of them: no markers are drawn).
+    fn stages(&mut self) -> Result<(usize, usize), Error> {
+        match self {
+            Device::Razer(m) => m.stages(),
+            Device::Logitech(_) => Ok((0, 0)),
+        }
+    }
+
+    /// (percent, on the charger).
+    fn battery(&mut self) -> Result<(Option<u8>, bool), Error> {
+        match self {
+            Device::Razer(m) => Ok((Some(m.battery()?), m.charging().unwrap_or(false))),
+            Device::Logitech(m) => m.battery(),
+        }
+    }
+
+    fn charging(&mut self) -> Result<bool, Error> {
+        match self {
+            Device::Razer(m) => m.charging(),
+            Device::Logitech(m) => m.battery().map(|b| b.1),
+        }
+    }
+}
+
+struct Razer {
     handle: HANDLE,
     path: Vec<u16>,
 }
 
-impl Drop for Mouse {
+impl Drop for Razer {
     fn drop(&mut self) {
         unsafe {
             let _ = CloseHandle(self.handle);
@@ -279,19 +363,17 @@ impl Drop for Mouse {
     }
 }
 
-impl Mouse {
-    /// The configuration collection: Razer VID, a Viper V3 Pro PID, a 91-byte feature report. The cable wins
-    /// over the receiver when both are there.
-    fn find() -> Option<Mouse> {
-        let path = Mouse::preferred()?;
+impl Razer {
+    fn open(path: Vec<u16>) -> Option<Razer> {
         let handle = unsafe { open(&path)? };
-        Some(Mouse { handle, path })
+        Some(Razer { handle, path })
     }
 
-    /// The path to talk to: the cable's when it is plugged in, else the receiver's.
+    /// The configuration collection (a 91-byte feature report): the cable's when it is plugged in, else the
+    /// receiver's.
     fn preferred() -> Option<Vec<u16>> {
-        let all = unsafe { enumerate() };
-        let pick = |pid: u16| all.iter().find(|d| d.1 == pid).map(|d| d.0.clone());
+        let all = unsafe { hid_list("vid_1532") };
+        let pick = |pid: u16| all.iter().find(|d| d.vid == VID && d.pid == pid && d.feature_len as usize == REPORT_LEN).map(|d| d.path.clone());
         pick(PID_WIRED).or_else(|| pick(PID_WIRELESS))
     }
 
@@ -357,14 +439,25 @@ impl Mouse {
     }
 }
 
-/// Opens a HID collection with no access rights: enough for feature reports, and Windows lets nobody open a
-/// mouse collection for reading (the input stack owns it).
+/// Opens a HID collection with no access rights: enough for feature reports and for asking what it is (Windows
+/// lets nobody open a mouse collection for reading: the input stack owns it).
 unsafe fn open(path: &[u16]) -> Option<HANDLE> {
     CreateFileW(PCWSTR(path.as_ptr()), 0, FILE_SHARE_READ | FILE_SHARE_WRITE, None, OPEN_EXISTING, FILE_FLAGS_AND_ATTRIBUTES(0), None).ok().filter(|h| !h.is_invalid())
 }
 
-/// (path, product id) of every present Razer collection with the 91-byte feature report.
-unsafe fn enumerate() -> Vec<(Vec<u16>, u16)> {
+/// One present HID collection of a vendor.
+pub struct HidInfo {
+    pub path: Vec<u16>,
+    pub vid: u16,
+    pub pid: u16,
+    pub usage_page: u16,
+    pub usage: u16,
+    pub feature_len: u16,
+    pub input_len: u16,
+}
+
+/// Every present HID collection whose path carries `vid_tag` ("vid_1532"): only those are opened.
+pub unsafe fn hid_list(vid_tag: &str) -> Vec<HidInfo> {
     let mut out = Vec::new();
     let guid = HidD_GetHidGuid();
     let Ok(set) = SetupDiGetClassDevsW(Some(&guid), PCWSTR::null(), None, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE) else { return out };
@@ -390,30 +483,37 @@ unsafe fn enumerate() -> Vec<(Vec<u16>, u16)> {
         let max = (need as usize).saturating_sub(4) / 2;
         let len = (0..max).find(|&k| *p.add(k) == 0).unwrap_or(max);
         let mut path = std::slice::from_raw_parts(p, len).to_vec();
-        // only the Razer collections are opened (the path carries the vendor id)
-        if !String::from_utf16_lossy(&path).to_ascii_lowercase().contains("vid_1532") {
+        if !String::from_utf16_lossy(&path).to_ascii_lowercase().contains(vid_tag) {
             continue;
         }
         path.push(0);
-        if let Some(pid) = probe(&path) {
-            out.push((path, pid));
+        if let Some(info) = probe(path) {
+            out.push(info);
         }
     }
     let _ = SetupDiDestroyDeviceInfoList(set);
     out
 }
 
-/// The product id of a Razer collection whose feature report is the 91-byte one.
-unsafe fn probe(path: &[u16]) -> Option<u16> {
-    let h = open(path)?;
+/// What a collection is: its ids, usage and report sizes.
+unsafe fn probe(path: Vec<u16>) -> Option<HidInfo> {
+    let h = open(&path)?;
     let mut attr = HIDD_ATTRIBUTES { Size: std::mem::size_of::<HIDD_ATTRIBUTES>() as u32, ..Default::default() };
     let mut result = None;
-    if HidD_GetAttributes(h, &mut attr).as_bool() && attr.VendorID == VID && matches!(attr.ProductID, PID_WIRED | PID_WIRELESS) {
+    if HidD_GetAttributes(h, &mut attr).as_bool() {
         let mut pp = PHIDP_PREPARSED_DATA::default();
         if HidD_GetPreparsedData(h, &mut pp).as_bool() {
             let mut caps = HIDP_CAPS::default();
-            if HidP_GetCaps(pp, &mut caps) == HIDP_STATUS_SUCCESS && caps.FeatureReportByteLength as usize == REPORT_LEN {
-                result = Some(attr.ProductID);
+            if HidP_GetCaps(pp, &mut caps) == HIDP_STATUS_SUCCESS {
+                result = Some(HidInfo {
+                    path,
+                    vid: attr.VendorID,
+                    pid: attr.ProductID,
+                    usage_page: caps.UsagePage,
+                    usage: caps.Usage,
+                    feature_len: caps.FeatureReportByteLength,
+                    input_len: caps.InputReportByteLength,
+                });
             }
             let _ = HidD_FreePreparsedData(pp);
         }
@@ -475,8 +575,12 @@ impl Picture {
     }
 }
 
-/// The Viper V3 Pro from the side, decoded once (on a thread of its own: the decoder is WinRT).
-pub fn picture() -> Option<&'static Picture> {
+/// The mouse's picture: the Viper V3 Pro from the side, decoded once (on a thread of its own: the decoder is
+/// WinRT). The Superlight has none: the capsule draws a mouse instead.
+pub fn picture(model: Model) -> Option<&'static Picture> {
+    if model != Model::ViperV3Pro {
+        return None;
+    }
     static PICTURE: OnceLock<Option<Picture>> = OnceLock::new();
     PICTURE.get_or_init(|| std::thread::spawn(decode).join().ok().flatten()).as_ref()
 }
@@ -513,13 +617,14 @@ mod tests {
     #[test]
     #[ignore]
     fn read_mouse() {
-        let mut m = super::Mouse::find().expect("no Viper V3 Pro found");
+        let mut m = super::Device::preferred().and_then(super::Device::open).expect("no mouse found");
+        println!("model {:?}", m.model());
         let t = std::time::Instant::now();
         println!("dpi {:?}", m.dpi());
         println!("stages {:?}", m.stages());
-        println!("battery {:?} charging {:?}", m.battery(), m.charging());
+        println!("battery {:?}", m.battery());
         println!("{:?} for 4 reads", t.elapsed());
-        let p = super::picture().expect("picture");
+        let p = super::picture(super::Model::ViperV3Pro).expect("picture");
         println!("picture aspect {} centre {:?}", p.aspect(), p.sample(0.5, 0.5, 40.0));
     }
 }

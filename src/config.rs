@@ -25,7 +25,7 @@ pub struct Config {
     pub pin_fullscreen: bool, // ... also over full-screen apps
     pub pin_lyrics: bool,     // ... with the synced lyrics (LiriQo, LRCLIB) in place of the title
     pub lyric_words: bool,    // ... lit up word by word, as sung (beta); off: line by line
-    pub razer: bool,          // Razer Viper V3 Pro: DPI, battery and wake-ups in the capsule
+    pub mouse: bool,          // gaming mouse (Razer Viper V3 Pro, Logitech Superlight 2): DPI, battery, wake-ups
     pub auto_update: bool,    // fetch new releases from GitHub by itself
     pub ntfy_server: String,
     pub ntfy_topic: String, // empty = ntfy off
@@ -56,7 +56,7 @@ impl Default for Config {
             pin_fullscreen: false,
             pin_lyrics: true,
             lyric_words: false,
-            razer: true,
+            mouse: true,
             auto_update: true,
             ntfy_server: "https://ntfy.sh".into(),
             ntfy_topic: String::new(),
@@ -105,7 +105,7 @@ impl Config {
                 "pin_fullscreen" => cfg.pin_fullscreen = flag,
                 "pin_lyrics" => cfg.pin_lyrics = flag,
                 "lyric_words" => cfg.lyric_words = flag,
-                "razer" => cfg.razer = flag,
+                "mouse" | "razer" => cfg.mouse = flag,
                 "auto_update" => cfg.auto_update = flag,
                 "ntfy_server" if !val.is_empty() => cfg.ntfy_server = val.to_string(),
                 "ntfy_topic" => cfg.ntfy_topic = val.to_string(),
@@ -130,7 +130,7 @@ impl Config {
              ; tekerlek / ses tusu basina ses adimi (yuzde)\nstep={}\n\
              ; tekerlek birakildiktan sonra kapanma suresi (ms)\nhide_ms={}\n\
              notify_song={}\nnotify_device={}\nvolume_keys={}\nclick_sound={}\nlow_power={}\nupload_sound={}\nscreenshot={}\npin_media={}\npin_fullscreen={}\npin_lyrics={}
-lyric_words={}\nrazer={}\nauto_update={}\n\
+lyric_words={}\nmouse={}\nauto_update={}\n\
              ; ntfy bildirimleri: topic bos birakilirsa kapali. ntfy_sound: mp3/wav yolu (bos = yerlesik cin sesi).\n\
              ntfy_server={}\nntfy_topic={}\nntfy_token={}\nntfy_sound={}\nntfy_volume={}\n\
              ; sozler sesten ne kadar once gosterilsin (ms; gecikiyorsa artir, erken geliyorsa eksi yap)\nlyric_ahead_ms={}\n\
@@ -151,7 +151,7 @@ lyric_words={}\nrazer={}\nauto_update={}\n\
             b(self.pin_fullscreen),
             b(self.pin_lyrics),
             b(self.lyric_words),
-            b(self.razer),
+            b(self.mouse),
             b(self.auto_update),
             self.ntfy_server,
             self.ntfy_topic,
