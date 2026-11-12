@@ -3,7 +3,7 @@
 
 pub const TOP: f32 = 12.0; // gap between the screen edge and the capsule
 pub const WIN_W: f32 = 460.0;
-pub const WIN_H: f32 = 660.0;
+pub const WIN_H: f32 = 690.0;
 pub const SHADOW: f32 = 22.0; // how far the shadow reaches around the capsule
 
 // capsule sizes per content: one row is as big as the volume capsule, two rows share one size
@@ -28,7 +28,7 @@ pub const CAPSULE_RADIUS: f32 = 34.0;
 
 // ---- settings panel --------------------------------------------------------
 
-pub const ROWS: usize = 23;
+pub const ROWS: usize = 24;
 pub const ROW_H: f32 = 26.0;
 pub const PAD: f32 = 12.0;
 pub const SETTINGS: (f32, f32) = (380.0, PAD * 2.0 + ROWS as f32 * ROW_H);
@@ -42,7 +42,8 @@ pub const ROW_SOUND: usize = 18; // notification sound file picker
 pub const ROW_VOLUME: usize = 19; // notification sound level
 pub const ROW_LANG: usize = 20; // click cycles auto / English / Türkçe
 pub const ROW_THEME: usize = 21; // click cycles auto / dark / light
-pub const ROW_QUIT: usize = 22;
+pub const ROW_UPDATE: usize = 22; // click: look for a new release now (and install it)
+pub const ROW_QUIT: usize = 23;
 
 // stepper control geometry, measured from the panel's right edge
 pub const STEP_MINUS_X: f32 = 86.0;
@@ -66,6 +67,7 @@ pub enum Hit {
     SoundReset,
     Language,
     Theme,
+    CheckUpdate,
     Quit,
 }
 
@@ -100,6 +102,7 @@ pub fn hit(tx: f32, ty: f32) -> Option<Hit> {
         }
         ROW_LANG => Hit::Language,
         ROW_THEME => Hit::Theme,
+        ROW_UPDATE => Hit::CheckUpdate,
         _ => Hit::Quit,
     })
 }

@@ -18,16 +18,9 @@
 // Not tried on real hardware here (no Superlight 2 at hand): the ids and the protocol follow Logitech's
 // HID++ 2.0 and what Linux (hid-logitech-dj / -hidpp), Solaar and libratbag do with this mouse.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use windows::core::PCWSTR;
-use windows::Win32::Devices::HumanInterfaceDevice::{HidD_GetAttributes, HidD_SetOutputReport, HIDD_ATTRIBUTES};
-use windows::Win32::Foundation::*;
-use windows::Win32::Storage::FileSystem::*;
-use windows::Win32::System::Threading::{CreateEventW, ResetEvent, WaitForSingleObject};
-use windows::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
-
-use crate::mouse::Error;
+use crate::mouse::{Error, HidIo};
 
 const VID: u16 = 0x046d;
 /// The Superlight 2's Lightspeed receiver.
@@ -39,8 +32,7 @@ const SOFTWARE_ID: u8 = 0x0a;
 const ANSWER_WITHIN: Duration = Duration::from_millis(250);
 
 pub struct Logi {
-    handle: HANDLE,
-    event: HANDLE,
+    io: HidIo,
     pub path: Vec<u16>,
     device: u8,           // 1: the first device on a receiver; 0xFF: the mouse itself on its cable
     features: Option<Features>, // looked up once the mouse answers
@@ -50,16 +42,6 @@ pub struct Logi {
 struct Features {
     battery: Option<(u8, u16)>, // index, and which battery feature it is
     dpi: Option<u8>,
-}
-
-impl Drop for Logi {
-    fn drop(&mut self) {
-        unsafe {
-            let _ = CancelIoEx(self.handle, None);
-            let _ = CloseHandle(self.handle);
-            let _ = CloseHandle(self.event);
-        }
-    }
 }
 
 impl Logi {
@@ -73,17 +55,9 @@ impl Logi {
     }
 
     pub fn open(path: Vec<u16>) -> Option<Logi> {
-        unsafe {
-            let handle = CreateFileW(PCWSTR(path.as_ptr()), (GENERIC_READ | GENERIC_WRITE).0, FILE_SHARE_READ | FILE_SHARE_WRITE, None, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, None).ok().filter(|h| !h.is_invalid())?;
-            let Ok(event) = CreateEventW(None, true, false, PCWSTR::null()) else {
-                let _ = CloseHandle(handle);
-                return None;
-            };
-            let mut attr = HIDD_ATTRIBUTES { Size: std::mem::size_of::<HIDD_ATTRIBUTES>() as u32, ..Default::default() };
-            let _ = HidD_GetAttributes(handle, &mut attr);
-            let device = if WIRED.contains(&attr.ProductID) { 0xff } else { 1 };
-            Some(Logi { handle, event, path, device, features: None })
-        }
+        let io = HidIo::open(&path)?;
+        let device = if WIRED.contains(&io.pid) { 0xff } else { 1 };
+        Some(Logi { io, path, device, features: None })
     }
 
     /// One request and its answer (the 16 bytes after the header).
@@ -94,66 +68,21 @@ impl Logi {
         out[2] = feature;
         out[3] = function << 4 | SOFTWARE_ID;
         out[4..4 + params.len().min(16)].copy_from_slice(&params[..params.len().min(16)]);
-        unsafe {
-            if !HidD_SetOutputReport(self.handle, out.as_ptr() as *const _, LONG as u32).as_bool() {
-                // some receivers only take it as a plain write
-                let mut ov = OVERLAPPED { hEvent: self.event, ..Default::default() };
-                let _ = ResetEvent(self.event);
-                let mut n = 0u32;
-                if WriteFile(self.handle, Some(&out), None, Some(&mut ov)).is_err() && GetLastError() != ERROR_IO_PENDING {
-                    return Err(Error::Io);
-                }
-                if WaitForSingleObject(self.event, 200) != WAIT_OBJECT_0 {
-                    let _ = CancelIoEx(self.handle, Some(&ov));
-                    let _ = GetOverlappedResult(self.handle, &ov, &mut n, true);
-                    return Err(Error::Asleep);
-                }
-                if GetOverlappedResult(self.handle, &ov, &mut n, false).is_err() {
-                    return Err(Error::Io);
-                }
+        let device = self.device;
+        // answers arrive as input reports; notifications and other answers are skipped
+        self.io.ask(&out, ANSWER_WITHIN, |r| {
+            if r.len() < LONG || r[0] != 0x11 || r[1] != device {
+                None
+            } else if r[2] == 0xff && r[3] == feature && r[4] == out[3] {
+                Some(Err(Error::Asleep)) // an error answer: not there, or not supported
+            } else if r[2] == feature && r[3] == out[3] {
+                let mut a = [0u8; 16];
+                a.copy_from_slice(&r[4..20]);
+                Some(Ok(a))
+            } else {
+                None
             }
-            // answers (and notifications, which are skipped) arrive as input reports
-            let until = Instant::now() + ANSWER_WITHIN;
-            loop {
-                let left = until.saturating_duration_since(Instant::now());
-                if left.is_zero() {
-                    return Err(Error::Asleep);
-                }
-                let r = self.read(left.as_millis() as u32)?;
-                let Some(r) = r else { return Err(Error::Asleep) };
-                if r[0] != 0x11 || r[1] != self.device {
-                    continue;
-                }
-                if r[2] == 0xff && r[3] == feature && r[4] == out[3] {
-                    return Err(Error::Asleep); // an error answer: not there, or not supported
-                }
-                if r[2] == feature && r[3] == out[3] {
-                    let mut a = [0u8; 16];
-                    a.copy_from_slice(&r[4..20]);
-                    return Ok(a);
-                }
-            }
-        }
-    }
-
-    /// One input report within `ms`, or None.
-    unsafe fn read(&mut self, ms: u32) -> Result<Option<[u8; LONG]>, Error> {
-        let mut buf = [0u8; LONG];
-        let mut ov = OVERLAPPED { hEvent: self.event, ..Default::default() };
-        let _ = ResetEvent(self.event);
-        let mut n = 0u32;
-        if ReadFile(self.handle, Some(&mut buf), None, Some(&mut ov)).is_err() && GetLastError() != ERROR_IO_PENDING {
-            return Err(Error::Io);
-        }
-        if WaitForSingleObject(self.event, ms) != WAIT_OBJECT_0 {
-            let _ = CancelIoEx(self.handle, Some(&ov));
-            let _ = GetOverlappedResult(self.handle, &ov, &mut n, true);
-            return Ok(None);
-        }
-        if GetOverlappedResult(self.handle, &ov, &mut n, false).is_err() {
-            return Err(Error::Io);
-        }
-        Ok((n as usize >= LONG).then_some(buf))
+        })
     }
 
     /// The index of a feature (root feature, function 0); None when the mouse does not have it.

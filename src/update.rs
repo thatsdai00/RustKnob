@@ -31,19 +31,32 @@ pub fn take_ready() -> Option<(String, PathBuf)> {
     READY.lock().ok().and_then(|mut r| r.take())
 }
 
-/// Checks GitHub and downloads a newer release if there is one; posts `msg` to `hwnd` when one is ready.
+/// wparam of the message a check posts.
+pub const UP_TO_DATE: usize = 0;
+pub const READY_TO_INSTALL: usize = 1; // take_ready() has it
+pub const FAILED: usize = 2; // offline, or GitHub did not answer as expected
+
+/// Checks GitHub and downloads a newer release if there is one; posts `msg` to `hwnd` with how it went.
 pub fn check(hwnd: isize, msg: u32) {
     if BUSY.swap(true, Ordering::AcqRel) {
-        return; // a check is already under way
+        return; // a check is already under way (its answer comes)
     }
     std::thread::spawn(move || {
-        if let Some(found) = unsafe { newer_release() } {
-            if let Ok(mut r) = READY.lock() {
-                *r = Some(found);
-            }
-            unsafe {
-                let _ = PostMessageW(HWND(hwnd as _), msg, WPARAM(0), LPARAM(0));
-            }
+        let outcome = match unsafe { latest() } {
+            None => FAILED,
+            Some((tag, _)) if parse_version(&tag) <= parse_version(VERSION) => UP_TO_DATE,
+            Some((tag, body)) => match unsafe { download(&tag, &body) } {
+                Some(found) => {
+                    if let Ok(mut r) = READY.lock() {
+                        *r = Some(found);
+                    }
+                    READY_TO_INSTALL
+                }
+                None => FAILED,
+            },
+        };
+        unsafe {
+            let _ = PostMessageW(HWND(hwnd as _), msg, WPARAM(outcome), LPARAM(0));
         }
         BUSY.store(false, Ordering::Release);
     });
@@ -55,12 +68,16 @@ fn parse_version(text: &str) -> Option<[u32; 3]> {
     Some([parts.next()??, parts.next().flatten().unwrap_or(0), parts.next().flatten().unwrap_or(0)])
 }
 
-unsafe fn newer_release() -> Option<(String, PathBuf)> {
+/// The latest release's tag, and GitHub's description of it.
+unsafe fn latest() -> Option<(String, String)> {
     let body = String::from_utf8(get(&format!("https://api.github.com/repos/{REPO}/releases/latest"), 1 << 20)?).ok()?;
     let tag = json::str_field(&body, "tag_name")?;
-    if parse_version(&tag)? <= parse_version(VERSION)? {
-        return None;
-    }
+    parse_version(&tag)?;
+    Some((tag, body))
+}
+
+/// Downloads the release's exe and checks it against the SHA-256 GitHub lists for it.
+unsafe fn download(tag: &str, body: &str) -> Option<(String, PathBuf)> {
     // the asset's own fields follow its name
     let at = body.find(&format!("\"name\":\"{ASSET}\"")).or_else(|| body.find(&format!("\"name\": \"{ASSET}\"")))?;
     let section = &body[at..];

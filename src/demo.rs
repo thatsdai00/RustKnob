@@ -719,12 +719,12 @@ pub fn run(dir: &str) {
         sc.mouse = Some(MouseView { picture: crate::mouse::picture(crate::mouse::Model::Superlight2), title: keep(raster("Superlight 2", -64, 700)), sub: charging_txt, percent: keep(raster("46%", -60, 700)), charging: true, ..base(0, 0.46) });
         shoot(&sc)
     };
-    let dpi_img = mouse(Kind::MouseDpi, ui::MOUSE_DPI, MouseView { dpi, dpi_label, stage: 1.0, ..base(0, 0.82) });
+    let dpi_img = mouse(Kind::MouseDpi, ui::MOUSE_DPI, MouseView { picture: crate::mouse::picture(crate::mouse::Model::AtkA9Plus), dpi, dpi_label, stage: 1.0, stages: 4, ..base(0, 0.82) });
     let low_img = mouse(Kind::MouseBattery, ui::MOUSE_BATTERY, MouseView { warn: low, percent: low_pct, ..base(1, 0.22) });
     let crit_img = mouse(Kind::MouseBattery, ui::MOUSE_BATTERY, MouseView { warn: crit, percent: crit_pct, ..base(2, 0.04) });
     save(
         "card-mouse",
-        &card("Your mouse, at a glance.", "Viper V3 Pro or Superlight 2, no extra software: a hello on wake, the DPI as it changes, a warning before it runs out.", green, |c, cx, cy| {
+        &card("Your mouse, at a glance.", "Razer, Logitech or ATK, no extra software: a hello on wake, the DPI as it changes, a warning before it runs out.", green, |c, cx, cy| {
             for (i, img) in [&link_img, &charge_img, &dpi_img, &low_img, &crit_img].into_iter().enumerate() {
                 show(c, img, cx, cy - 410.0 + i as f32 * 120.0);
             }

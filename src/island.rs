@@ -211,6 +211,7 @@ struct State {
     pin_fade_goal: f32, // 0 = the pointer is far, 1 = it is over the pinned capsule
     pin_fade: f32,      // eased toward the goal: the capsule's opacity is 1 - this
     pending_update: Option<(String, std::path::PathBuf)>, // a downloaded release waiting for a quiet moment
+    update_asked: bool, // the user pressed "check for updates": the answer shows in that row, a release installs at once
     song_prev: Option<Arc<Song>>, // the song the pinned capsule is changing away from
     song_swap: f32,               // 0..1 through that change
     lyric: Option<Arc<TextBmp>>,     // the current lyric line (None: the title shows)
@@ -317,6 +318,7 @@ pub unsafe fn init(cfg: Config, hwnd: HWND) {
         pin_fade_goal: 0.0,
         pin_fade: 0.0,
         pending_update: None,
+        update_asked: false,
         song_prev: None,
         song_swap: 1.0,
         lyric: None,
@@ -939,12 +941,38 @@ unsafe fn update_tick(hwnd: HWND) {
 }
 
 /// A release was downloaded and matches its checksum: install it when nothing is on screen.
-unsafe fn update_ready(hwnd: HWND) {
+unsafe fn update_ready(hwnd: HWND, outcome: usize) {
     let s = st();
     if let Some(found) = crate::update::take_ready() {
         s.pending_update = Some(found);
     }
+    if std::mem::take(&mut s.update_asked) {
+        // asked for: say how it went in the settings row, and install a new release right away
+        let t = s.strings();
+        let text = match outcome {
+            crate::update::READY_TO_INSTALL => format!("{} v{}", t.update_installing, s.pending_update.as_ref().map_or("", |p| p.0.as_str())),
+            crate::update::UP_TO_DATE => format!("{} · v{}", t.update_latest, crate::update::VERSION),
+            _ => t.update_failed.to_string(),
+        };
+        update_row(hwnd, &text);
+        if let Some((_, path)) = s.pending_update.clone() {
+            let _ = std::process::Command::new(path).arg("--update").spawn(); // closes this copy, installs, starts again
+        }
+        return;
+    }
     update_apply(hwnd);
+}
+
+/// The "check for updates" row shows `text` (until the panel opens again).
+unsafe fn update_row(hwnd: HWND, text: &str) {
+    let s = st();
+    if let (Some(slot), Some(bmp)) = (s.labels.get_mut(ui::ROW_UPDATE), text::raster(text, -52, 400)) {
+        *slot = bmp;
+        if settings_open() {
+            s.steady_drawn = false;
+            frames(hwnd);
+        }
+    }
 }
 
 unsafe fn update_apply(hwnd: HWND) {
@@ -1671,6 +1699,13 @@ unsafe fn settings_click(hwnd: HWND, screen: POINT) {
         ui::Hit::Quit => {
             let _ = DestroyWindow(hwnd);
             return;
+        }
+        ui::Hit::CheckUpdate => {
+            if !s.update_asked {
+                s.update_asked = true;
+                update_row(hwnd, s.strings().update_checking);
+                crate::update::check(hwnd.0 as isize, WM_APP_UPDATE);
+            }
         }
     }
     s.cfg.save();
@@ -2467,7 +2502,7 @@ pub unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPAR
         }
         WM_APP_WARM => warm_up(hwnd),
         WM_APP_PIN => pin_refresh(hwnd),
-        WM_APP_UPDATE => update_ready(hwnd),
+        WM_APP_UPDATE => update_ready(hwnd, wp.0),
         WM_APP_FADE => {
             let s = st();
             if s.fades() {

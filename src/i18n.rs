@@ -51,6 +51,10 @@ pub struct Strings {
     pub mouse_charging: &'static str,
     pub battery_low: &'static str,
     pub battery_critical: &'static str,
+    pub update_checking: &'static str,
+    pub update_latest: &'static str,
+    pub update_installing: &'static str,
+    pub update_failed: &'static str,
     pub percent_first: bool, // "%31" (Turkish) or "31%"
 }
 
@@ -67,7 +71,7 @@ static EN: Strings = Strings {
         "Pin over full-screen apps",
         "Synced lyrics",
         "Word-by-word lyrics (beta)",
-        "Gaming mouse (Razer, Logitech)",
+        "Gaming mouse",
         "Update automatically",
         "Start with Windows",
         "Wheel step (%)",
@@ -78,6 +82,7 @@ static EN: Strings = Strings {
         "Notification volume (%)",
         "Language",
         "Theme",
+        "Check for updates",
         "Quit",
     ],
     tap_to_type: "click to type",
@@ -119,6 +124,10 @@ static EN: Strings = Strings {
     mouse_charging: "Charging",
     battery_low: "Mouse battery low",
     battery_critical: "Charge your mouse",
+    update_checking: "Checking…",
+    update_latest: "Up to date",
+    update_installing: "Installing the update…",
+    update_failed: "Could not check (offline?)",
     percent_first: false,
 };
 
@@ -135,7 +144,7 @@ static TR: Strings = Strings {
         "Tam ekranda da sabitle",
         "Senkron şarkı sözleri",
         "Kelime kelime sözler (beta)",
-        "Oyun faresi (Razer, Logitech)",
+        "Oyun faresi",
         "Otomatik güncelle",
         "Windows ile başlat",
         "Tekerlek adımı (%)",
@@ -146,6 +155,7 @@ static TR: Strings = Strings {
         "Bildirim ses seviyesi (%)",
         "Dil",
         "Tema",
+        "Güncellemeleri denetle",
         "Çıkış",
     ],
     tap_to_type: "yazmak için tıkla",
@@ -187,6 +197,10 @@ static TR: Strings = Strings {
     mouse_charging: "Şarj oluyor",
     battery_low: "Fare pili azaldı",
     battery_critical: "Fareyi şarj et",
+    update_checking: "Denetleniyor…",
+    update_latest: "Güncel",
+    update_installing: "Güncelleme kuruluyor…",
+    update_failed: "Denetlenemedi (bağlantı?)",
     percent_first: true,
 };
 

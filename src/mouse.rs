@@ -2,8 +2,9 @@
 // battery, and when they wake up. Reads only. Everything here is shared; only the way of talking to the mouse
 // differs per brand:
 //
-//   Razer Viper V3 Pro       (here)         a 90-byte packet as feature report 0, ported from rustdriver/razer
+//   Razer Viper V3 Pro           (here)         a 90-byte packet as feature report 0, ported from rustdriver/razer
 //   Logitech PRO X SUPERLIGHT 2  (logitech.rs)  HID++ 2.0 reports on the receiver's vendor collection
+//   ATK A9 Plus                  (atk.rs)       ATK V HUB reports (two families: Compx, BitMouse)
 //
 // Razer packet (report id first): [1] status 0 new, 1 busy, 2 ok, 3 failed, 4 no answer (asleep / out of
 // range), 5 not supported; [2] transaction id 0x1F; [6] argument size; [7] class; [8] id (bit 7: get);
@@ -24,6 +25,7 @@ use windows::Win32::Foundation::*;
 use windows::Win32::Storage::FileSystem::*;
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
+use crate::atk::Atk;
 use crate::logitech::Logi;
 
 const VID: u16 = 0x1532;
@@ -47,6 +49,7 @@ pub enum Model {
     #[default]
     ViperV3Pro,
     Superlight2,
+    AtkA9Plus,
 }
 
 impl Model {
@@ -54,6 +57,7 @@ impl Model {
         match self {
             Model::ViperV3Pro => "Viper V3 Pro",
             Model::Superlight2 => "Superlight 2",
+            Model::AtkA9Plus => "ATK A9 Plus",
         }
     }
 }
@@ -290,18 +294,23 @@ pub enum Error {
 enum Device {
     Razer(Razer),
     Logitech(Logi),
+    Atk(Atk),
 }
 
 impl Device {
     /// The model and path to talk to: a Razer first, else a Logitech (each prefers its cable to its receiver).
     fn preferred() -> Option<(Model, Vec<u16>)> {
-        Razer::preferred().map(|p| (Model::ViperV3Pro, p)).or_else(|| Logi::preferred().map(|p| (Model::Superlight2, p)))
+        Razer::preferred()
+            .map(|p| (Model::ViperV3Pro, p))
+            .or_else(|| Logi::preferred().map(|p| (Model::Superlight2, p)))
+            .or_else(|| Atk::preferred().map(|p| (Model::AtkA9Plus, p)))
     }
 
     fn open((model, path): (Model, Vec<u16>)) -> Option<Device> {
         match model {
             Model::ViperV3Pro => Razer::open(path).map(Device::Razer),
             Model::Superlight2 => Logi::open(path).map(Device::Logitech),
+            Model::AtkA9Plus => Atk::open(path).map(Device::Atk),
         }
     }
 
@@ -309,6 +318,7 @@ impl Device {
         match self {
             Device::Razer(_) => Model::ViperV3Pro,
             Device::Logitech(_) => Model::Superlight2,
+            Device::Atk(_) => Model::AtkA9Plus,
         }
     }
 
@@ -316,6 +326,7 @@ impl Device {
         match self {
             Device::Razer(m) => &m.path,
             Device::Logitech(m) => &m.path,
+            Device::Atk(m) => &m.path,
         }
     }
 
@@ -323,6 +334,7 @@ impl Device {
         match self {
             Device::Razer(m) => m.dpi(),
             Device::Logitech(m) => m.dpi(),
+            Device::Atk(m) => m.dpi(),
         }
     }
 
@@ -331,6 +343,7 @@ impl Device {
         match self {
             Device::Razer(m) => m.stages(),
             Device::Logitech(_) => Ok((0, 0)),
+            Device::Atk(m) => m.stages(),
         }
     }
 
@@ -339,6 +352,7 @@ impl Device {
         match self {
             Device::Razer(m) => Ok((Some(m.battery()?), m.charging().unwrap_or(false))),
             Device::Logitech(m) => m.battery(),
+            Device::Atk(m) => m.battery(),
         }
     }
 
@@ -346,6 +360,7 @@ impl Device {
         match self {
             Device::Razer(m) => m.charging(),
             Device::Logitech(m) => m.battery().map(|b| b.1),
+            Device::Atk(m) => m.battery().map(|b| b.1),
         }
     }
 }
@@ -454,6 +469,7 @@ pub struct HidInfo {
     pub usage: u16,
     pub feature_len: u16,
     pub input_len: u16,
+    pub output_len: u16,
 }
 
 /// Every present HID collection whose path carries `vid_tag` ("vid_1532"): only those are opened.
@@ -513,6 +529,7 @@ unsafe fn probe(path: Vec<u16>) -> Option<HidInfo> {
                     usage: caps.Usage,
                     feature_len: caps.FeatureReportByteLength,
                     input_len: caps.InputReportByteLength,
+                    output_len: caps.OutputReportByteLength,
                 });
             }
             let _ = HidD_FreePreparsedData(pp);
@@ -520,6 +537,91 @@ unsafe fn probe(path: Vec<u16>) -> Option<HidInfo> {
     }
     let _ = CloseHandle(h);
     result
+}
+
+// ---- reports with timeouts (Logitech, ATK) -----------------------------------
+
+/// A HID collection opened for output and input reports, every wait bounded (a mouse that is not there must
+/// not hang the thread). Razer needs none of this: it talks through feature reports.
+pub struct HidIo {
+    handle: HANDLE,
+    event: HANDLE,
+    pub pid: u16,
+    out_len: usize, // report sizes of the collection, report id included
+    in_len: usize,
+}
+
+impl Drop for HidIo {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = windows::Win32::System::IO::CancelIoEx(self.handle, None);
+            let _ = CloseHandle(self.handle);
+            let _ = CloseHandle(self.event);
+        }
+    }
+}
+
+impl HidIo {
+    pub fn open(path: &[u16]) -> Option<HidIo> {
+        unsafe {
+            let info = probe(path.to_vec())?;
+            let handle = CreateFileW(PCWSTR(path.as_ptr()), (GENERIC_READ | GENERIC_WRITE).0, FILE_SHARE_READ | FILE_SHARE_WRITE, None, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, None).ok().filter(|h| !h.is_invalid())?;
+            let Ok(event) = windows::Win32::System::Threading::CreateEventW(None, true, false, PCWSTR::null()) else {
+                let _ = CloseHandle(handle);
+                return None;
+            };
+            Some(HidIo { handle, event, pid: info.pid, out_len: info.output_len as usize, in_len: info.input_len as usize })
+        }
+    }
+
+    /// Sends `report` (its id first) and returns the first input report within `within` that `answer` takes
+    /// (it returns None for reports that are something else: notifications, other requests' answers).
+    pub fn ask<R>(&mut self, report: &[u8], within: Duration, mut answer: impl FnMut(&[u8]) -> Option<Result<R, Error>>) -> Result<R, Error> {
+        let mut out = report.to_vec();
+        out.resize(self.out_len.max(report.len()), 0);
+        unsafe {
+            if !HidD_SetOutputReport(self.handle, out.as_ptr() as *const _, out.len() as u32).as_bool() {
+                // some devices only take it as a plain write
+                let mut n = 0u32;
+                if !self.overlapped(200, |h, ov| WriteFile(h, Some(&out), None, Some(ov)), &mut n)? {
+                    return Err(Error::Asleep);
+                }
+            }
+            let until = Instant::now() + within;
+            let mut buf = vec![0u8; self.in_len.max(2)];
+            loop {
+                let left = until.saturating_duration_since(Instant::now());
+                if left.is_zero() {
+                    return Err(Error::Asleep);
+                }
+                let mut n = 0u32;
+                if !self.overlapped(left.as_millis() as u32, |h, ov| ReadFile(h, Some(&mut buf), None, Some(ov)), &mut n)? {
+                    return Err(Error::Asleep);
+                }
+                if let Some(r) = answer(&buf[..n as usize]) {
+                    return r;
+                }
+            }
+        }
+    }
+
+    /// One overlapped transfer, waited for at most `ms`; false when it did not finish in time.
+    unsafe fn overlapped(&self, ms: u32, start: impl FnOnce(HANDLE, &mut windows::Win32::System::IO::OVERLAPPED) -> windows::core::Result<()>, n: &mut u32) -> Result<bool, Error> {
+        use windows::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
+        use windows::Win32::System::Threading::{ResetEvent, WaitForSingleObject};
+        let mut ov = OVERLAPPED { hEvent: self.event, ..Default::default() };
+        let _ = ResetEvent(self.event);
+        if start(self.handle, &mut ov).is_err() && GetLastError() != ERROR_IO_PENDING {
+            return Err(Error::Io);
+        }
+        if WaitForSingleObject(self.event, ms) != WAIT_OBJECT_0 {
+            let _ = CancelIoEx(self.handle, Some(&ov));
+            let _ = GetOverlappedResult(self.handle, &ov, n, true);
+            return Ok(false);
+        }
+        GetOverlappedResult(self.handle, &ov, n, false).map_err(|_| Error::Io)?;
+        Ok(true)
+    }
 }
 
 // ---- the picture of the mouse ----------------------------------------------
@@ -579,9 +681,11 @@ impl Picture {
 pub fn picture(model: Model) -> Option<&'static Picture> {
     static VIPER: OnceLock<Option<Picture>> = OnceLock::new();
     static SUPERLIGHT: OnceLock<Option<Picture>> = OnceLock::new();
+    static ATK: OnceLock<Option<Picture>> = OnceLock::new();
     let (cell, png): (&OnceLock<Option<Picture>>, &'static [u8]) = match model {
         Model::ViperV3Pro => (&VIPER, include_bytes!("../assets/viper-side.png")),
         Model::Superlight2 => (&SUPERLIGHT, include_bytes!("../assets/superlight2-side.png")),
+        Model::AtkA9Plus => (&ATK, include_bytes!("../assets/atk-a9-side.png")),
     };
     cell.get_or_init(|| std::thread::spawn(move || decode(png)).join().ok().flatten()).as_ref()
 }

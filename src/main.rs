@@ -15,6 +15,7 @@ mod hook;
 mod install;
 mod json;
 mod lyrics;
+mod atk;
 mod logitech;
 mod mouse;
 mod menu;
