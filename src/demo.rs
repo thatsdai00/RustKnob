@@ -716,7 +716,7 @@ pub fn run(dir: &str) {
     let charge_img = {
         let mut sc = capsule(ui::MOUSE_LINK, Kind::MouseLink, 1.55);
         sc.marq = 0.62;
-        sc.mouse = Some(MouseView { picture: None, title: keep(raster("PRO X Superlight 2", -64, 700)), sub: charging_txt, percent: keep(raster("46%", -60, 700)), charging: true, ..base(0, 0.46) });
+        sc.mouse = Some(MouseView { picture: crate::mouse::picture(crate::mouse::Model::Superlight2), title: keep(raster("Superlight 2", -64, 700)), sub: charging_txt, percent: keep(raster("46%", -60, 700)), charging: true, ..base(0, 0.46) });
         shoot(&sc)
     };
     let dpi_img = mouse(Kind::MouseDpi, ui::MOUSE_DPI, MouseView { dpi, dpi_label, stage: 1.0, ..base(0, 0.82) });

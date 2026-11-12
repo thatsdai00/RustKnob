@@ -53,7 +53,7 @@ impl Model {
     pub fn name(self) -> &'static str {
         match self {
             Model::ViperV3Pro => "Viper V3 Pro",
-            Model::Superlight2 => "PRO X Superlight 2",
+            Model::Superlight2 => "Superlight 2",
         }
     }
 }
@@ -575,26 +575,26 @@ impl Picture {
     }
 }
 
-/// The mouse's picture: the Viper V3 Pro from the side, decoded once (on a thread of its own: the decoder is
-/// WinRT). The Superlight has none: the capsule draws a mouse instead.
+/// The mouse from the side, decoded once per model (on a thread of its own: the decoder is WinRT).
 pub fn picture(model: Model) -> Option<&'static Picture> {
-    if model != Model::ViperV3Pro {
-        return None;
-    }
-    static PICTURE: OnceLock<Option<Picture>> = OnceLock::new();
-    PICTURE.get_or_init(|| std::thread::spawn(decode).join().ok().flatten()).as_ref()
+    static VIPER: OnceLock<Option<Picture>> = OnceLock::new();
+    static SUPERLIGHT: OnceLock<Option<Picture>> = OnceLock::new();
+    let (cell, png): (&OnceLock<Option<Picture>>, &'static [u8]) = match model {
+        Model::ViperV3Pro => (&VIPER, include_bytes!("../assets/viper-side.png")),
+        Model::Superlight2 => (&SUPERLIGHT, include_bytes!("../assets/superlight2-side.png")),
+    };
+    cell.get_or_init(|| std::thread::spawn(move || decode(png)).join().ok().flatten()).as_ref()
 }
 
-fn decode() -> Option<Picture> {
+fn decode(png: &[u8]) -> Option<Picture> {
     use windows::Graphics::Imaging::{BitmapAlphaMode, BitmapDecoder, BitmapPixelFormat};
     use windows::Storage::Streams::{DataWriter, InMemoryRandomAccessStream};
-    static PNG: &[u8] = include_bytes!("../assets/viper-side.png");
     unsafe {
         let _ = windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_MULTITHREADED);
     }
     let stream = InMemoryRandomAccessStream::new().ok()?;
     let writer = DataWriter::CreateDataWriter(&stream).ok()?;
-    writer.WriteBytes(PNG).ok()?;
+    writer.WriteBytes(png).ok()?;
     writer.StoreAsync().ok()?.get().ok()?;
     writer.DetachStream().ok()?;
     stream.Seek(0).ok()?;
@@ -625,6 +625,8 @@ mod tests {
         println!("battery {:?}", m.battery());
         println!("{:?} for 4 reads", t.elapsed());
         let p = super::picture(super::Model::ViperV3Pro).expect("picture");
+        let q = super::picture(super::Model::Superlight2).expect("superlight picture");
+        println!("superlight aspect {}", q.aspect());
         println!("picture aspect {} centre {:?}", p.aspect(), p.sample(0.5, 0.5, 40.0));
     }
 }

@@ -1,5 +1,5 @@
 // Logitech PRO X SUPERLIGHT 2 over HID++ 2.0 (no G HUB): battery, DPI and wake-ups, reads only. Driven by the
-// mouse thread in mouse.rs, which treats it like the Razer mouse.
+// mouse thread in mouse.rs, which treats it like the Razer mouse; only the talking is here.
 //
 // HID++ long reports (id 0x11, 20 bytes) go to and come from the receiver's (or the cable's) vendor collection
 // (usage page 0xFF00, usage 2):
