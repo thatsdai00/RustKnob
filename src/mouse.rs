@@ -737,7 +737,6 @@ pub struct HidIo {
     pub pid: u16,
     out_len: usize, // report sizes of the collection, report id included
     in_len: usize,
-    feature_len: usize,
 }
 
 impl Drop for HidIo {
@@ -759,13 +758,13 @@ impl HidIo {
                 let _ = CloseHandle(handle);
                 return None;
             };
-            Some(HidIo { handle, event, pid: info.pid, out_len: info.output_len as usize, in_len: info.input_len as usize, feature_len: info.feature_len as usize })
+            Some(HidIo { handle, event, pid: info.pid, out_len: info.output_len as usize, in_len: info.input_len as usize })
         }
     }
 
     /// Sends `report` (its id first) and returns the first input report within `within` that `answer` takes
     /// (it returns None for reports that are something else: notifications, other requests' answers).
-    pub fn ask<R>(&mut self, report: &[u8], within: Duration, answer: impl FnMut(&[u8]) -> Option<Result<R, Error>>) -> Result<R, Error> {
+    pub fn ask<R>(&mut self, report: &[u8], within: Duration, mut answer: impl FnMut(&[u8]) -> Option<Result<R, Error>>) -> Result<R, Error> {
         let mut out = report.to_vec();
         out.resize(self.out_len.max(report.len()), 0);
         unsafe {
@@ -776,24 +775,6 @@ impl HidIo {
                     return Err(Error::Asleep);
                 }
             }
-        }
-        self.answer(within, answer)
-    }
-
-    /// Sends `report` (its id first) as a feature report and returns the first input report within `within`
-    /// that `answer` takes (some devices are asked that way and answer on the interrupt pipe).
-    pub fn ask_feature<R>(&mut self, report: &[u8], within: Duration, answer: impl FnMut(&[u8]) -> Option<Result<R, Error>>) -> Result<R, Error> {
-        let mut out = report.to_vec();
-        out.resize(self.feature_len.max(report.len()), 0);
-        if !unsafe { HidD_SetFeature(self.handle, out.as_ptr() as *const _, out.len() as u32) }.as_bool() {
-            return Err(Error::Asleep);
-        }
-        self.answer(within, answer)
-    }
-
-    /// The first input report within `within` that `answer` takes.
-    fn answer<R>(&mut self, within: Duration, mut answer: impl FnMut(&[u8]) -> Option<Result<R, Error>>) -> Result<R, Error> {
-        unsafe {
             let until = Instant::now() + within;
             let mut buf = vec![0u8; self.in_len.max(2)];
             loop {

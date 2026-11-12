@@ -2,7 +2,8 @@
 // mouse.rs like the other brands; only the talking is here. ATK ships the A9 Plus with two different
 // protocols, both read from ATK's own web driver (hub.atk.pro, its JavaScript), vendor id 0x373B:
 //
-// Compx (vendor page 0xFF04, usage 2): feature report 8 out, input report 8 back, 16 bytes after the id:
+// Compx (vendor page 0xFF02, usage 2, the collection whose reports are 17 bytes): output / input report 8, 16 bytes
+// after the id (seen on an A9 Plus receiver, 10C9; its 0xFF04 collection refuses every request):
 //   [0] command  [1] status (0 ok)  [2..4] EEPROM address (big endian)  [4] length  [5..15] data
 //   [15] 0x55 - (8 + sum of [0..15])
 //   0x04 battery: data [percent, charging]      0x03 online (receiver): data[0] == 1
@@ -16,8 +17,9 @@
 //   0x23 mouse online: 0   0x17 read: address (u16 LE) and length; at 1: [active stage, stages], then 8 bytes
 //   per stage from 3: x (u16 LE), y, colour
 //
-// Not tried on a real A9 Plus here. Every value is checked before it is shown (a percent over 100, a DPI out of
-// the sensor's range): a wrong reading shows nothing rather than nonsense.
+// Compx read on a real A9 Plus receiver (battery, online, stages); BitMouse not tried on a real one. Every value
+// is checked before it is shown (a percent over 100, a DPI out of the sensor's range): a wrong reading shows
+// nothing rather than nonsense.
 
 use std::time::Duration;
 
@@ -70,8 +72,7 @@ impl Atk {
         r[3..5].copy_from_slice(&address.to_be_bytes());
         r[5] = length;
         r[16] = 0x55u8.wrapping_sub(r[..16].iter().fold(0u8, |s, &b| s.wrapping_add(b)));
-        // the web driver sends these as feature reports; the answer comes as an input report
-        self.io.ask_feature(&r, ANSWER_WITHIN, |a| {
+        self.io.ask(&r, ANSWER_WITHIN, |a| {
             // any report id: the driver matches on the command only
             (a.len() >= 17 && a[1] == command).then(|| {
                 if a[2] != 0 {
@@ -198,7 +199,7 @@ impl Atk {
 
 /// The protocol a collection speaks, if it is one of ours.
 fn family(d: &HidInfo) -> Option<Family> {
-    if COMPX.contains(&d.pid) && d.usage_page == 0xff04 && d.usage == 2 {
+    if COMPX.contains(&d.pid) && d.usage_page == 0xff02 && d.usage == 2 && d.output_len == 17 {
         Some(Family::Compx)
     } else if BITMOUSE.contains(&d.pid) && d.usage_page == 0xff05 && d.usage == 1 {
         Some(Family::BitMouse)
