@@ -5,6 +5,7 @@
 //   Razer Viper V3 Pro           (here)         a 90-byte packet as feature report 0, ported from rustdriver/razer
 //   Logitech PRO X SUPERLIGHT 2  (logitech.rs)  HID++ 2.0 reports on the receiver's vendor collection
 //   ATK A9 Plus                  (atk.rs)       ATK V HUB reports (two families: Compx, BitMouse)
+//   ASUS ROG Gladius III         (asus.rs)      Armoury Crate's 64-byte reports on interface 0
 //   Logitech G435 headset        (g435.rs)      its LIGHTSPEED dongle's own reports (battery only, no DPI)
 //
 // Razer packet (report id first): [1] status 0 new, 1 busy, 2 ok, 3 failed, 4 no answer (asleep / out of
@@ -32,6 +33,7 @@ use windows::Win32::Foundation::*;
 use windows::Win32::Storage::FileSystem::*;
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
+use crate::asus::Asus;
 use crate::atk::Atk;
 use crate::g435::G435;
 use crate::logitech::Logi;
@@ -59,6 +61,7 @@ pub enum Model {
     Superlight2,
     AtkA9Plus,
     G435, // a headset: no DPI, only on/off and its battery
+    GladiusIII,
 }
 
 impl Model {
@@ -68,6 +71,7 @@ impl Model {
             Model::Superlight2 => "Superlight 2",
             Model::AtkA9Plus => "ATK A9 Plus",
             Model::G435 => "G435",
+            Model::GladiusIII => "ROG Gladius III",
         }
     }
 
@@ -82,6 +86,7 @@ impl Model {
             Model::Superlight2 => "superlight2-side.png",
             Model::AtkA9Plus => "atk-a9-side.png",
             Model::G435 => "g435-side.png",
+            Model::GladiusIII => "gladius3-side.png",
         }
     }
 }
@@ -461,6 +466,7 @@ enum Device {
     Razer(Razer),
     Logitech(Logi),
     Atk(Atk),
+    Asus(Asus),
     Headset(G435),
 }
 
@@ -471,6 +477,7 @@ impl Device {
             .map(|p| (Model::ViperV3Pro, p))
             .or_else(|| Logi::preferred().map(|p| (Model::Superlight2, p)))
             .or_else(|| Atk::preferred().map(|p| (Model::AtkA9Plus, p)))
+            .or_else(|| Asus::preferred().map(|p| (Model::GladiusIII, p)))
             .or_else(|| G435::preferred().map(|p| (Model::G435, p)))
     }
 
@@ -480,6 +487,7 @@ impl Device {
             Razer::preferred().map(|p| (Model::ViperV3Pro, p)),
             Logi::preferred().map(|p| (Model::Superlight2, p)),
             Atk::preferred().map(|p| (Model::AtkA9Plus, p)),
+            Asus::preferred().map(|p| (Model::GladiusIII, p)),
             G435::preferred().map(|p| (Model::G435, p)),
         ]
         .into_iter()
@@ -492,6 +500,7 @@ impl Device {
             Model::ViperV3Pro => Razer::open(path).map(Device::Razer),
             Model::Superlight2 => Logi::open(path).map(Device::Logitech),
             Model::AtkA9Plus => Atk::open(path).map(Device::Atk),
+            Model::GladiusIII => Asus::open(path).map(Device::Asus),
             Model::G435 => G435::open(path).map(Device::Headset),
         }
     }
@@ -501,6 +510,7 @@ impl Device {
             Device::Razer(_) => Model::ViperV3Pro,
             Device::Logitech(_) => Model::Superlight2,
             Device::Atk(_) => Model::AtkA9Plus,
+            Device::Asus(_) => Model::GladiusIII,
             Device::Headset(_) => Model::G435,
         }
     }
@@ -510,6 +520,7 @@ impl Device {
             Device::Razer(m) => &m.path,
             Device::Logitech(m) => &m.path,
             Device::Atk(m) => &m.path,
+            Device::Asus(m) => &m.path,
             Device::Headset(m) => &m.path,
         }
     }
@@ -519,6 +530,7 @@ impl Device {
             Device::Razer(m) => m.dpi(),
             Device::Logitech(m) => m.dpi(),
             Device::Atk(m) => m.dpi(),
+            Device::Asus(m) => m.dpi(),
             Device::Headset(m) => m.awake(),
         }
     }
@@ -529,6 +541,7 @@ impl Device {
             Device::Razer(m) => m.stages(),
             Device::Logitech(_) => Ok((0, 0)),
             Device::Atk(m) => m.stages(),
+            Device::Asus(m) => m.stages(),
             Device::Headset(_) => Ok((0, 0)),
         }
     }
@@ -539,6 +552,7 @@ impl Device {
             Device::Razer(m) => Ok((Some(m.battery()?), m.charging().unwrap_or(false))),
             Device::Logitech(m) => m.battery(),
             Device::Atk(m) => m.battery(),
+            Device::Asus(m) => m.battery(),
             Device::Headset(m) => m.battery(),
         }
     }
@@ -548,6 +562,7 @@ impl Device {
             Device::Razer(m) => m.charging(),
             Device::Logitech(m) => m.battery().map(|b| b.1),
             Device::Atk(m) => m.battery().map(|b| b.1),
+            Device::Asus(m) => m.battery().map(|b| b.1),
             Device::Headset(m) => m.charging(),
         }
     }
@@ -902,7 +917,7 @@ impl Picture {
     }
 }
 
-static PICTURES: [OnceLock<Picture>; 4] = [OnceLock::new(), OnceLock::new(), OnceLock::new(), OnceLock::new()];
+static PICTURES: [OnceLock<Picture>; 5] = [OnceLock::new(), OnceLock::new(), OnceLock::new(), OnceLock::new(), OnceLock::new()];
 
 /// The mouse from the side, once `load_picture` has it (no file or network work here: the UI asks each frame).
 pub fn picture(model: Model) -> Option<&'static Picture> {

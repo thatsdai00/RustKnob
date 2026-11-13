@@ -15,6 +15,7 @@ mod hook;
 mod install;
 mod json;
 mod lyrics;
+mod asus;
 mod atk;
 mod g435;
 mod logitech;
