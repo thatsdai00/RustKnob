@@ -145,6 +145,7 @@ struct State {
     unit_goal: f32,  // where `unit` is heading (it eases when the content changes between a panel and the rest)
     base: f32,       // DPI scale alone
     boost: f32,      // extra scale the panels get on this screen
+    fit: f32,        // scale the capsules and the knob get on this screen (smaller than 1440 logical px: smaller)
     win: (i32, i32), // window top-left, screen px
 
     // shape: current value + velocity + target, for size and corner radius
@@ -266,6 +267,7 @@ pub unsafe fn init(cfg: Config, hwnd: HWND) {
         unit_goal: 1.0,
         base: 1.0,
         boost: 1.0,
+        fit: 1.0,
         win: (0, 0),
         w: ui::SMALL.0,
         h: ui::SMALL.1,
@@ -609,7 +611,7 @@ fn read_volume(s: &mut State) {
 
 /// Settings, history and setup are dense, so they are drawn larger than the volume capsule and knob.
 fn kind_scale(s: &State, kind: Kind) -> f32 {
-    if matches!(kind, Kind::Settings | Kind::History | Kind::Setup) { s.boost } else { 1.0 }
+    if matches!(kind, Kind::Settings | Kind::History | Kind::Setup) { s.boost } else { s.fit }
 }
 
 // ---- lifecycle -------------------------------------------------------------
@@ -635,7 +637,11 @@ unsafe fn open(hwnd: HWND, kind: Kind, manual: bool, hide: Option<u32>) {
         let _ = GetDpiForMonitor(mon, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y);
         s.base = dpi_x as f32 / 96.0;
         // panels grow with the screen: 1.0 up to 1080 logical px tall, 1.33 at 1440, at most 1.6
-        s.boost = ((mi.rcMonitor.bottom - mi.rcMonitor.top) as f32 / s.base / 1080.0).clamp(1.0, 1.6);
+        let tall = (mi.rcMonitor.bottom - mi.rcMonitor.top) as f32 / s.base; // logical px
+        s.boost = (tall / 1080.0).clamp(1.0, 1.6);
+        // the capsules are drawn for a 1440 px tall screen: on a smaller one they keep their share of it
+        // (0.75 at 1080), never smaller than that, never larger than drawn
+        s.fit = (tall / 1440.0).clamp(0.75, 1.0);
         s.unit_goal = s.base * kind_scale(s, kind);
         s.unit = s.unit_goal;
         let (pw, ph) = ((ui::WIN_W * s.base * s.boost).round() as usize, (ui::WIN_H * s.base * s.boost).round() as usize);
