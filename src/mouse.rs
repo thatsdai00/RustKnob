@@ -460,6 +460,9 @@ fn read_others(devices: &mut Vec<Watched>, full: bool) {
                 post_with(EV_OTHER, n.model as isize | why << 8);
             }
         }
+        if let (Some(n), None) = (now, w.last) {
+            load_picture(n.model); // first seen (at start, too): its card may come from a click on its tray icon
+        }
         w.last = now;
         true
     });
