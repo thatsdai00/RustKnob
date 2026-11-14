@@ -101,7 +101,7 @@ dependencies = [
 
 [[package]]
 name = "rustknob"
-version = "1.4.8"
+version = "1.4.9"
 dependencies = [
  "embed-resource",
  "windows",
