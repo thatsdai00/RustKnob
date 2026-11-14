@@ -36,7 +36,8 @@ use crate::{autostart, clipboard, device, history, install, ntfy, tray, ui, uplo
 const WM_APP_WARM: u32 = WM_APP + 25;
 const WM_APP_MOUSE: u32 = WM_APP + 41; // razer.rs: wparam mouse::EV_*
 const MOUSE_DPI_MS: u32 = 1700; // the DPI capsule stays this long after the last change
-const MOUSE_LINK_MS: u32 = 3800; // "connected"
+const MOUSE_LINK_MS: u32 = 4600; // "connected" (its intro takes LINK_INTRO_SECS of it)
+const LINK_INTRO_SECS: f32 = 1.5;
 const MOUSE_LOW_MS: u32 = 5000; // battery low (the critical one stays)
 const WM_APP_UPDATE: u32 = WM_APP + 28; // update.rs: a newer release is downloaded and checked
 const T_UPDATE: usize = 8; // look for a new release
@@ -541,7 +542,7 @@ impl State {
 
     fn toggle_targets(&self) -> [f32; ui::TOGGLES] {
         let c = &self.cfg;
-        [c.click_sound, c.notify_song, c.notify_device, c.volume_keys, c.low_power, c.upload_sound, c.screenshot, c.pin_media, c.pin_fullscreen, c.pin_lyrics, c.lyric_words, c.mouse, c.auto_update, self.autostart].map(|b| f32::from(u8::from(b)))
+        [c.click_sound, c.notify_song, c.notify_device, c.volume_keys, c.low_power, c.upload_sound, c.screenshot, c.pin_media, c.pin_fullscreen, c.pin_lyrics, c.lyric_words, c.mouse, c.tray_battery, c.auto_update, self.autostart].map(|b| f32::from(u8::from(b)))
     }
 
     /// Screen-space rectangle of the shape at its target (for the mouse hook).
@@ -1267,6 +1268,7 @@ fn mouse_warning(s: &mut State, critical: bool) {
 
 /// The mouse's capsules move on their own: the number rolls, the stage marker slides, the battery fills.
 fn mouse_step(s: &mut State, dt: f32) {
+    let link = s.kind == Kind::MouseLink;
     let m = &mut s.mouse;
     if !is_mouse(s.kind) && !s.prev.is_some_and(|(k, _)| is_mouse(k)) {
         // nothing of it on show: no motion to wait for
@@ -1280,10 +1282,13 @@ fn mouse_step(s: &mut State, dt: f32) {
         }
     }
     if m.intro < 1.0 {
-        m.intro = (m.intro + dt / 0.6).min(1.0);
+        // the "connected" card has more to show: the picture large first, then the rest (render.rs)
+        m.intro = (m.intro + dt / if link { LINK_INTRO_SECS } else { 0.6 }).min(1.0);
     }
     approach(&mut m.stage, m.stage_goal, 13.0, dt, 0.002);
-    approach(&mut m.fill, m.fill_goal, 3.2, dt, 0.002);
+    if !link || m.intro >= crate::render::LINK_REST {
+        approach(&mut m.fill, m.fill_goal, 3.2, dt, 0.002); // on that card: once the battery is in
+    }
 }
 
 /// Brings up a mouse capsule, unless the user has a panel or the volume open (a red warning still comes back
@@ -1455,6 +1460,7 @@ unsafe fn other_event(hwnd: HWND, model: usize, why: isize) {
             mouse::OTHER_CHARGING => t.mouse_charging,
             mouse::OTHER_UNPLUGGED => t.mouse_unplugged,
             _ if o.charging => t.mouse_charging,
+            mouse::OTHER_ASKED => t.mouse_on_battery,
             _ => t.mouse_connected,
         };
         s.mouse.sub = text::raster(sub, -48, 400);
@@ -1474,6 +1480,44 @@ unsafe fn other_event(hwnd: HWND, model: usize, why: isize) {
         mouse_warning(s, critical);
         mouse_show(hwnd, Kind::MouseBattery, Some(MOUSE_LOW_MS));
     }
+}
+
+/// One icon per device in the notification area with its battery (when that is on), up to date.
+unsafe fn tray_refresh(hwnd: HWND) {
+    let s = st();
+    let mut now = Vec::new();
+    if s.cfg.mouse && s.cfg.tray_battery {
+        let followed = mouse::status().map(|p| mouse::Other { model: p.model, battery: p.battery, charging: p.charging });
+        for o in followed.into_iter().chain(mouse::others()) {
+            now.push(tray::Battery { model: o.model as u32, percent: o.battery, charging: o.charging, name: o.model.name() });
+        }
+    }
+    tray::batteries(hwnd, &now, s.strings().mouse_charging);
+}
+
+/// A click on a device's battery icon: its card, as when it connects, with its battery right now.
+unsafe fn device_card(hwnd: HWND, model: usize) {
+    let s = st();
+    let Some(now) = mouse::status().filter(|p| p.model as usize == model) else {
+        other_event(hwnd, model, mouse::OTHER_ASKED); // another device: its own card
+        return;
+    };
+    let t = s.strings();
+    s.mouse.set_battery(t, &now);
+    s.mouse.set_others(t, mouse::others());
+    if s.mouse.model != Some(now.model) {
+        s.mouse.model = Some(now.model);
+        s.mouse.title = text::raster(now.model.name(), -64, 700);
+    }
+    s.mouse.sub = text::raster(if now.charging { t.mouse_charging } else { t.mouse_on_battery }, -48, 400);
+    s.mouse.fill = 0.0;
+    if s.live() && s.kind == Kind::MouseLink {
+        s.mouse.intro = 0.0;
+    }
+    if s.live() && is_mouse(s.kind) {
+        s.apply_targets();
+    }
+    mouse_show(hwnd, Kind::MouseLink, Some(MOUSE_LINK_MS));
 }
 
 /// A full-screen app in front hides the pinned capsule (unless "pin over full-screen apps" is on); it comes
@@ -1759,8 +1803,13 @@ unsafe fn settings_click(hwnd: HWND, screen: POINT) {
             } else if mouse::status().is_some() {
                 s.mouse.crit = s.mouse.level == 2; // already awake: no wake-up will come to say so
             }
+            tray_refresh(hwnd);
         }
-        ui::Hit::Toggle(12) => {
+        ui::Hit::Toggle(ui::TOGGLE_TRAY_BATTERY) => {
+            s.cfg.tray_battery ^= true;
+            tray_refresh(hwnd);
+        }
+        ui::Hit::Toggle(ui::TOGGLE_AUTO_UPDATE) => {
             s.cfg.auto_update ^= true;
             if s.cfg.auto_update && install::running_installed() {
                 SetTimer(hwnd, T_UPDATE, 3000, None); // look right away
@@ -2524,8 +2573,14 @@ pub unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPAR
         WM_APP_SONG => song_changed(hwnd),
         WM_APP_DEVICE => device_changed(hwnd),
         WM_APP_NTFY => push_notice(hwnd),
-        WM_APP_MOUSE if wp.0 == mouse::EV_OTHER => other_event(hwnd, (lp.0 & 0xff) as usize, lp.0 >> 8),
-        WM_APP_MOUSE => mouse_event(hwnd, wp.0),
+        WM_APP_MOUSE if wp.0 == mouse::EV_OTHER => {
+            other_event(hwnd, (lp.0 & 0xff) as usize, lp.0 >> 8);
+            tray_refresh(hwnd);
+        }
+        WM_APP_MOUSE => {
+            mouse_event(hwnd, wp.0);
+            tray_refresh(hwnd);
+        }
         WM_DEVICECHANGE => {
             if matches!(wp.0, 0x0007 | 0x8000 | 0x8004) {
                 mouse::rescan(); // DBT_DEVNODES_CHANGED / arrival / removal: a receiver or cable may have come or gone
@@ -2580,6 +2635,12 @@ pub unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPAR
                 begin_close(hwnd);
             }
         }
+        // a device's battery icon (its id is BATTERY_ID + the model): a click shows its card
+        tray::WM_TRAY if wp.0 as u32 >= tray::BATTERY_ID => {
+            if (lp.0 & 0xFFFF) as u32 == WM_LBUTTONUP {
+                device_card(hwnd, wp.0 - tray::BATTERY_ID as usize);
+            }
+        }
         tray::WM_TRAY => match (lp.0 & 0xFFFF) as u32 {
             WM_LBUTTONUP => toggle_settings(hwnd),
             WM_RBUTTONUP => match tray::menu(hwnd, st().strings(), install::running_installed()) {
@@ -2600,6 +2661,8 @@ pub unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPAR
         },
         _ if msg == tray::taskbar_created() => {
             tray::add(hwnd);
+            tray::batteries_lost();
+            tray_refresh(hwnd);
             let _ = KillTimer(hwnd, T_TRAY);
         }
         WM_APP_WARM => warm_up(hwnd),

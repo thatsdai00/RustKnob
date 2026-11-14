@@ -117,10 +117,12 @@ pub const EV_WAKE: usize = 3; // the mouse woke up (or was found awake)
 pub const EV_SLEEP: usize = 4; // it stopped answering: asleep or out of range
 pub const EV_GONE: usize = 5; // receiver / cable unplugged
 pub const EV_OTHER: usize = 6; // another plugged-in device: lparam its Model | why << 8 (the OTHER_* below)
+pub const EV_OTHERS: usize = 7; // the other devices' list or one of their levels changed (nothing to show)
 pub const OTHER_CHARGING: isize = 0;
 pub const OTHER_UNPLUGGED: isize = 1;
 pub const OTHER_LOW: isize = 2;
 pub const OTHER_CONNECTED: isize = 3; // it woke up (was switched on)
+pub const OTHER_ASKED: isize = 4; // its battery icon was clicked (island.rs)
 
 static STATUS: Mutex<Option<Status>> = Mutex::new(None);
 static OTHERS: Mutex<Vec<Other>> = Mutex::new(Vec::new());
@@ -146,7 +148,10 @@ pub fn others() -> Vec<Other> {
 
 fn set_others(o: Vec<Other>) {
     if let Ok(mut g) = OTHERS.lock() {
-        *g = o;
+        if *g != o {
+            *g = o;
+            post(EV_OTHERS);
+        }
     }
 }
 

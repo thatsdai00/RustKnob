@@ -40,6 +40,15 @@ impl Palette {
 
 /// Windows' "apps" theme: true when it is set to light.
 fn system_is_light() -> bool {
+    personalize_is_light(w!("AppsUseLightTheme"))
+}
+
+/// Windows' taskbar (the "system" theme): true when it is light.
+pub fn taskbar_is_light() -> bool {
+    personalize_is_light(w!("SystemUsesLightTheme"))
+}
+
+fn personalize_is_light(value: windows::core::PCWSTR) -> bool {
     unsafe {
         let mut key = HKEY::default();
         let path = w!(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
@@ -48,7 +57,7 @@ fn system_is_light() -> bool {
         }
         let mut data = 0u32;
         let mut size = 4u32;
-        let ok = RegQueryValueExW(key, w!("AppsUseLightTheme"), None, None, Some(&mut data as *mut u32 as *mut u8), Some(&mut size)).is_ok();
+        let ok = RegQueryValueExW(key, value, None, None, Some(&mut data as *mut u32 as *mut u8), Some(&mut size)).is_ok();
         let _ = RegCloseKey(key);
         ok && data != 0
     }

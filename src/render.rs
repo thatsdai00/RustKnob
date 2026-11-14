@@ -446,30 +446,48 @@ fn mouse_battery_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f
     }
 }
 
+/// Where the "connected" card's intro is (`intro` 0..1 over LINK_INTRO_SECS, island.rs): the picture comes up
+/// large in the middle, holds, then shrinks into its place on the left; the rest comes in after it.
+pub const LINK_MOVE: (f32, f32) = (0.42, 0.68); // the picture travels to its place
+pub const LINK_REST: f32 = 0.6; // the name, the battery and the other devices' rows come in from here
+
 fn mouse_link_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) {
     let (Some(m), pal) = (&s.mouse, &s.pal) else { return };
-    mouse_others(p, tx, ty, aa, s, ca);
+    let t = m.intro.clamp(0.0, 1.0);
+    let ease = |x: f32| 1.0 - (1.0 - x.clamp(0.0, 1.0)).powi(3);
+    let appear = ease(t / 0.25);
+    let travel = sstep(LINK_MOVE.0, LINK_MOVE.1, t);
+    let rest = ease((t - LINK_REST) / (1.0 - LINK_REST));
+    mouse_others(p, tx, ty, aa, s, ca * rest);
     let unit = 1.0 / aa;
-    let ry = ty - s.h.min(ui::MOUSE_ROW_H) / 2.0;
-    let e = 1.0 - (1.0 - m.intro.clamp(0.0, 1.0)).powi(3);
 
-    // the picture glides in from the left
-    mouse_art(p, m, tx - 16.0 + (1.0 - e) * 22.0, ry + 1.0, 38.0, unit, ca * e, pal.light);
+    // the picture: large and centered on the whole card, then 38 tall at the left of its own row
+    let big = (s.h - 14.0).clamp(38.0, 64.0) * (0.86 + 0.14 * appear);
+    // from where it ends, so the settled card is exactly the one without the intro
+    let back = |end: f32, start: f32| end + (start - end) * (1.0 - travel);
+    let h = back(38.0, big);
+    let (cx, cy) = (back(16.0 + art_width(m, 38.0) / 2.0, s.w / 2.0), back(s.h.min(ui::MOUSE_ROW_H) / 2.0 - 1.0, s.h / 2.0));
+    mouse_art(p, m, tx - (cx - art_width(m, h) / 2.0), ty - cy, h, unit, ca * appear, pal.light);
+
+    if rest <= 0.0 {
+        return;
+    }
+    let slide = (1.0 - rest) * 10.0; // the text follows the picture in from the left
     let left = 16.0 + art_width(m, 38.0) + 10.0;
     let right = s.w - 72.0;
     if let Some(title) = m.title {
-        p.over(pal.fg, ca * text_left(title, tx - left, ty - 28.0, right - left, s.marq, unit));
+        p.over(pal.fg, ca * rest * text_left(title, tx - left + slide, ty - 28.0, right - left, s.marq, unit));
     }
     if let Some(sub) = m.sub {
-        p.over(pal.dim, ca * 0.95 * text_left(sub, tx - left, ty - 50.0, right - left, s.marq, unit));
+        p.over(pal.dim, ca * rest * 0.95 * text_left(sub, tx - left + slide, ty - 50.0, right - left, s.marq, unit));
     }
 
-    // the battery fills up as the card comes in
+    // the battery fills up once it is in
     let color = battery_color(pal, m.level, m.charging);
-    battery_icon(p, tx - (s.w - 42.0), ty - 28.0, 1.3, m.fill, color, m.charging.then_some(s.marq), pal, ca, aa);
+    battery_icon(p, tx - (s.w - 42.0), ty - 28.0, 1.3, m.fill, color, m.charging.then_some(s.marq), pal, ca * rest, aa);
     if let Some(percent) = m.percent {
         let w = percent.size().0;
-        p.over(color, ca * text_left(percent, tx - (s.w - 42.0 - w / 2.0), ty - 50.0, w, 0.0, unit));
+        p.over(color, ca * rest * text_left(percent, tx - (s.w - 42.0 - w / 2.0), ty - 50.0, w, 0.0, unit));
     }
 }
 
