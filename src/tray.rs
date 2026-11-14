@@ -95,31 +95,29 @@ pub struct Battery {
 
 pub const BATTERY_ID: u32 = 100;
 
-/// The icons on show, and the taskbar's theme they were drawn for.
-static SHOWN: std::sync::Mutex<(Vec<Battery>, bool)> = std::sync::Mutex::new((Vec::new(), false));
+/// The icons on show.
+static SHOWN: std::sync::Mutex<Vec<Battery>> = std::sync::Mutex::new(Vec::new());
 
-/// Shows one icon per device in `now` (the percent in figures, colored like the cards: green charging, yellow
-/// low, red critical), changes the ones that differ, takes away the ones that are gone. `charging_word`
-/// goes in the tooltip.
+/// Shows one icon per device in `now` (the percent in figures: green while charging, white, yellow when low,
+/// red when critical), changes the ones that differ, takes away the ones that are gone. `charging_word` goes
+/// in the tooltip.
 pub unsafe fn batteries(hwnd: HWND, now: &[Battery], charging_word: &str) {
     let Ok(mut shown) = SHOWN.lock() else { return };
-    let light = crate::theme::taskbar_is_light();
-    let redraw = shown.1 != light;
-    for old in shown.0.iter().filter(|o| !now.iter().any(|n| n.model == o.model)) {
+    for old in shown.iter().filter(|o| !now.iter().any(|n| n.model == o.model)) {
         let mut nid = data(hwnd);
         nid.uID = BATTERY_ID + old.model;
         let _ = Shell_NotifyIconW(NIM_DELETE, &nid);
     }
     for b in now {
-        let before = shown.0.iter().find(|o| o.model == b.model);
-        if before == Some(b) && !redraw {
+        let before = shown.iter().find(|o| o.model == b.model);
+        if before == Some(b) {
             continue;
         }
         let mut nid = data(hwnd);
         nid.uID = BATTERY_ID + b.model;
         nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
         nid.uCallbackMessage = WM_TRAY;
-        nid.hIcon = battery_icon(b, light).unwrap_or_default();
+        nid.hIcon = battery_icon(b).unwrap_or_default();
         let tip = match (b.percent, b.charging) {
             (Some(p), true) => format!("{}: {p} % ({charging_word})", b.name),
             (Some(p), false) => format!("{}: {p} %", b.name),
@@ -136,18 +134,18 @@ pub unsafe fn batteries(hwnd: HWND, now: &[Battery], charging_word: &str) {
             let _ = DestroyIcon(nid.hIcon);
         }
     }
-    *shown = (now.to_vec(), light);
+    *shown = now.to_vec();
 }
 
 /// After the taskbar (re)starts: every battery icon is added again at the next look.
 pub fn batteries_lost() {
     if let Ok(mut shown) = SHOWN.lock() {
-        shown.0.clear();
+        shown.clear();
     }
 }
 
 /// The percent in 7-segment figures (the volume capsule's), sized for the notification area.
-unsafe fn battery_icon(b: &Battery, light: bool) -> Option<HICON> {
+unsafe fn battery_icon(b: &Battery) -> Option<HICON> {
     use windows::Win32::UI::HiDpi::{GetDpiForSystem, GetSystemMetricsForDpi};
     let n = GetSystemMetricsForDpi(SM_CXSMICON, GetDpiForSystem()).max(16);
     let bi = BITMAPINFO {
@@ -157,7 +155,7 @@ unsafe fn battery_icon(b: &Battery, light: bool) -> Option<HICON> {
     let mut bits: *mut std::ffi::c_void = std::ptr::null_mut();
     let color = CreateDIBSection(None, &bi, DIB_RGB_COLORS, &mut bits, None, 0).ok()?;
     let px = std::slice::from_raw_parts_mut(bits as *mut u32, (n * n) as usize);
-    battery_pixels(px, n as usize, b, light);
+    battery_pixels(px, n as usize, b);
     let mask = CreateBitmap(n, n, 1, 1, None);
     let info = ICONINFO { fIcon: true.into(), xHotspot: 0, yHotspot: 0, hbmMask: mask, hbmColor: color };
     let icon = CreateIconIndirect(&info).ok();
@@ -167,18 +165,14 @@ unsafe fn battery_icon(b: &Battery, light: bool) -> Option<HICON> {
 }
 
 /// The icon's pixels, `n` x `n`, premultiplied 0xAARRGGBB.
-fn battery_pixels(px: &mut [u32], n: usize, b: &Battery, light: bool) {
+fn battery_pixels(px: &mut [u32], n: usize, b: &Battery) {
     use crate::gfx::{cov, rrect, Digits};
     let pct = b.percent.unwrap_or(0);
-    let rgb: [f32; 3] = match (b.charging, pct, light) {
-        (true, _, false) => [0.32, 0.86, 0.47],
-        (true, _, true) => [0.10, 0.58, 0.26],
-        (_, 0..=5, false) => [1.0, 0.31, 0.27],
-        (_, 0..=5, true) => [0.86, 0.16, 0.13],
-        (_, 6..=24, false) => [1.0, 0.79, 0.20],
-        (_, 6..=24, true) => [0.80, 0.55, 0.0],
-        (_, _, false) => [1.0, 1.0, 1.0],
-        (_, _, true) => [0.08, 0.08, 0.08],
+    let rgb: [f32; 3] = match (b.charging, pct) {
+        (true, _) => [0.32, 0.86, 0.47], // charging: green
+        (_, 0..=5) => [1.0, 0.31, 0.27], // critical: red
+        (_, 6..=24) => [1.0, 0.79, 0.20], // low: yellow
+        _ => [1.0, 1.0, 1.0],
     };
     let digits = Digits::number(pct as u32);
     // the figures fill the width (two: 41 units wide, three: 66), never taller than the icon
@@ -216,7 +210,7 @@ mod tests {
             for (pct, charging) in [(7u8, false), (46, false), (100, true), (18, false), (3, false)] {
                 let b = super::Battery { model: 0, percent: Some(pct), charging, name: "" };
                 let mut px = vec![0u32; n * n];
-                super::battery_pixels(&mut px, n, &b, false);
+                super::battery_pixels(&mut px, n, &b);
                 let raw: Vec<u8> = px.iter().flat_map(|p| [(p >> 16) as u8, (p >> 8) as u8, *p as u8, (p >> 24) as u8]).collect();
                 std::fs::write(std::env::temp_dir().join(format!("rustknob-tray-{n}-{pct}.raw")), raw).unwrap();
             }

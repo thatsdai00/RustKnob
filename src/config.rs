@@ -58,7 +58,7 @@ impl Default for Config {
             pin_lyrics: true,
             lyric_words: false,
             mouse: true,
-            tray_battery: false,
+            tray_battery: true,
             auto_update: true,
             ntfy_server: "https://ntfy.sh".into(),
             ntfy_topic: String::new(),

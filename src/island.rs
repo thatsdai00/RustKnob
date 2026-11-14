@@ -36,8 +36,8 @@ use crate::{autostart, clipboard, device, history, install, ntfy, tray, ui, uplo
 const WM_APP_WARM: u32 = WM_APP + 25;
 const WM_APP_MOUSE: u32 = WM_APP + 41; // razer.rs: wparam mouse::EV_*
 const MOUSE_DPI_MS: u32 = 1700; // the DPI capsule stays this long after the last change
-const MOUSE_LINK_MS: u32 = 4600; // "connected" (its intro takes LINK_INTRO_SECS of it)
-const LINK_INTRO_SECS: f32 = 1.5;
+const MOUSE_LINK_MS: u32 = 4200; // "connected" (its intro takes LINK_INTRO_SECS of it)
+const LINK_INTRO_SECS: f32 = 1.0;
 const MOUSE_LOW_MS: u32 = 5000; // battery low (the critical one stays)
 const WM_APP_UPDATE: u32 = WM_APP + 28; // update.rs: a newer release is downloaded and checked
 const T_UPDATE: usize = 8; // look for a new release
