@@ -416,6 +416,7 @@ fn deflate(data: &[u8]) -> Vec<u8> {
             bits.literal_or_length(u32::from(data[i]));
             1
         };
+        #[allow(clippy::needless_range_loop)] // k is also the position hashed, not only an index
         for k in i..i + step {
             if k + 3 <= data.len() {
                 let h = hash(k);

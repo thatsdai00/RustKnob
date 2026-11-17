@@ -202,9 +202,16 @@ fn main() {
 
 /// Idle: low priority + EcoQoS, so the capsule never competes with a game. While it is on screen (`on` false)
 /// it runs at normal speed: a frame must not take long, the mouse hooks wait for it.
+///
+/// # Safety
+/// Win32 calls on this process only; called from the UI thread, which runs the input hooks.
 pub unsafe fn efficiency_mode(on: bool) {
     let process = GetCurrentProcess();
     let _ = SetPriorityClass(process, if on { IDLE_PRIORITY_CLASS } else { NORMAL_PRIORITY_CLASS });
+    // ...but the input hooks on this thread answer every click and key of the whole desktop at once, even with
+    // all cores busy: a hook that keeps Windows waiting lags the mouse and is dropped for good. They take
+    // microseconds, so this costs a game nothing.
+    let _ = SetThreadPriority(GetCurrentThread(), if on { THREAD_PRIORITY_TIME_CRITICAL } else { THREAD_PRIORITY_NORMAL });
     let throttle = PROCESS_POWER_THROTTLING_STATE {
         Version: PROCESS_POWER_THROTTLING_CURRENT_VERSION,
         ControlMask: PROCESS_POWER_THROTTLING_EXECUTION_SPEED,

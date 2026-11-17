@@ -61,15 +61,13 @@ pub fn start(cfg: &Config, hwnd: isize, msg: u32) {
     });
 }
 
-/// "https://ntfy.sh" (the scheme may be left out) -> the topic's stream on it
-fn stream_url(server: &str, topic: &str) -> net::Url {
-    let s = server.trim().trim_end_matches('/');
-    let (secure, rest) = match s.strip_prefix("http://") {
-        Some(r) => (false, r),
-        None => (true, s.strip_prefix("https://").unwrap_or(s)),
-    };
-    let (host, port) = net::host_port(rest, secure);
-    net::Url { secure, host, port, target: format!("/{topic}/json") }
+/// "https://ntfy.sh" (the scheme may be left out; a server under a path, "https://host/ntfy", works too)
+/// -> the topic's stream on it
+fn stream_url(server: &str, topic: &str) -> Option<net::Url> {
+    let s = server.trim();
+    let mut url = net::parse_url(s).or_else(|| net::parse_url(&format!("https://{s}")))?;
+    url.target = format!("{}/{}/json", url.target.trim_end_matches('/'), crate::json::url_encode(topic));
+    Some(url)
 }
 
 /// One connection; returns true when it received anything (so the retry delay can reset).
@@ -79,7 +77,7 @@ unsafe fn stream(server: &str, topic: &str, token: &str, hwnd: isize, msg: u32, 
         return false;
     }
     let mut got_data = false;
-    if let Some((connection, request)) = net::open_request(session, w!("GET"), &stream_url(server, topic)) {
+    if let Some((connection, request)) = stream_url(server, topic).and_then(|url| net::open_request(session, w!("GET"), &url)) {
         if !token.is_empty() {
             let header: Vec<u16> = format!("Authorization: Bearer {token}").encode_utf16().collect();
             let _ = WinHttpAddRequestHeaders(request, &header, WINHTTP_ADDREQ_FLAG_ADD);

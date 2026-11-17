@@ -27,7 +27,7 @@ pub fn parse_url(url: &str) -> Option<Url> {
 }
 
 /// "host" or "host:port"; without a port, the scheme's own.
-pub fn host_port(authority: &str, secure: bool) -> (String, u16) {
+fn host_port(authority: &str, secure: bool) -> (String, u16) {
     match authority.rsplit_once(':').and_then(|(h, p)| p.parse::<u16>().ok().map(|p| (h, p))) {
         Some((h, p)) => (h.to_string(), p),
         None => (authority.to_string(), if secure { 443 } else { 80 }),
@@ -72,18 +72,27 @@ pub unsafe fn status_code(request: *mut c_void) -> u32 {
     code
 }
 
-/// The answer's body, read to its end; empty when it grows past `limit` bytes.
+/// The answer's body, read to its end; empty when it grows past `limit` bytes or the connection breaks
+/// midway (a cut-off answer is never taken for the whole one).
 pub unsafe fn read_body(request: *mut c_void, limit: usize) -> Vec<u8> {
     let mut body = Vec::new();
     let mut chunk = vec![0u8; 1 << 16];
     loop {
         let mut available = 0u32;
-        if WinHttpQueryDataAvailable(request, &mut available).is_err() || available == 0 {
+        if WinHttpQueryDataAvailable(request, &mut available).is_err() {
+            body.clear();
+            break;
+        }
+        if available == 0 {
             break;
         }
         let want = available.min(chunk.len() as u32);
         let mut read = 0u32;
-        if WinHttpReadData(request, chunk.as_mut_ptr() as *mut c_void, want, &mut read).is_err() || read == 0 {
+        if WinHttpReadData(request, chunk.as_mut_ptr() as *mut c_void, want, &mut read).is_err() {
+            body.clear();
+            break;
+        }
+        if read == 0 {
             break;
         }
         body.extend_from_slice(&chunk[..read as usize]);

@@ -26,7 +26,12 @@ pub fn set(on: bool) {
     let on = on && exe.is_some();
     let exe = exe.unwrap_or_default();
     set_entry(on, &exe);
-    std::thread::spawn(move || set_task(on, &exe));
+    std::thread::spawn(move || {
+        // one at a time, and always the latest choice: a quick on-off must not leave the task behind
+        static ONE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _one = ONE.lock().unwrap_or_else(|e| e.into_inner());
+        set_task(is_enabled(), &exe);
+    });
 }
 
 /// Starts `exe` at login (or removes the entry), and waits until it is done (the installer exits right after).

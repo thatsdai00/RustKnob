@@ -188,7 +188,10 @@ impl Listener {
             if let Ok(tl) = ses.GetTimelineProperties() {
                 let secs = |d: windows::Foundation::TimeSpan| d.Duration as f64 / 1e7;
                 let mut pos = tl.Position().map_or(0.0, secs);
-                if playing {
+                // just resumed, and the player has not reported since the pause: that report's age is the pause,
+                // not playing time; from here on the position runs from now
+                let paused_report = !was_playing && TIMELINE.lock().ok().and_then(|g| *g).is_some_and(|(p, _, on)| !on && (p - pos as f32).abs() < 0.01);
+                if playing && !paused_report {
                     // the report is some time old: carry it on (DateTime and FILETIME both count 100 ns from 1601)
                     let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_nanos() / 100) as i128 + 116_444_736_000_000_000;
                     let age = tl.LastUpdatedTime().map_or(0.0, |t| (now - t.UniversalTime as i128) as f64 / 1e7);

@@ -585,13 +585,21 @@ unsafe fn frames(hwnd: HWND) {
     pace::start(hwnd, if st().cfg.low_power { LOW_POWER_FRAME_MS } else { 0 });
 }
 
-/// Hide delay grows with the cursor's distance from the top-center of the screen (the capsule), so a far
+/// Hide delay grows with the cursor's distance from the capsule (top center of its monitor), so a far
 /// cursor gets time to travel there.
 unsafe fn linger_ms(base: u32) -> u32 {
+    let s = st();
     let mut cur = POINT::default();
     let _ = GetCursorPos(&mut cur);
-    let dx = (cur.x - GetSystemMetrics(SM_CXSCREEN) / 2) as f32;
-    let dy = cur.y as f32;
+    // the capsule on screen, else where it is about to open: the top center of the monitor under the cursor
+    let (cx, top) = if s.visible {
+        (s.win.0 + s.surf.pw as i32 / 2, s.win.1)
+    } else {
+        let mut mi = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+        let _ = GetMonitorInfoW(MonitorFromPoint(cur, MONITOR_DEFAULTTONEAREST), &mut mi);
+        ((mi.rcMonitor.left + mi.rcMonitor.right) / 2, mi.rcMonitor.top)
+    };
+    let (dx, dy) = ((cur.x - cx) as f32, (cur.y - top) as f32);
     base + ((dx * dx + dy * dy).sqrt() * HIDE_MS_PER_PX).min(HIDE_DISTANCE_MAX_MS) as u32
 }
 
@@ -662,6 +670,9 @@ unsafe fn open(hwnd: HWND, kind: Kind, manual: bool, hide: Option<u32>) {
         crate::efficiency_mode(false); // full speed while it is on screen
         s.kind = kind;
     } else {
+        if s.kind == Kind::Settings && kind != Kind::Settings {
+            end_edit(hwnd, false); // another capsule takes the place: typing must go back to the other apps
+        }
         s.set_kind(kind);
     }
     if kind == Kind::Settings {
@@ -1811,7 +1822,11 @@ unsafe fn settings_click(hwnd: HWND, screen: POINT) {
             return;
         }
         ui::Hit::Sound => {
-            if let Some(path) = pick_sound() {
+            // the dialog's clicks are its own: not a click on the panel under it, nor one outside that closes it
+            SETTINGS_OPEN.store(false, Relaxed);
+            let picked = pick_sound();
+            s.sync_hooks();
+            if let Some(path) = picked {
                 s.cfg.ntfy_sound = path;
                 audio::play_notification(&s.cfg.ntfy_sound, s.cfg.ntfy_volume); // preview
                 s.refresh_values();

@@ -613,7 +613,7 @@ pub fn video(dir: &str, ffmpeg: &str, out: &str) {
         // in from black, out to black
         let fade = ease((t - 0.0) / 0.5).min(1.0 - ease_io((t - (LENGTH - 1.6)) / 1.5));
 
-        for (o, p) in rgb_out.chunks_exact_mut(3).zip(&c.px) {
+        for (o, p) in rgb_out.as_chunks_mut::<3>().0.iter_mut().zip(&c.px) {
             o[0] = (p[0].clamp(0.0, 1.0) * fade * 255.0 + 0.5) as u8;
             o[1] = (p[1].clamp(0.0, 1.0) * fade * 255.0 + 0.5) as u8;
             o[2] = (p[2].clamp(0.0, 1.0) * fade * 255.0 + 0.5) as u8;

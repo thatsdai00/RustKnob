@@ -655,6 +655,7 @@ pub fn render(buf: &mut [u32], pw: usize, ph: usize, rect: (usize, usize, usize,
             s.layers[0].filter(|l| l.alpha > 0.01).and_then(|l| row_spans(l.kind, s, ty)),
             s.layers[1].filter(|l| l.alpha > 0.01).and_then(|l| row_spans(l.kind, s, ty)),
         ];
+        #[allow(clippy::needless_range_loop)] // x is the pixel's position in the math too, not only an index
         for x in x0..x1 {
             if x < live_from || x >= live_to {
                 row[x] = 0; // what an untouched pixel packs to

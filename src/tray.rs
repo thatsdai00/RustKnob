@@ -177,24 +177,6 @@ pub(crate) fn battery_pixels(px: &mut [u32], n: usize, b: &Battery) {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    /// Writes the icons as raw RGBA to %TEMP%\rustknob-tray-*.raw. `cargo test tray -- --ignored`
-    #[test]
-    #[ignore]
-    fn battery_pixels() {
-        for n in [16usize, 20, 24, 32] {
-            for (pct, charging) in [(7u8, false), (46, false), (100, true), (18, false), (3, false)] {
-                let b = super::Battery { model: 0, percent: Some(pct), charging, name: "" };
-                let mut px = vec![0u32; n * n];
-                super::battery_pixels(&mut px, n, &b);
-                let raw: Vec<u8> = px.iter().flat_map(|p| [(p >> 16) as u8, (p >> 8) as u8, *p as u8, (p >> 24) as u8]).collect();
-                std::fs::write(std::env::temp_dir().join(format!("rustknob-tray-{n}-{pct}.raw")), raw).unwrap();
-            }
-        }
-    }
-}
-
 /// Right-click menu at the cursor; returns CMD_SETTINGS, CMD_QUIT or 0.
 pub unsafe fn menu(hwnd: HWND, strings: &Strings, installed: bool) -> usize {
     let Ok(menu) = CreatePopupMenu() else { return 0 };
@@ -212,4 +194,22 @@ pub unsafe fn menu(hwnd: HWND, strings: &Strings, installed: bool) -> usize {
     let _ = DestroyMenu(menu);
     let _ = PostMessageW(hwnd, WM_NULL, WPARAM(0), LPARAM(0));
     cmd.0 as usize
+}
+
+#[cfg(test)]
+mod tests {
+    /// Writes the icons as raw RGBA to %TEMP%\rustknob-tray-*.raw. `cargo test tray -- --ignored`
+    #[test]
+    #[ignore]
+    fn battery_pixels() {
+        for n in [16usize, 20, 24, 32] {
+            for (pct, charging) in [(7u8, false), (46, false), (100, true), (18, false), (3, false)] {
+                let b = super::Battery { model: 0, percent: Some(pct), charging, name: "" };
+                let mut px = vec![0u32; n * n];
+                super::battery_pixels(&mut px, n, &b);
+                let raw: Vec<u8> = px.iter().flat_map(|p| [(p >> 16) as u8, (p >> 8) as u8, *p as u8, (p >> 24) as u8]).collect();
+                std::fs::write(std::env::temp_dir().join(format!("rustknob-tray-{n}-{pct}.raw")), raw).unwrap();
+            }
+        }
+    }
 }

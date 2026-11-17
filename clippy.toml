@@ -1,0 +1,3 @@
+# The drawing primitives take a rectangle, a radius and a paint (x, y, w, h, r, ...): eight plain numbers read
+# better at the call site than a struct built only to pass them.
+too-many-arguments-threshold = 8

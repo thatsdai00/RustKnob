@@ -83,15 +83,19 @@ pub fn enqueue(paths: Vec<PathBuf>, hwnd: isize, msg: u32) {
         if s.phase == Phase::Uploading {
             s.count += added;
         } else {
-            *s = Status { phase: Phase::Uploading, count: added, ..s.clone() };
-            s.links.clear();
-            s.error.clear();
-            s.index = 0;
+            begin(s, added);
         }
     });
     if !WORKER.swap(true, Ordering::SeqCst) {
         std::thread::spawn(move || worker(hwnd, msg));
     }
+}
+
+/// A new batch of `count` files: the last one's links and error are gone.
+fn begin(s: &mut Status, count: usize) {
+    *s = Status { phase: Phase::Uploading, count, index: 0, ..s.clone() };
+    s.links.clear();
+    s.error.clear();
 }
 
 fn notify(hwnd: isize, msg: u32) {
@@ -136,6 +140,8 @@ fn worker(hwnd: isize, msg: u32) {
     notify(hwnd, msg);
     // a file queued after the loop saw the queue empty (but before WORKER dropped) still needs a worker
     if QUEUE.lock().is_ok_and(|q| !q.is_empty()) && !WORKER.swap(true, Ordering::SeqCst) {
+        let left = QUEUE.lock().map_or(0, |q| q.len());
+        update(|s| begin(s, left)); // a batch of its own, shown as uploading again
         worker(hwnd, msg);
     }
 }

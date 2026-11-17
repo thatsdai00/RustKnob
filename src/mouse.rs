@@ -22,7 +22,7 @@
 // The pictures are not in the exe: the first time a mouse shows up, its picture comes from the repository on
 // GitHub and is kept in %LOCALAPPDATA%\RustKnob\pictures (offline, the card shows without it).
 
-use std::sync::atomic::{AtomicIsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::{Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -269,7 +269,7 @@ fn watch(m: &mut Device) {
                     let (battery, charging) = m.battery().unwrap_or((None, false));
                     let s = Status { model: m.model, dpi, stage, stages, battery, charging };
                     battery_at = Instant::now();
-                    load_picture(s.model); // fetched and decoded here, not on the UI thread when the card first draws
+                    fetch_picture(s.model); // fetched and decoded here, not on the UI thread when the card first draws
                     now = Some(s);
                     publish(now);
                     post(EV_WAKE);
@@ -396,7 +396,7 @@ fn read_others(devices: &mut Vec<Watched>, full: bool) {
                 return match w.device.look() {
                     Ok(Some(n)) => {
                         w.last = Some(n);
-                        load_picture(n.model);
+                        fetch_picture(n.model);
                         let why = if level(&n) > 0 { OTHER_LOW } else { OTHER_CONNECTED };
                         post_with(EV_OTHER, n.model as isize | why << 8);
                         true
@@ -424,12 +424,12 @@ fn read_others(devices: &mut Vec<Watched>, full: bool) {
                 None
             };
             if let Some(why) = why {
-                load_picture(n.model);
+                fetch_picture(n.model);
                 post_with(EV_OTHER, n.model as isize | why << 8);
             }
         }
         if let (Some(n), None) = (now, w.last) {
-            load_picture(n.model); // first seen (at start, too): its card may come from a click on its tray icon
+            fetch_picture(n.model); // first seen (at start, too): its card may come from a click on its tray icon
         }
         w.last = now;
         true
@@ -918,35 +918,59 @@ pub fn load_picture(model: Model) {
     if cell.get().is_some() {
         return;
     }
-    let Some(png) = picture_bytes(model) else { return };
-    // the decoder is WinRT: a thread of its own, so this thread's COM state does not matter
-    if let Some(p) = std::thread::spawn(move || decode(&png)).join().ok().flatten() {
+    if let Some(p) = find_picture(model) {
         let _ = cell.set(p);
     }
 }
 
+static LOADING: [AtomicBool; 5] = [const { AtomicBool::new(false) }; 5];
+
+/// `load_picture` on a thread of its own, so a slow or hanging download never holds up the device's cards.
+/// The copy on disk is ready well within the short wait, so the first card still shows it.
+fn fetch_picture(model: Model) {
+    let loading = &LOADING[model as usize];
+    if picture(model).is_some() || loading.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    std::thread::spawn(move || {
+        load_picture(model);
+        LOADING[model as usize].store(false, Ordering::Relaxed);
+    });
+    for _ in 0..20 {
+        if !loading.load(Ordering::Relaxed) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+}
+
+/// The decoder is WinRT: a thread of its own, so this thread's COM state does not matter.
+fn decoded(png: &[u8]) -> Option<Picture> {
+    std::thread::scope(|scope| scope.spawn(|| decode(png)).join().ok().flatten())
+}
+
 /// The README pictures are drawn from the project's own assets.
 #[cfg(feature = "demo")]
-fn picture_bytes(model: Model) -> Option<Vec<u8>> {
-    std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join(model.picture_file())).ok()
+fn find_picture(model: Model) -> Option<Picture> {
+    decoded(&std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join(model.picture_file())).ok()?)
 }
 
 #[cfg(not(feature = "demo"))]
-fn picture_bytes(model: Model) -> Option<Vec<u8>> {
-    const PNG: &[u8] = b"\x89PNG\r\n\x1a\n";
+fn find_picture(model: Model) -> Option<Picture> {
     let dir = std::path::PathBuf::from(std::env::var_os("LOCALAPPDATA").filter(|v| !v.is_empty())?).join("RustKnob").join("pictures");
     let file = dir.join(model.picture_file());
-    if let Some(png) = std::fs::read(&file).ok().filter(|b| b.starts_with(PNG)) {
-        return Some(png);
+    if let Some(p) = std::fs::read(&file).ok().and_then(|png| decoded(&png)) {
+        return Some(p);
     }
     let url = format!("https://raw.githubusercontent.com/{}/main/assets/{}", crate::update::REPO, model.picture_file());
-    let png = crate::update::get(&url, 1 << 20).filter(|b| b.starts_with(PNG))?;
+    let png = crate::update::get(&url, 1 << 20)?;
+    let p = decoded(&png)?; // kept only when it really is a picture: a broken file would never be fetched again
     // written whole, then renamed: a half-written file is never taken for the picture
     let part = file.with_extension("part");
     if std::fs::create_dir_all(&dir).is_ok() && std::fs::write(&part, &png).is_ok() && std::fs::rename(&part, &file).is_err() {
         let _ = std::fs::remove_file(&part);
     }
-    Some(png)
+    Some(p)
 }
 
 fn decode(png: &[u8]) -> Option<Picture> {

@@ -16,7 +16,7 @@ use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::System::DataExchange::{CloseClipboard, GetClipboardSequenceNumber, OpenClipboard};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Ole::CF_DIB;
-use windows::Win32::UI::HiDpi::GetDpiForSystem;
+use windows::Win32::UI::HiDpi::{GetDpiForMonitor, GetDpiForSystem, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -214,10 +214,14 @@ unsafe fn open(main: isize, hint: &str) -> bool {
     let _ = GetCursorPos(&mut cur);
     // the capsule opens at the top center of the monitor under the pointer, its icon a little left of center
     let mut mi = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
-    let _ = GetMonitorInfoW(MonitorFromPoint(cur, MONITOR_DEFAULTTONEAREST), &mut mi);
+    let mon = MonitorFromPoint(cur, MONITOR_DEFAULTTONEAREST);
+    let _ = GetMonitorInfoW(mon, &mut mi);
     let scale = (GetDpiForSystem() as f32 / 96.0).max(1.0);
-    let cx = ((mi.rcMonitor.left + mi.rcMonitor.right) / 2 - vx) as f32 - 144.0 * scale;
-    let cy_target = (mi.rcMonitor.top - vy) as f32 + 48.0 * scale;
+    // the capsule is sized for its own monitor: with mixed scaling that is not the system's
+    let (mut dpi, mut dpi_y) = (0, 0);
+    let at = if GetDpiForMonitor(mon, MDT_EFFECTIVE_DPI, &mut dpi, &mut dpi_y).is_ok() { (dpi as f32 / 96.0).max(1.0) } else { scale };
+    let cx = ((mi.rcMonitor.left + mi.rcMonitor.right) / 2 - vx) as f32 - 144.0 * at;
+    let cy_target = (mi.rcMonitor.top - vy) as f32 + 48.0 * at;
     let glyphs = GLYPHS.chars().filter_map(|c| raster(&c.to_string(), -56, 700)).collect();
     let state = Box::new(Snip {
         hwnd,
@@ -454,7 +458,9 @@ impl Snip {
 
     /// Tells the capsule a screenshot is on the clipboard.
     fn announce(&mut self) {
-        unsafe { tell_done(self.main, self.taken) };
+        if self.taken.0 > 0 {
+            unsafe { tell_done(self.main, self.taken) };
+        }
         self.taken = (0, 0); // once
     }
 
@@ -724,9 +730,9 @@ impl Snip {
         let (sw, sh) = ((r.2 - r.0) as usize, (r.3 - r.1) as usize);
         let stride = (sw * 3 + 3) & !3;
         let header = std::mem::size_of::<BITMAPINFOHEADER>();
-        unsafe {
-            if OpenClipboard(self.hwnd).is_ok() {
-                crate::clipboard::write(CF_DIB.0 as u32, header + stride * sh, |ptr| {
+        let copied = unsafe {
+            OpenClipboard(self.hwnd).is_ok() && {
+                let ok = crate::clipboard::write(CF_DIB.0 as u32, header + stride * sh, |ptr| {
                     let info = BITMAPINFOHEADER {
                         biSize: header as u32,
                         biWidth: sw as i32,
@@ -742,16 +748,20 @@ impl Snip {
                     for row in 0..sh {
                         let line = &src[(r.1 as usize + row) * self.w as usize + r.0 as usize..][..sw];
                         let dst = &mut out[(sh - 1 - row) * stride..][..sw * 3];
-                        for (px, d3) in line.iter().zip(dst.chunks_exact_mut(3)) {
+                        for (px, d3) in line.iter().zip(dst.as_chunks_mut::<3>().0) {
                             d3.copy_from_slice(&px.to_le_bytes()[..3]); // B, G, R
                         }
                     }
                 });
                 let _ = CloseClipboard();
+                ok
             }
+        };
+        // another app holding the clipboard: no "copied" card, nor a paste of the old content taken for this one
+        if copied {
+            self.taken = (sw as i32, sh as i32);
+            crate::hook::SNIP_SEQ.store(unsafe { GetClipboardSequenceNumber() }, SeqCst);
         }
-        self.taken = (sw as i32, sh as i32);
-        crate::hook::SNIP_SEQ.store(unsafe { GetClipboardSequenceNumber() }, SeqCst);
         // the selection lets go of the screen and flies to the capsule
         self.pending.push(self.drawn.unwrap_or(r));
         self.drawn = None;
