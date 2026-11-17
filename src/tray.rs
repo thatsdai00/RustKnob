@@ -165,7 +165,7 @@ unsafe fn battery_icon(b: &Battery) -> Option<HICON> {
 }
 
 /// The icon's pixels, `n` x `n`, premultiplied 0xAARRGGBB.
-fn battery_pixels(px: &mut [u32], n: usize, b: &Battery) {
+pub(crate) fn battery_pixels(px: &mut [u32], n: usize, b: &Battery) {
     use crate::gfx::{cov, rrect, Digits};
     let pct = b.percent.unwrap_or(0);
     let rgb: [f32; 3] = match (b.charging, pct) {

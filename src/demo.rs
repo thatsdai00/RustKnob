@@ -12,6 +12,10 @@ use crate::text::{raster, raster_face, TextBmp};
 use crate::theme::{Palette, DARK, LIGHT};
 use crate::ui;
 
+#[path = "demo_video.rs"]
+mod video;
+pub use video::video;
+
 /// Large type: a lighter, more modern face where Windows has it (it falls back to Segoe UI).
 const FACE: &str = "Segoe UI Variable Display";
 
@@ -72,6 +76,7 @@ fn scene<'a>(w: f32, h: f32, radius: f32, kind: Kind, unit: f32) -> Scene<'a> {
         bell: false,
         frame: false,
         check: false,
+        app_icon: None,
         drop_hint: None,
         pin: None,
         sub: None,
