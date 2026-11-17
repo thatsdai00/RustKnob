@@ -4,7 +4,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use crate::json;
+use crate::json::{self, Value};
 use crate::update;
 
 /// One word of a line, timed (seconds) and located in the line's text (byte range).
@@ -32,9 +32,7 @@ impl Lyrics {
         let n = self.lines.partition_point(|l| l.start <= t);
         (n > 0).then(|| (n - 1, &self.lines[n - 1]))
     }
-}
 
-impl Lyrics {
     /// The line to have on show at `t`: the next one appears `lead` seconds before it is sung (it needs a moment to
     /// slide in and to be read), but never while the one before it still has words to come.
     pub fn line_shown(&self, t: f32, lead: f32) -> Option<(usize, &Line)> {
@@ -98,7 +96,7 @@ fn lookup(title: &str, artist: &str, duration: Option<u32>, stale: &dyn Fn() -> 
         exact.push_str(&format!("&duration={d}"));
     }
     if let Some(body) = update::get(&exact, 1 << 20).and_then(|b| String::from_utf8(b).ok()) {
-        if let Some(found) = synced(&body) {
+        if let Some(found) = Value::parse(&body).and_then(|r| synced(&r)) {
             return Some(found);
         }
     }
@@ -118,27 +116,20 @@ fn lookup(title: &str, artist: &str, duration: Option<u32>, stale: &dyn Fn() -> 
     None
 }
 
-/// The first non-null `syncedLyrics` string in a response (one object, or a list of them).
-fn synced(body: &str) -> Option<String> {
-    let mut rest = body;
-    while let Some(i) = rest.find("\"syncedLyrics\"") {
-        if let Some(v) = json::str_field(&rest[i..], "syncedLyrics").filter(|v| v.contains('[')) {
-            return Some(v);
-        }
-        rest = &rest[i + 14..];
-    }
-    None
+/// The synced lyrics of one LRCLIB record, when it has any.
+fn synced(record: &Value) -> Option<String> {
+    record.get("syncedLyrics")?.str().filter(|v| v.contains('[')).map(str::to_string)
 }
 
 /// Among the results of a search, the synced lyrics of the recording whose length is closest to the one playing
 /// (the same song comes in several versions, and their lyrics are timed differently).
 fn best_synced(body: &str, duration: Option<u32>) -> Option<String> {
     let mut best: Option<(f32, String)> = None;
-    for object in objects(body) {
-        let Some(text) = json::str_field(object, "syncedLyrics").filter(|v| v.contains('[')) else { continue };
-        let length = number_field(object, "duration");
+    for record in Value::parse(body)?.arr() {
+        let Some(text) = synced(record) else { continue };
+        let length = record.get("duration").and_then(Value::num);
         let diff = match (duration, length) {
-            (Some(want), Some(have)) => (want as f32 - have).abs(),
+            (Some(want), Some(have)) => (want as f32 - have as f32).abs(),
             _ => 1000.0, // unknown: behind every known length
         };
         let max = if duration.is_some() { 6.0 } else { f32::INFINITY }; // a known length must be close
@@ -147,47 +138,6 @@ fn best_synced(body: &str, duration: Option<u32>) -> Option<String> {
         }
     }
     best.map(|(_, text)| text)
-}
-
-/// The top-level `{...}` pieces of a JSON array (strings may contain braces).
-fn objects(body: &str) -> Vec<&str> {
-    let (mut out, mut depth, mut start) = (Vec::new(), 0usize, 0usize);
-    let (mut in_string, mut escaped) = (false, false);
-    for (i, c) in body.char_indices() {
-        if in_string {
-            match (escaped, c) {
-                (true, _) => escaped = false,
-                (false, '\\') => escaped = true,
-                (false, '"') => in_string = false,
-                _ => {}
-            }
-            continue;
-        }
-        match c {
-            '"' => in_string = true,
-            '{' => {
-                if depth == 0 {
-                    start = i;
-                }
-                depth += 1;
-            }
-            '}' if depth > 0 => {
-                depth -= 1;
-                if depth == 0 {
-                    out.push(&body[start..=i]);
-                }
-            }
-            _ => {}
-        }
-    }
-    out
-}
-
-fn number_field(object: &str, key: &str) -> Option<f32> {
-    let after = &object[object.find(&format!("\"{key}\""))? + key.len() + 2..];
-    let value = after.trim_start().strip_prefix(':')?.trim_start();
-    let end = value.find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-')).unwrap_or(value.len());
-    value[..end].parse().ok()
 }
 
 fn clean_title(title: &str) -> &str {
@@ -199,7 +149,7 @@ fn clean_title(title: &str) -> &str {
 fn parse(text: &str) -> Vec<Line> {
     let mut out = Vec::new();
     // "[offset:+500]": the lines come that many milliseconds earlier (negative: later)
-    let offset = text.lines().find_map(|l| l.trim().strip_prefix("[offset:")?.split(']').next()?.trim().parse::<f32>().ok()).unwrap_or(0.0) / 1000.0;
+    let offset = text.lines().find_map(|l| json::number(l.trim().strip_prefix("[offset:")?.split(']').next()?.trim())).unwrap_or(0.0) as f32 / 1000.0;
     for raw in text.lines() {
         let mut rest = raw.trim();
         let mut stamps = Vec::new();
@@ -208,8 +158,8 @@ fn parse(text: &str) -> Vec<Line> {
             let tag = &inner[..end];
             rest = inner[end + 1..].trim_start();
             if let Some((m, s)) = tag.split_once(':') {
-                if let (Ok(m), Ok(s)) = (m.parse::<f32>(), s.parse::<f32>()) {
-                    stamps.push(m * 60.0 + s);
+                if let (Some(m), Some(s)) = (json::number(m), json::number(s)) {
+                    stamps.push(m as f32 * 60.0 + s as f32);
                 }
             }
         }
@@ -217,8 +167,13 @@ fn parse(text: &str) -> Vec<Line> {
             out.push(Line { start: t - offset, text: rest.to_string(), words: Vec::new() });
         }
     }
-    out.sort_by(|a, b| a.start.total_cmp(&b.start));
+    out.sort_by(by_start);
     out
+}
+
+/// Earliest first; lines with the same time keep their order (a stable sort, one copy of it for both sources).
+fn by_start(a: &Line, b: &Line) -> std::cmp::Ordering {
+    a.start.total_cmp(&b.start)
 }
 
 // ---- LiriQo (https://github.com/AlFarrizi-Studio/LiriQo): one endpoint over Apple Music, Musixmatch, QQ, ... ----
@@ -230,7 +185,7 @@ fn liriqo(title: &str, artist: &str, duration: Option<u32>) -> Option<Vec<Line>>
         url.push_str(&format!("&duration={d}"));
     }
     let body = String::from_utf8(update::get(&url, 8 << 20)?).ok()?;
-    let root = J::parse(&body)?;
+    let root = Value::parse(&body)?;
     let mut best: Option<(bool, Vec<Line>)> = None;
     for track in root.get("tracks")?.arr() {
         let lines = liriqo_lines(track);
@@ -245,16 +200,16 @@ fn liriqo(title: &str, artist: &str, duration: Option<u32>) -> Option<Vec<Line>>
     best.map(|(_, lines)| lines)
 }
 
-fn liriqo_lines(track: &J) -> Vec<Line> {
+fn liriqo_lines(track: &Value) -> Vec<Line> {
     let mut out = Vec::new();
     for l in track.get("timed").map_or(&[][..], |t| t.arr()) {
-        let (Some(text), Some(start)) = (l.get("text").and_then(J::str), l.get("start").and_then(J::num)) else { continue };
-        let instrumental = matches!(l.get("isInstrumental"), Some(J::Bool(true)));
+        let (Some(text), Some(start)) = (l.get("text").and_then(Value::str), l.get("start").and_then(Value::num)) else { continue };
+        let instrumental = matches!(l.get("isInstrumental"), Some(Value::Bool(true)));
         let text = if instrumental { "" } else { text.trim() };
         let mut words = Vec::new();
         let mut pos = 0;
         for w in l.get("words").map_or(&[][..], |w| w.arr()) {
-            let word = w.get("text").and_then(J::str).unwrap_or("").trim();
+            let word = w.get("text").and_then(Value::str).unwrap_or("").trim();
             if word.is_empty() {
                 continue;
             }
@@ -265,171 +220,12 @@ fn liriqo_lines(track: &J) -> Vec<Line> {
             };
             let (from, to) = (pos + at, pos + at + word.len());
             pos = to;
-            let s = w.get("start").and_then(J::num).unwrap_or(0.0) as f32 / 1000.0;
-            let e = w.get("end").and_then(J::num).unwrap_or(0.0) as f32 / 1000.0;
+            let s = w.get("start").and_then(Value::num).unwrap_or(0.0) as f32 / 1000.0;
+            let e = w.get("end").and_then(Value::num).unwrap_or(0.0) as f32 / 1000.0;
             words.push(Word { start: s, end: e.max(s), from, to });
         }
         out.push(Line { start: start as f32 / 1000.0, text: text.to_string(), words });
     }
-    out.sort_by(|a, b| a.start.total_cmp(&b.start));
+    out.sort_by(by_start);
     out
-}
-
-/// Just enough JSON to read the response.
-enum J {
-    Null,
-    Bool(bool),
-    Num(f64),
-    Str(String),
-    Arr(Vec<J>),
-    Obj(Vec<(String, J)>),
-}
-
-impl J {
-    fn parse(text: &str) -> Option<J> {
-        Reader { s: text.as_bytes(), i: 0, depth: 0 }.value()
-    }
-    fn get(&self, key: &str) -> Option<&J> {
-        match self {
-            J::Obj(v) => v.iter().find(|(k, _)| k == key).map(|(_, v)| v),
-            _ => None,
-        }
-    }
-    fn str(&self) -> Option<&str> {
-        if let J::Str(s) = self { Some(s) } else { None }
-    }
-    fn num(&self) -> Option<f64> {
-        if let J::Num(n) = self { Some(*n) } else { None }
-    }
-    fn arr(&self) -> &[J] {
-        if let J::Arr(v) = self { v } else { &[] }
-    }
-}
-
-struct Reader<'a> {
-    s: &'a [u8],
-    i: usize,
-    depth: u32, // nesting: a hostile response must not run the stack out
-}
-
-impl Reader<'_> {
-    fn peek(&mut self) -> Option<u8> {
-        while self.s.get(self.i)?.is_ascii_whitespace() {
-            self.i += 1;
-        }
-        self.s.get(self.i).copied()
-    }
-
-    fn value(&mut self) -> Option<J> {
-        if self.depth > 64 {
-            return None;
-        }
-        self.depth += 1;
-        let v = self.value_inner();
-        self.depth -= 1;
-        v
-    }
-
-    fn value_inner(&mut self) -> Option<J> {
-        match self.peek()? {
-            b'{' => {
-                self.i += 1;
-                let mut v = Vec::new();
-                loop {
-                    match self.peek()? {
-                        b'}' => break,
-                        b',' => self.i += 1,
-                        _ => {
-                            let k = self.string()?;
-                            if self.peek()? != b':' {
-                                return None;
-                            }
-                            self.i += 1;
-                            v.push((k, self.value()?));
-                        }
-                    }
-                }
-                self.i += 1;
-                Some(J::Obj(v))
-            }
-            b'[' => {
-                self.i += 1;
-                let mut v = Vec::new();
-                loop {
-                    match self.peek()? {
-                        b']' => break,
-                        b',' => self.i += 1,
-                        _ => v.push(self.value()?),
-                    }
-                }
-                self.i += 1;
-                Some(J::Arr(v))
-            }
-            b'"' => self.string().map(J::Str),
-            b't' => {
-                self.i += 4;
-                Some(J::Bool(true))
-            }
-            b'f' => {
-                self.i += 5;
-                Some(J::Bool(false))
-            }
-            b'n' => {
-                self.i += 4;
-                Some(J::Null)
-            }
-            _ => {
-                let start = self.i;
-                while self.s.get(self.i).is_some_and(|c| matches!(c, b'0'..=b'9' | b'-' | b'+' | b'.' | b'e' | b'E')) {
-                    self.i += 1;
-                }
-                std::str::from_utf8(&self.s[start..self.i]).ok()?.parse().ok().map(J::Num)
-            }
-        }
-    }
-
-    fn string(&mut self) -> Option<String> {
-        if self.peek()? != b'"' {
-            return None;
-        }
-        self.i += 1;
-        let mut out = Vec::new();
-        loop {
-            let c = *self.s.get(self.i)?;
-            self.i += 1;
-            match c {
-                b'"' => break,
-                b'\\' => {
-                    let e = *self.s.get(self.i)?;
-                    self.i += 1;
-                    match e {
-                        b'n' => out.push(b'\n'),
-                        b't' => out.push(b'\t'),
-                        b'r' => out.push(b'\r'),
-                        b'b' => out.push(8),
-                        b'f' => out.push(12),
-                        b'u' => {
-                            let mut cp = self.hex4()?;
-                            if (0xD800..0xDC00).contains(&cp) && self.s.get(self.i) == Some(&b'\\') && self.s.get(self.i + 1) == Some(&b'u') {
-                                self.i += 2;
-                                let low = self.hex4()?;
-                                cp = 0x10000 + ((cp - 0xD800) << 10) + (low.wrapping_sub(0xDC00) & 0x3FF);
-                            }
-                            let mut buf = [0u8; 4];
-                            out.extend_from_slice(char::from_u32(cp).unwrap_or('\u{FFFD}').encode_utf8(&mut buf).as_bytes());
-                        }
-                        other => out.push(other),
-                    }
-                }
-                other => out.push(other),
-            }
-        }
-        Some(String::from_utf8_lossy(&out).into_owned())
-    }
-
-    fn hex4(&mut self) -> Option<u32> {
-        let h = std::str::from_utf8(self.s.get(self.i..self.i + 4)?).ok()?;
-        self.i += 4;
-        u32::from_str_radix(h, 16).ok()
-    }
 }

@@ -3,7 +3,9 @@ $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 $env:Path += ";$env:USERPROFILE\.cargo\bin"
 
-cargo build --release
+# the windows crate's panic locations name its source files, which sit in the user folder: keep the user name out
+# of the exe (these flags are added to the ones in .cargo\config.toml)
+cargo build --release --config "target.x86_64-pc-windows-msvc.rustflags=['--remap-path-prefix=$env:USERPROFILE=~']"
 if ($LASTEXITCODE -ne 0) { throw 'build failed' }
 
 New-Item -ItemType Directory -Force dist | Out-Null

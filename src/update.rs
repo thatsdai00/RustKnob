@@ -4,7 +4,6 @@
 //
 // Runs on a thread of its own, now and then (see island.rs), and only when "update automatically" is on.
 
-use std::ffi::c_void;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -15,7 +14,7 @@ use windows::Win32::Networking::WinHttp::*;
 use windows::Win32::Security::Cryptography::*;
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
-use crate::json;
+use crate::{json, net};
 
 pub const REPO: &str = "thatsdai00/RustKnob";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -83,7 +82,7 @@ unsafe fn download(tag: &str, body: &str) -> Option<(String, PathBuf)> {
     let section = &body[at..];
     let url = json::str_field(section, "browser_download_url")?;
     let digest = json::str_field(section, "digest")?;
-    let expected = digest.strip_prefix("sha256:")?.to_lowercase();
+    let expected = digest.strip_prefix("sha256:")?.to_ascii_lowercase();
     if !url.starts_with("https://") || expected.len() != 64 {
         return None;
     }
@@ -117,57 +116,25 @@ unsafe fn sha256(data: &[u8]) -> Option<String> {
     ok.then(|| digest.iter().map(|b| format!("{b:02x}")).collect())
 }
 
-/// GET `url` (redirects are followed), at most `limit` bytes; None on any failure or a status other than 200.
+/// GET `url` (https only; redirects are followed), at most `limit` bytes; None on any failure or a status other than 200.
 pub fn get(url: &str, limit: usize) -> Option<Vec<u8>> {
-    unsafe { get_raw(url, limit) }
-}
-
-unsafe fn get_raw(url: &str, limit: usize) -> Option<Vec<u8>> {
-    let rest = url.strip_prefix("https://")?;
-    let (host, target) = match rest.find('/') {
-        Some(i) => (&rest[..i], &rest[i..]),
-        None => (rest, "/"),
-    };
-    let session = WinHttpOpen(&HSTRING::from(format!("RustKnob/{VERSION}")), WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, PCWSTR::null(), PCWSTR::null(), 0);
-    if session.is_null() {
-        return None;
-    }
-    let mut result = None;
-    let connection = WinHttpConnect(session, &HSTRING::from(host), 443, 0);
-    if !connection.is_null() {
-        let request = WinHttpOpenRequest(connection, w!("GET"), &HSTRING::from(target), PCWSTR::null(), PCWSTR::null(), std::ptr::null(), WINHTTP_FLAG_SECURE);
-        if !request.is_null() {
-            let headers: Vec<u16> = "Accept: application/vnd.github+json, application/octet-stream\r\n".encode_utf16().collect();
-            let _ = WinHttpSetTimeouts(request, 15_000, 20_000, 30_000, 60_000); // 0 would let a name lookup hang for ever
-            if WinHttpSendRequest(request, Some(&headers), None, 0, 0, 0).is_ok() && WinHttpReceiveResponse(request, std::ptr::null_mut()).is_ok() {
-                let (mut code, mut size) = (0u32, 4u32);
-                let _ = WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, PCWSTR::null(), Some(&mut code as *mut u32 as *mut c_void), &mut size, std::ptr::null_mut());
-                if code == 200 {
-                    let mut body = Vec::new();
-                    let mut chunk = vec![0u8; 1 << 16];
-                    loop {
-                        let mut available = 0u32;
-                        if WinHttpQueryDataAvailable(request, &mut available).is_err() || available == 0 {
-                            break;
-                        }
-                        let want = available.min(chunk.len() as u32);
-                        let mut read = 0u32;
-                        if WinHttpReadData(request, chunk.as_mut_ptr() as *mut c_void, want, &mut read).is_err() || read == 0 {
-                            break;
-                        }
-                        body.extend_from_slice(&chunk[..read as usize]);
-                        if body.len() > limit {
-                            body.clear();
-                            break;
-                        }
-                    }
-                    result = (!body.is_empty()).then_some(body);
-                }
-            }
-            let _ = WinHttpCloseHandle(request);
+    let url = net::parse_url(url).filter(|u| u.secure)?;
+    let agent = HSTRING::from(format!("RustKnob/{VERSION}"));
+    unsafe {
+        let session = net::session(PCWSTR(agent.as_ptr()));
+        if session.is_null() {
+            return None;
         }
-        let _ = WinHttpCloseHandle(connection);
+        let mut result = None;
+        if let Some((connection, request)) = net::open_request(session, w!("GET"), &url) {
+            let _ = WinHttpSetTimeouts(request, 15_000, 20_000, 30_000, 60_000); // 0 would let a name lookup hang for ever
+            if net::send(request, "Accept: application/vnd.github+json, application/octet-stream\r\n", &[]) && net::status_code(request) == 200 {
+                let body = net::read_body(request, limit);
+                result = (!body.is_empty()).then_some(body);
+            }
+            net::close(connection, request);
+        }
+        let _ = WinHttpCloseHandle(session);
+        result
     }
-    let _ = WinHttpCloseHandle(session);
-    result
 }

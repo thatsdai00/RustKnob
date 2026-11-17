@@ -3,8 +3,7 @@
 // and tells the main window when a *different* song starts playing.
 
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::mpsc::{channel, Sender};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use windows::Foundation::{EventRegistrationToken, TypedEventHandler};
@@ -14,6 +13,7 @@ use windows::Win32::Foundation::*;
 use windows::Win32::System::Com::*;
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
+use crate::gfx::FClamp;
 use crate::text::{raster, TextBmp};
 
 pub struct Song {
@@ -35,7 +35,8 @@ pub struct Art {
 /// The pinned capsule wants cover art: it is only fetched (and decoded) while this is set.
 static PIN_ON: AtomicBool = AtomicBool::new(false);
 static PLAYING: AtomicBool = AtomicBool::new(false);
-static WAKE: Mutex<Option<Sender<()>>> = Mutex::new(None);
+/// Set when the listener should read the media again; it sleeps on the Condvar until then.
+static WAKE: (Mutex<bool>, Condvar) = (Mutex::new(false), Condvar::new());
 /// Synced lyrics wanted (only looked up while the media is pinned as well).
 static LYRICS_ON: AtomicBool = AtomicBool::new(false);
 /// Where the song was at the last timeline update: seconds, when that was read, and whether it was playing.
@@ -51,10 +52,9 @@ pub fn set_lyrics(on: bool) {
 }
 
 fn wake() {
-    if let Ok(g) = WAKE.lock() {
-        if let Some(tx) = g.as_ref() {
-            let _ = tx.send(());
-        }
+    if let Ok(mut g) = WAKE.0.lock() {
+        *g = true;
+        WAKE.1.notify_one();
     }
 }
 
@@ -99,7 +99,6 @@ pub fn start(hwnd: isize, song_msg: u32, pin_msg: u32) {
 
 struct Listener {
     mgr: GlobalSystemMediaTransportControlsSessionManager,
-    tx: Sender<()>,
     hwnd: isize,
     song_msg: u32,
     pin_msg: u32, // posted when what the pinned capsule shows changed
@@ -116,26 +115,26 @@ fn run(hwnd: isize, song_msg: u32, pin_msg: u32) -> windows::core::Result<()> {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
     }
     let mgr = GlobalSystemMediaTransportControlsSessionManager::RequestAsync()?.get()?;
-    let (tx, rx) = channel::<()>();
-    {
-        let tx = tx.clone();
-        mgr.CurrentSessionChanged(&TypedEventHandler::new(move |_, _| {
-            SESSION_CHANGED.store(true, Ordering::Relaxed);
-            let _ = tx.send(());
-            Ok(())
-        }))?;
+    if let Ok(mut g) = WAKE.0.lock() {
+        *g = false; // a wake-up from before the listener ran: the first update below reads everything anyway
     }
-    if let Ok(mut g) = WAKE.lock() {
-        *g = Some(tx.clone());
-    }
-    let mut l = Listener { mgr, tx, hwnd, song_msg, pin_msg, has_art: false, last_key: String::new(), first: true, app: String::new(), sub: None, lyric_key: String::new() };
+    mgr.CurrentSessionChanged(&TypedEventHandler::new(|_, _| {
+        SESSION_CHANGED.store(true, Ordering::Relaxed);
+        wake();
+        Ok(())
+    }))?;
+    let mut l = Listener { mgr, hwnd, song_msg, pin_msg, has_art: false, last_key: String::new(), first: true, app: String::new(), sub: None, lyric_key: String::new() };
     let _ = l.update();
-    while rx.recv().is_ok() {
+    loop {
+        if let Ok(g) = WAKE.0.lock() {
+            drop(WAKE.1.wait_while(g, |woken| !*woken));
+        }
         std::thread::sleep(Duration::from_millis(350)); // coalesce bursts
-        while rx.try_recv().is_ok() {}
+        if let Ok(mut g) = WAKE.0.lock() {
+            *g = false;
+        }
         let _ = l.update();
     }
-    Ok(())
 }
 
 impl Listener {
@@ -153,19 +152,17 @@ impl Listener {
         let app = ses.SourceAppUserModelId()?.to_string();
         if SESSION_CHANGED.swap(false, Ordering::Relaxed) || app != self.app || self.sub.is_none() {
             self.unsubscribe();
-            let (tx1, tx2) = (self.tx.clone(), self.tx.clone());
-            let t1 = ses.MediaPropertiesChanged(&TypedEventHandler::new(move |_, _| {
-                let _ = tx1.send(());
+            let t1 = ses.MediaPropertiesChanged(&TypedEventHandler::new(|_, _| {
+                wake();
                 Ok(())
             }))?;
-            let t2 = ses.PlaybackInfoChanged(&TypedEventHandler::new(move |_, _| {
-                let _ = tx2.send(());
+            let t2 = ses.PlaybackInfoChanged(&TypedEventHandler::new(|_, _| {
+                wake();
                 Ok(())
             }))?;
-            let tx3 = self.tx.clone();
-            let t3 = ses.TimelinePropertiesChanged(&TypedEventHandler::new(move |_, _| {
+            let t3 = ses.TimelinePropertiesChanged(&TypedEventHandler::new(|_, _| {
                 if LYRICS_ON.load(Ordering::Relaxed) && PIN_ON.load(Ordering::Relaxed) {
-                    let _ = tx3.send(()); // a seek: the lyrics follow
+                    wake(); // a seek: the lyrics follow
                 }
                 Ok(())
             }))?;
@@ -195,7 +192,7 @@ impl Listener {
                     // the report is some time old: carry it on (DateTime and FILETIME both count 100 ns from 1601)
                     let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_nanos() / 100) as i128 + 116_444_736_000_000_000;
                     let age = tl.LastUpdatedTime().map_or(0.0, |t| (now - t.UniversalTime as i128) as f64 / 1e7);
-                    pos += age.clamp(0.0, 600.0);
+                    pos += age.fclamp(0.0, 600.0);
                 }
                 if let Ok(mut g) = TIMELINE.lock() {
                     *g = Some((pos as f32, Instant::now(), playing));
@@ -330,7 +327,7 @@ fn accent_of(px: &[u32]) -> [f32; 3] {
     // stretch to full brightness, keep the hue, soften a little toward white so it stays readable
     let k = 0.92 / hi;
     let lift = 0.18;
-    [0, 1, 2].map(|i| ((c[i] * k) * (1.0 - lift) + lift).clamp(0.0, 1.0) * 255.0)
+    [0, 1, 2].map(|i| ((c[i] * k) * (1.0 - lift) + lift).fclamp(0.0, 1.0) * 255.0)
 }
 
 /// cmd: 1 = previous, 2 = next, 3 = play/pause (then posts `msg` so the icon can follow the new state).

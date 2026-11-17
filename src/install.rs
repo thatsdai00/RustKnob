@@ -16,7 +16,7 @@ use crate::{autostart, menu, CLASS};
 
 const UNINSTALL_KEY: PCWSTR = w!(r"Software\Microsoft\Windows\CurrentVersion\Uninstall\RustKnob");
 
-fn env_path(name: &str) -> PathBuf {
+pub fn env_path(name: &str) -> PathBuf {
     PathBuf::from(std::env::var(name).unwrap_or_default())
 }
 
@@ -32,7 +32,7 @@ fn shortcut_path() -> PathBuf {
     env_path("APPDATA").join(r"Microsoft\Windows\Start Menu\Programs\RustKnob.lnk")
 }
 
-fn exe_dir() -> PathBuf {
+pub fn exe_dir() -> PathBuf {
     std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)).unwrap_or_default()
 }
 
@@ -222,11 +222,11 @@ fn quote(a: &str) -> String {
         match c {
             '\\' => slashes += 1,
             '"' => {
-                out.extend(std::iter::repeat('\\').take(slashes * 2 + 1));
+                out.extend(std::iter::repeat_n('\\', slashes * 2 + 1));
                 slashes = 0;
             }
             _ => {
-                out.extend(std::iter::repeat('\\').take(slashes));
+                out.extend(std::iter::repeat_n('\\', slashes));
                 slashes = 0;
             }
         }
@@ -234,7 +234,7 @@ fn quote(a: &str) -> String {
             out.push(c);
         }
     }
-    out.extend(std::iter::repeat('\\').take(slashes * 2));
+    out.extend(std::iter::repeat_n('\\', slashes * 2));
     out.push('"');
     out
 }

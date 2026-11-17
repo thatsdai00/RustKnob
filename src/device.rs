@@ -74,11 +74,15 @@ pub unsafe fn watch(hwnd: isize, msg: u32) -> Option<Subscription> {
     Some(Subscription { enumerator, client })
 }
 
+/// The current default playback device.
+pub unsafe fn default_device() -> Option<IMMDevice> {
+    let enumerator: IMMDeviceEnumerator = CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()?;
+    enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia).ok()
+}
+
 /// Friendly name of the current default playback device, e.g. "Speakers (Realtek Audio)".
 pub unsafe fn default_name() -> Option<String> {
-    let enumerator: IMMDeviceEnumerator = CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()?;
-    let device = enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia).ok()?;
-    let store = device.OpenPropertyStore(STGM_READ).ok()?;
+    let store = default_device()?.OpenPropertyStore(STGM_READ).ok()?;
     let value = store.GetValue(&PKEY_Device_FriendlyName).ok()?;
     let name = PropVariantToStringAlloc(&value).ok()?;
     let text = name.to_string().ok();

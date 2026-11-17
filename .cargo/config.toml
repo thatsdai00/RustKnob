@@ -1,2 +1,8 @@
 [target.x86_64-pc-windows-msvc]
-rustflags = ["-C", "target-feature=+crt-static"]
+# Static vcruntime, but the Universal CRT from Windows itself (ucrtbase.dll, part of every Windows 10 and 11):
+# one exe that needs no redistributable, about 100 KB smaller than linking the whole CRT in.
+rustflags = [
+  "-C", "target-feature=+crt-static",
+  "-C", "link-arg=/NODEFAULTLIB:libucrt.lib",
+  "-C", "link-arg=ucrt.lib",
+]

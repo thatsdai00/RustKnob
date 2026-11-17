@@ -3,6 +3,7 @@
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Gdi::*;
+use crate::gfx::FClamp;
 
 pub const TEXT_R: f32 = 4.0; // raster px per logical unit
 
@@ -24,8 +25,8 @@ impl TextBmp {
         if u < 0.0 || v < 0.0 || u >= w || v >= h {
             return 0.0;
         }
-        let x = (u - 0.5).clamp(0.0, w - 1.0);
-        let y = (v - 0.5).clamp(0.0, h - 1.0);
+        let x = (u - 0.5).fclamp(0.0, w - 1.0);
+        let y = (v - 0.5).fclamp(0.0, h - 1.0);
         let (x0, y0) = (x as usize, y as usize);
         let (x1, y1) = ((x0 + 1).min(self.w - 1), (y0 + 1).min(self.h - 1));
         let (fx, fy) = (x - x0 as f32, y - y0 as f32);
@@ -72,6 +73,19 @@ impl Gdi {
     }
 }
 
+/// Runs `f` with the thread's memory DC and this font selected into it.
+fn with_font<T>(height: i32, weight: i32, face: &'static str, f: impl FnOnce(HDC) -> T) -> T {
+    GDI.with(|cell| unsafe {
+        let mut cell = cell.borrow_mut();
+        let gdi = cell.get_or_insert_with(|| Gdi { dc: CreateCompatibleDC(None), fonts: Vec::new() });
+        let font = gdi.font(height, weight, face);
+        let old = SelectObject(gdi.dc, font);
+        let out = f(gdi.dc);
+        SelectObject(gdi.dc, old);
+        out
+    })
+}
+
 /// `height` is the font height in raster px (negative = character height), `weight` 400 / 700.
 pub fn raster(s: &str, height: i32, weight: i32) -> Option<TextBmp> {
     raster_face(s, height, weight, "Segoe UI")
@@ -80,16 +94,11 @@ pub fn raster(s: &str, height: i32, weight: i32) -> Option<TextBmp> {
 /// Where text of this size ends inside the bitmap `raster` makes of it (raster px from its left edge, padding included).
 pub fn measure(s: &str, height: i32, weight: i32) -> f32 {
     let wide: Vec<u16> = s.encode_utf16().collect();
-    GDI.with(|cell| unsafe {
-        let mut cell = cell.borrow_mut();
-        let gdi = cell.get_or_insert_with(|| Gdi { dc: CreateCompatibleDC(None), fonts: Vec::new() });
-        let font = gdi.font(height, weight, "Segoe UI");
-        let old = SelectObject(gdi.dc, font);
+    with_font(height, weight, "Segoe UI", |dc| unsafe {
         let mut sz = SIZE::default();
         if !wide.is_empty() {
-            let _ = GetTextExtentPoint32W(gdi.dc, &wide, &mut sz);
+            let _ = GetTextExtentPoint32W(dc, &wide, &mut sz);
         }
-        SelectObject(gdi.dc, old);
         (sz.cx + 4) as f32
     })
 }
@@ -100,12 +109,7 @@ pub fn raster_face(s: &str, height: i32, weight: i32, face: &'static str) -> Opt
     if wide.is_empty() {
         return None;
     }
-    GDI.with(|cell| unsafe {
-        let mut cell = cell.borrow_mut();
-        let gdi = cell.get_or_insert_with(|| Gdi { dc: CreateCompatibleDC(None), fonts: Vec::new() });
-        let dc = gdi.dc;
-        let font = gdi.font(height, weight, face);
-        let old_font = SelectObject(dc, font);
+    with_font(height, weight, face, |dc| unsafe {
         let mut sz = SIZE::default();
         let _ = GetTextExtentPoint32W(dc, &wide, &mut sz);
         let pad = 4i32;
@@ -141,7 +145,6 @@ pub fn raster_face(s: &str, height: i32, weight: i32, face: &'static str) -> Opt
             }
             let _ = DeleteObject(bmp);
         }
-        SelectObject(dc, old_font);
         out
     })
 }

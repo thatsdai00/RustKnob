@@ -1,10 +1,10 @@
 // Upload link history. Same file format as FFUploader's linkler.txt ("time<TAB>name<TAB>link" per
 // line), so its old links show up too. New ones go to %LOCALAPPDATA%\FFUploader\linkler.txt.
 
-use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+use crate::install::env_path;
 use crate::menu;
 
 #[derive(Clone)]
@@ -17,17 +17,31 @@ pub struct Entry {
 /// The upload thread appends while the UI thread may remove: one at a time, or a link can get lost.
 static FILES: Mutex<()> = Mutex::new(());
 
-fn local_appdata() -> PathBuf {
-    PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_default())
+fn own_file() -> PathBuf {
+    env_path("LOCALAPPDATA").join("RustKnob").join("linkler.txt")
 }
 
-fn own_file() -> PathBuf {
-    local_appdata().join("RustKnob").join("linkler.txt")
+/// The link of a "time<TAB>name<TAB>link" line.
+fn link_of(line: &str) -> Option<&str> {
+    line.split('\t').nth(2).map(str::trim)
+}
+
+/// Adds `text` (whole lines) at the end of our own list.
+fn append_own(text: &str) {
+    let path = own_file();
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .and_then(|mut f| std::io::Write::write_all(&mut f, text.as_bytes()));
 }
 
 /// Every list that exists: ours and the old FFUploader's.
 fn files() -> Vec<PathBuf> {
-    let mut all = vec![own_file(), local_appdata().join("FFUploader").join("linkler.txt")];
+    let mut all = vec![own_file(), env_path("LOCALAPPDATA").join("FFUploader").join("linkler.txt")];
     if let Some(dir) = menu::ffuploader_dir() {
         all.push(dir.join("linkler.txt"));
     }
@@ -41,13 +55,14 @@ fn files() -> Vec<PathBuf> {
 pub fn load() -> Vec<Entry> {
     let _lock = FILES.lock();
     let mut entries: Vec<Entry> = Vec::new();
-    let mut seen: HashSet<String> = HashSet::new();
+    let mut seen: Vec<String> = Vec::new(); // a few hundred links at most: a list does
     for file in files() {
         let Ok(text) = std::fs::read_to_string(file) else { continue };
         for line in text.lines() {
             let mut parts = line.splitn(3, '\t');
             if let (Some(stamp), Some(name), Some(link)) = (parts.next(), parts.next(), parts.next()) {
-                if !link.is_empty() && seen.insert(link.to_string()) {
+                if !link.is_empty() && !seen.iter().any(|s| s == link) {
+                    seen.push(link.to_string());
                     entries.push(Entry { stamp: stamp.to_string(), name: name.to_string(), link: link.trim().to_string() });
                 }
             }
@@ -61,15 +76,7 @@ pub fn append(name: &str, link: &str) {
     let stamp = unsafe { stamp_now() };
     let line = format!("{stamp}\t{}\t{link}\n", name.replace(['\t', '\n', '\r'], " "));
     let _lock = FILES.lock();
-    let path = own_file();
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    let _ = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()));
+    append_own(&line);
 }
 
 /// Drops every line with this link from all lists.
@@ -77,7 +84,7 @@ pub fn remove(link: &str) {
     let _lock = FILES.lock();
     for file in files() {
         let Ok(text) = std::fs::read_to_string(&file) else { continue };
-        let kept: String = text.lines().filter(|l| l.split('\t').nth(2).map(str::trim) != Some(link)).map(|l| format!("{l}\n")).collect();
+        let kept: String = text.lines().filter(|l| link_of(l) != Some(link)).map(|l| format!("{l}\n")).collect();
         if kept.len() == text.len() {
             continue; // the link is not in this list: leave the file alone
         }
@@ -105,23 +112,10 @@ pub fn short(link: &str) -> &str {
 pub fn import_from(path: &std::path::Path) {
     let _lock = FILES.lock();
     let Ok(text) = std::fs::read_to_string(path) else { return };
-    let known: HashSet<String> = std::fs::read_to_string(own_file())
-        .map(|t| t.lines().filter_map(|l| l.split('\t').nth(2).map(|s| s.trim().to_string())).collect())
-        .unwrap_or_default();
-    let fresh: String = text
-        .lines()
-        .filter(|l| l.split('\t').nth(2).is_some_and(|link| !known.contains(link.trim())))
-        .map(|l| format!("{l}\n"))
-        .collect();
-    if fresh.is_empty() {
-        return;
+    let own = std::fs::read_to_string(own_file()).unwrap_or_default();
+    let known: Vec<&str> = own.lines().filter_map(link_of).collect();
+    let fresh: String = text.lines().filter(|l| link_of(l).is_some_and(|link| !known.contains(&link))).map(|l| format!("{l}\n")).collect();
+    if !fresh.is_empty() {
+        append_own(&fresh);
     }
-    if let Some(dir) = own_file().parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    let _ = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(own_file())
-        .and_then(|mut f| std::io::Write::write_all(&mut f, fresh.as_bytes()));
 }

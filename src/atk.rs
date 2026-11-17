@@ -23,7 +23,7 @@
 
 use std::time::{Duration, Instant};
 
-use crate::mouse::{Error, HidIo, HidInfo};
+use crate::mouse::{Brand, Error, HidIo, HidInfo};
 
 const VID: u16 = 0x373b;
 const COMPX: [u16; 9] = [0x1115, 0x1067, 0x1068, 0x1069, 0x106a, 0x10c9, 0x10ca, 0x10cb, 0x10cc];
@@ -47,7 +47,6 @@ enum Family {
 
 pub struct Atk {
     io: HidIo,
-    pub path: Vec<u16>,
     family: Family,
     receiver: bool,
     last_dpi: u16,                  // the last believable reading: a garbled one shows this instead
@@ -65,16 +64,14 @@ static SHOWN: std::sync::Mutex<Shown> = std::sync::Mutex::new(Shown { off: None,
 impl Atk {
     /// The collection to talk to: a mouse on its cable before a receiver.
     pub fn preferred() -> Option<Vec<u16>> {
-        let all = unsafe { crate::mouse::hid_list("vid_373b") };
-        let ours = |d: &&HidInfo| d.vid == VID && family(d).is_some();
-        all.iter().filter(ours).min_by_key(|d| !MICE.contains(&d.pid)).map(|d| d.path.clone())
+        crate::mouse::hid_find(VID, &MICE, &|d| family(d).is_some())
     }
 
-    pub fn open(path: Vec<u16>) -> Option<Atk> {
-        let io = HidIo::open(&path)?;
+    pub fn open(path: &[u16]) -> Option<Atk> {
+        let io = HidIo::open(path)?;
         let family = if COMPX.contains(&io.pid) { Family::Compx } else { Family::BitMouse };
         let receiver = !MICE.contains(&io.pid);
-        Some(Atk { io, path, family, receiver, last_dpi: 0, last_stages: (0, 0) })
+        Some(Atk { io, family, receiver, last_dpi: 0, last_stages: (0, 0) })
     }
 
     // ---- Compx -----------------------------------------------------------------
@@ -149,41 +146,6 @@ impl Atk {
         }
     }
 
-    /// (active stage, how many); a garbled answer gives the last good one.
-    pub fn stages(&mut self) -> Result<(usize, usize), Error> {
-        let (active, count) = match self.family {
-            Family::Compx => {
-                // each value is followed by 0x55 less it
-                let d = self.compx(0x08, 0x00, 10)?;
-                if d[2].wrapping_add(d[3]) != 0x55 || d[4].wrapping_add(d[5]) != 0x55 {
-                    return Ok(self.last_stages);
-                }
-                (d[4] as usize, d[2] as usize)
-            }
-            Family::BitMouse => {
-                let d = self.bitmouse_read(1, 2)?;
-                (d.first().copied().unwrap_or(0) as usize, d.get(1).copied().unwrap_or(0) as usize)
-            }
-        };
-        if count == 0 || count > 8 {
-            return Ok(self.last_stages); // not a believable answer
-        }
-        self.last_stages = (if active >= count { active.saturating_sub(1).min(count - 1) } else { active }, count);
-        Ok(self.last_stages)
-    }
-
-    /// The DPI of the active stage (0 when it was never told); answering at all means it is awake. A reading
-    /// that makes no sense gives the last good one: the card shows a change only when there is one.
-    pub fn dpi(&mut self) -> Result<u16, Error> {
-        self.online()?;
-        match self.read_dpi() {
-            Ok(dpi) if dpi > 0 => self.last_dpi = dpi,
-            Ok(_) | Err(Error::Asleep) => {} // garbled or not answered in time: it did answer online
-            Err(e) => return Err(e),
-        }
-        Ok(self.last_dpi)
-    }
-
     fn read_dpi(&mut self) -> Result<u16, Error> {
         let (stage, count) = self.stages()?;
         if count == 0 {
@@ -208,9 +170,46 @@ impl Atk {
         };
         Ok(if (50..=42000).contains(&dpi) { dpi as u16 } else { 0 })
     }
+}
+
+impl Brand for Atk {
+    /// (active stage, how many); a garbled answer gives the last good one.
+    fn stages(&mut self) -> Result<(usize, usize), Error> {
+        let (active, count) = match self.family {
+            Family::Compx => {
+                // each value is followed by 0x55 less it
+                let d = self.compx(0x08, 0x00, 10)?;
+                if d[2].wrapping_add(d[3]) != 0x55 || d[4].wrapping_add(d[5]) != 0x55 {
+                    return Ok(self.last_stages);
+                }
+                (d[4] as usize, d[2] as usize)
+            }
+            Family::BitMouse => {
+                let d = self.bitmouse_read(1, 2)?;
+                (d.first().copied().unwrap_or(0) as usize, d.get(1).copied().unwrap_or(0) as usize)
+            }
+        };
+        if count == 0 || count > 8 {
+            return Ok(self.last_stages); // not a believable answer
+        }
+        self.last_stages = (if active >= count { active.saturating_sub(1).min(count - 1) } else { active }, count);
+        Ok(self.last_stages)
+    }
+
+    /// The DPI of the active stage (0 when it was never told); answering at all means it is awake. A reading
+    /// that makes no sense gives the last good one: the card shows a change only when there is one.
+    fn dpi(&mut self) -> Result<u16, Error> {
+        self.online()?;
+        match self.read_dpi() {
+            Ok(dpi) if dpi > 0 => self.last_dpi = dpi,
+            Ok(_) | Err(Error::Asleep) => {} // garbled or not answered in time: it did answer online
+            Err(e) => return Err(e),
+        }
+        Ok(self.last_dpi)
+    }
 
     /// (percent, on the charger).
-    pub fn battery(&mut self) -> Result<(Option<u8>, bool), Error> {
+    fn battery(&mut self) -> Result<(Option<u8>, bool), Error> {
         let (percent, charging) = match self.family {
             Family::Compx => {
                 let d = self.compx(0x04, 0, 0)?;

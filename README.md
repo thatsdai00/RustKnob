@@ -6,13 +6,13 @@
 
 <a href="https://github.com/thatsdai00/RustKnob/releases/latest"><img src="docs/img/download.png" alt="Download Releases" width="380"></a>
 
-<sub>Windows 10 and 11 · one 0.7 MB file · no installer, no admin rights</sub>
+<sub>Windows 10 and 11 · one 0.5 MB file · no installer, no admin rights</sub>
 
 </div>
 
 <br>
 
-<img src="docs/img/stats.png" alt="0.7 MB, about 0% CPU idle, 100 FPS, no telemetry" width="100%">
+<img src="docs/img/stats.png" alt="0.5 MB, about 0% CPU idle, 100 FPS, no telemetry" width="100%">
 
 <br>
 
@@ -127,7 +127,7 @@ Needs Rust and the Visual Studio C++ build tools. `package.ps1` writes `dist/Rus
 
 # Türkçe
 
-**RustKnob**, Windows için Dynamic Island tarzı bir kapsül: ses çubuğu, yuvarlak ses düğmesi, çalan şarkı, yükleme, ekran görüntüsü, bildirim ve ayarlar arasında şekil değiştirir. Odak çalmaz, borderless oyunların üstünde çalışır, boştayken neredeyse hiç CPU kullanmaz. Tek bir ~0,7 MB Rust exe.
+**RustKnob**, Windows için Dynamic Island tarzı bir kapsül: ses çubuğu, yuvarlak ses düğmesi, çalan şarkı, yükleme, ekran görüntüsü, bildirim ve ayarlar arasında şekil değiştirir. Odak çalmaz, borderless oyunların üstünde çalışır, boştayken neredeyse hiç CPU kullanmaz. Tek bir ~0,5 MB Rust exe.
 
 **Kurulum:** [Son sürümden](https://github.com/thatsdai00/RustKnob/releases/latest) `RustKnob.exe` indir, çift tıkla, kurulum kapsülünde seçimlerini yapıp **Kur**'a bas. Yönetici izni gerekmez. SmartScreen uyarırsa *Ek bilgi → Yine de çalıştır* (exe imzalı değil).
 

@@ -25,6 +25,7 @@ mod menu;
 mod i18n;
 mod island;
 mod media;
+mod net;
 mod ntfy;
 mod pace;
 mod render;
@@ -96,16 +97,10 @@ fn main() {
                 let ask = !std::env::args().any(|a| a == "--silent");
                 return install::uninstall(i18n::strings(i18n::resolve("auto")), ask);
             }
-            Some("--snip") => {
-                // asks the running RustKnob for the screenshot overlay (handy for another shortcut)
+            // --snip asks the running RustKnob for the screenshot overlay (handy for another shortcut)
+            Some(arg @ ("--snip" | "--quit")) => {
                 if let Ok(h) = FindWindowW(CLASS, PCWSTR::null()) {
-                    let _ = PostMessageW(h, hook::WM_APP_SNIP, WPARAM(0), LPARAM(0));
-                }
-                return;
-            }
-            Some("--quit") => {
-                if let Ok(h) = FindWindowW(CLASS, PCWSTR::null()) {
-                    let _ = PostMessageW(h, WM_CLOSE, WPARAM(0), LPARAM(0));
+                    let _ = PostMessageW(h, if arg == "--snip" { hook::WM_APP_SNIP } else { WM_CLOSE }, WPARAM(0), LPARAM(0));
                 }
                 return;
             }

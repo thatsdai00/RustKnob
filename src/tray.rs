@@ -5,6 +5,7 @@ use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::UI::Shell::*;
 
+use crate::gfx::FClamp;
 use crate::i18n::Strings;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -15,35 +16,16 @@ pub const CMD_UNINSTALL: usize = 3;
 pub const CMD_HISTORY: usize = 4;
 const ICON_ID: u32 = 1;
 
-/// 32x32 white ring with an indicator tick, drawn straight into an icon.
-unsafe fn make_icon() -> Option<HICON> {
-    const N: i32 = 32;
+/// An `n` x `n` icon whose premultiplied 0xAARRGGBB pixels `draw` fills.
+unsafe fn icon(n: i32, draw: impl FnOnce(&mut [u32])) -> Option<HICON> {
     let bi = BITMAPINFO {
-        bmiHeader: BITMAPINFOHEADER {
-            biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-            biWidth: N,
-            biHeight: -N,
-            biPlanes: 1,
-            biBitCount: 32,
-            biCompression: BI_RGB.0,
-            ..Default::default()
-        },
+        bmiHeader: BITMAPINFOHEADER { biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32, biWidth: n, biHeight: -n, biPlanes: 1, biBitCount: 32, biCompression: BI_RGB.0, ..Default::default() },
         ..Default::default()
     };
     let mut bits: *mut std::ffi::c_void = std::ptr::null_mut();
     let color = CreateDIBSection(None, &bi, DIB_RGB_COLORS, &mut bits, None, 0).ok()?;
-    let px = std::slice::from_raw_parts_mut(bits as *mut u32, (N * N) as usize);
-    for y in 0..N {
-        for x in 0..N {
-            let (dx, dy) = (x as f32 + 0.5 - 16.0, y as f32 + 0.5 - 16.0);
-            let d = (dx * dx + dy * dy).sqrt();
-            let ring = (1.6 - (d - 12.5).abs()).clamp(0.0, 1.0);
-            let tick = if dx.abs() < 1.4 && dy < -3.0 && dy > -12.0 { 1.0 } else { 0.0 };
-            let a = (ring.max(tick) * 255.0) as u32;
-            px[(y * N + x) as usize] = a << 24 | a << 16 | a << 8 | a; // premultiplied white
-        }
-    }
-    let mask = CreateBitmap(N, N, 1, 1, None);
+    draw(std::slice::from_raw_parts_mut(bits as *mut u32, (n * n) as usize));
+    let mask = CreateBitmap(n, n, 1, 1, None);
     let info = ICONINFO { fIcon: true.into(), xHotspot: 0, yHotspot: 0, hbmMask: mask, hbmColor: color };
     let icon = CreateIconIndirect(&info).ok();
     let _ = DeleteObject(color);
@@ -51,8 +33,42 @@ unsafe fn make_icon() -> Option<HICON> {
     icon
 }
 
-fn data(hwnd: HWND) -> NOTIFYICONDATAW {
-    NOTIFYICONDATAW { cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32, hWnd: hwnd, uID: ICON_ID, ..Default::default() }
+/// 32x32 white ring with an indicator tick.
+unsafe fn make_icon() -> Option<HICON> {
+    const N: i32 = 32;
+    icon(N, |px| {
+        for y in 0..N {
+            for x in 0..N {
+                let (dx, dy) = (x as f32 + 0.5 - 16.0, y as f32 + 0.5 - 16.0);
+                let d = (dx * dx + dy * dy).sqrt();
+                let ring = (1.6 - (d - 12.5).abs()).fclamp(0.0, 1.0);
+                let tick = if dx.abs() < 1.4 && dy < -3.0 && dy > -12.0 { 1.0 } else { 0.0 };
+                let a = (ring.max(tick) * 255.0) as u32;
+                px[(y * N + x) as usize] = a << 24 | a << 16 | a << 8 | a; // premultiplied white
+            }
+        }
+    })
+}
+
+fn data(hwnd: HWND, id: u32) -> NOTIFYICONDATAW {
+    NOTIFYICONDATAW { cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32, hWnd: hwnd, uID: id, ..Default::default() }
+}
+
+/// Shows icon `id` with `icon` and `tip`: changed when `modify` (and it is on show), else added. False when the
+/// shell did not take it.
+unsafe fn show(hwnd: HWND, id: u32, icon: Option<HICON>, tip: &str, modify: bool) -> bool {
+    let mut nid = data(hwnd, id);
+    nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+    nid.uCallbackMessage = WM_TRAY;
+    nid.hIcon = icon.unwrap_or_default();
+    for (i, c) in tip.encode_utf16().take(nid.szTip.len() - 1).enumerate() {
+        nid.szTip[i] = c;
+    }
+    let shown = (modify && Shell_NotifyIconW(NIM_MODIFY, &nid).as_bool()) || Shell_NotifyIconW(NIM_ADD, &nid).as_bool();
+    if !nid.hIcon.is_invalid() {
+        let _ = DestroyIcon(nid.hIcon); // the shell keeps its own copy (and this runs again on every retry)
+    }
+    shown
 }
 
 /// Explorer broadcasts this when its taskbar (re)starts: the icon has to be added again then.
@@ -63,22 +79,11 @@ pub fn taskbar_created() -> u32 {
 
 /// False when the taskbar is not there yet (RustKnob starts before it at login).
 pub unsafe fn add(hwnd: HWND) -> bool {
-    let mut nid = data(hwnd);
-    nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
-    nid.uCallbackMessage = WM_TRAY;
-    nid.hIcon = make_icon().unwrap_or_default();
-    for (i, c) in "RustKnob".encode_utf16().enumerate() {
-        nid.szTip[i] = c;
-    }
-    let added = Shell_NotifyIconW(NIM_ADD, &nid).as_bool();
-    if !nid.hIcon.is_invalid() {
-        let _ = DestroyIcon(nid.hIcon); // the shell keeps its own copy (and this runs again on every retry)
-    }
-    added
+    show(hwnd, ICON_ID, make_icon(), "RustKnob", false)
 }
 
 pub unsafe fn remove(hwnd: HWND) {
-    let _ = Shell_NotifyIconW(NIM_DELETE, &data(hwnd));
+    let _ = Shell_NotifyIconW(NIM_DELETE, &data(hwnd, ICON_ID));
     batteries(hwnd, &[], "");
 }
 
@@ -104,35 +109,20 @@ static SHOWN: std::sync::Mutex<Vec<Battery>> = std::sync::Mutex::new(Vec::new())
 pub unsafe fn batteries(hwnd: HWND, now: &[Battery], charging_word: &str) {
     let Ok(mut shown) = SHOWN.lock() else { return };
     for old in shown.iter().filter(|o| !now.iter().any(|n| n.model == o.model)) {
-        let mut nid = data(hwnd);
-        nid.uID = BATTERY_ID + old.model;
-        let _ = Shell_NotifyIconW(NIM_DELETE, &nid);
+        let _ = Shell_NotifyIconW(NIM_DELETE, &data(hwnd, BATTERY_ID + old.model));
     }
     for b in now {
         let before = shown.iter().find(|o| o.model == b.model);
         if before == Some(b) {
             continue;
         }
-        let mut nid = data(hwnd);
-        nid.uID = BATTERY_ID + b.model;
-        nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
-        nid.uCallbackMessage = WM_TRAY;
-        nid.hIcon = battery_icon(b).unwrap_or_default();
         let tip = match (b.percent, b.charging) {
             (Some(p), true) => format!("{}: {p} % ({charging_word})", b.name),
             (Some(p), false) => format!("{}: {p} %", b.name),
             (None, _) => b.name.to_string(),
         };
-        for (i, c) in tip.encode_utf16().take(nid.szTip.len() - 1).enumerate() {
-            nid.szTip[i] = c;
-        }
         // a new one (or the taskbar came back without it): added; one on show: changed
-        if before.is_none() || !Shell_NotifyIconW(NIM_MODIFY, &nid).as_bool() {
-            let _ = Shell_NotifyIconW(NIM_ADD, &nid);
-        }
-        if !nid.hIcon.is_invalid() {
-            let _ = DestroyIcon(nid.hIcon);
-        }
+        show(hwnd, BATTERY_ID + b.model, battery_icon(b), &tip, before.is_some());
     }
     *shown = now.to_vec();
 }
@@ -148,20 +138,7 @@ pub fn batteries_lost() {
 unsafe fn battery_icon(b: &Battery) -> Option<HICON> {
     use windows::Win32::UI::HiDpi::{GetDpiForSystem, GetSystemMetricsForDpi};
     let n = GetSystemMetricsForDpi(SM_CXSMICON, GetDpiForSystem()).max(16);
-    let bi = BITMAPINFO {
-        bmiHeader: BITMAPINFOHEADER { biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32, biWidth: n, biHeight: -n, biPlanes: 1, biBitCount: 32, biCompression: BI_RGB.0, ..Default::default() },
-        ..Default::default()
-    };
-    let mut bits: *mut std::ffi::c_void = std::ptr::null_mut();
-    let color = CreateDIBSection(None, &bi, DIB_RGB_COLORS, &mut bits, None, 0).ok()?;
-    let px = std::slice::from_raw_parts_mut(bits as *mut u32, (n * n) as usize);
-    battery_pixels(px, n as usize, b);
-    let mask = CreateBitmap(n, n, 1, 1, None);
-    let info = ICONINFO { fIcon: true.into(), xHotspot: 0, yHotspot: 0, hbmMask: mask, hbmColor: color };
-    let icon = CreateIconIndirect(&info).ok();
-    let _ = DeleteObject(color);
-    let _ = DeleteObject(mask);
-    icon
+    icon(n, |px| battery_pixels(px, n as usize, b))
 }
 
 /// The icon's pixels, `n` x `n`, premultiplied 0xAARRGGBB.
@@ -181,17 +158,17 @@ pub(crate) fn battery_pixels(px: &mut [u32], n: usize, b: &Battery) {
     let (aa, stroke) = (1.0 / unit, 3.0);
     for y in 0..n {
         for x in 0..n {
-            let (ux, uy) = ((x as f32 + 0.5 - n as f32 / 2.0) / unit, (y as f32 + 0.5 - n as f32 / 2.0) / unit);
+            let (cx, cy) = (x as f32 + 0.5 - n as f32 / 2.0, y as f32 + 0.5 - n as f32 / 2.0);
             let a = match b.percent {
                 // full: three figures do not read at 16 px, a full battery does (the tooltip says 100 %)
                 Some(100..) => {
-                    let (bx, by, k) = (x as f32 + 0.5 - n as f32 / 2.0 + n as f32 * 0.04, y as f32 + 0.5 - n as f32 / 2.0, n as f32 / 32.0);
+                    let (bx, by, k) = (cx + n as f32 * 0.04, cy, n as f32 / 32.0);
                     let outline = cov(rrect(bx, by, 13.0 * k, 8.5 * k, 2.5 * k).abs() - 1.1 * k.max(0.6), 1.0);
                     let nub = cov(rrect(bx - 14.8 * k, by, 1.6 * k, 3.5 * k, 1.0 * k), 1.0);
                     let body = cov(rrect(bx, by, 10.0 * k, 5.5 * k, 1.2 * k), 1.0);
                     outline.max(nub).max(body)
                 }
-                Some(_) => cov(digits.dist(ux, uy) - stroke, aa),
+                Some(_) => cov(digits.dist(cx / unit, cy / unit) - stroke, aa),
                 None => 0.0,
             };
             let ch = |c: f32| ((c * a * 255.0) as u32).min(255);

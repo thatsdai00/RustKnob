@@ -13,14 +13,14 @@ use std::time::Instant;
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Gdi::*;
-use windows::Win32::System::DataExchange::*;
+use windows::Win32::System::DataExchange::{CloseClipboard, GetClipboardSequenceNumber, OpenClipboard};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::System::Memory::*;
 use windows::Win32::System::Ole::CF_DIB;
 use windows::Win32::UI::HiDpi::GetDpiForSystem;
 use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
+use crate::gfx::FClamp;
 use crate::gfx::{cov, rrect, sstep};
 use crate::hook::WM_APP_SNIP_DONE;
 use crate::text::{raster, TextBmp, TEXT_R};
@@ -36,6 +36,7 @@ const MIN_SIDE: i32 = 4; // a smaller drag counts as a mis-click
 const STRIP_H: i32 = 128; // rows drawn at once
 const WHITE: [f32; 3] = [255.0, 255.0, 255.0];
 const BLACK: [f32; 3] = [0.0, 0.0, 0.0];
+const GLYPHS: &str = "0123456789 ×"; // all the size label needs
 
 type Rect = (i32, i32, i32, i32); // x0, y0, x1, y1 (end exclusive)
 
@@ -98,6 +99,7 @@ impl Drop for Surface {
 }
 
 /// The copied part on its way to the capsule.
+#[derive(Clone, Copy)]
 struct Fly {
     from: Rect,
     t: f32,
@@ -120,7 +122,7 @@ struct Snip {
     fade: f32,           // 0..1 window opacity
     leaving: bool,       // fading out after a copy or a cancel
     scale: f32,          // device px per logical unit
-    glyphs: Vec<TextBmp>, // "0123456789 ×" for the size label
+    glyphs: Vec<TextBmp>, // GLYPHS, for the size label
     hint: Option<TextBmp>,
     taken: (i32, i32),
     // animation state
@@ -140,17 +142,17 @@ fn snip() -> Option<&'static mut Snip> {
 
 /// Overshoots a little before settling: the entrance spring.
 fn ease_out_back(t: f32) -> f32 {
-    let (c1, t) = (1.70158f32, t.clamp(0.0, 1.0) - 1.0);
+    let (c1, t) = (1.70158f32, t.fclamp(0.0, 1.0) - 1.0);
     1.0 + (c1 + 1.0) * t.powi(3) + c1 * t * t
 }
 
 fn ease_in_out(t: f32) -> f32 {
-    let t = t.clamp(0.0, 1.0);
+    let t = t.fclamp(0.0, 1.0);
     if t < 0.5 { 4.0 * t * t * t } else { 1.0 - (-2.0 * t + 2.0).powi(3) / 2.0 }
 }
 
 fn ease_out(t: f32) -> f32 {
-    1.0 - (1.0 - t.clamp(0.0, 1.0)).powi(3)
+    1.0 - (1.0 - t.fclamp(0.0, 1.0)).powi(3)
 }
 
 // ---- start / finish --------------------------------------------------------
@@ -179,7 +181,6 @@ unsafe fn open(main: isize, hint: &str) -> bool {
     if grabbed.is_err() {
         return false;
     }
-
 
     let hinst = GetModuleHandleW(None).map(|m| HINSTANCE(m.0)).unwrap_or_default();
     let wc = WNDCLASSEXW {
@@ -214,11 +215,10 @@ unsafe fn open(main: isize, hint: &str) -> bool {
     // the capsule opens at the top center of the monitor under the pointer, its icon a little left of center
     let mut mi = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
     let _ = GetMonitorInfoW(MonitorFromPoint(cur, MONITOR_DEFAULTTONEAREST), &mut mi);
-    let scale_for_target = (GetDpiForSystem() as f32 / 96.0).max(1.0);
-    let cx = ((mi.rcMonitor.left + mi.rcMonitor.right) / 2 - vx) as f32 - 144.0 * scale_for_target;
-    let cy_target = (mi.rcMonitor.top - vy) as f32 + 48.0 * scale_for_target;
     let scale = (GetDpiForSystem() as f32 / 96.0).max(1.0);
-    let glyphs = "0123456789 ×".chars().filter_map(|c| raster(&c.to_string(), -56, 700)).collect();
+    let cx = ((mi.rcMonitor.left + mi.rcMonitor.right) / 2 - vx) as f32 - 144.0 * scale;
+    let cy_target = (mi.rcMonitor.top - vy) as f32 + 48.0 * scale;
+    let glyphs = GLYPHS.chars().filter_map(|c| raster(&c.to_string(), -56, 700)).collect();
     let state = Box::new(Snip {
         hwnd,
         main,
@@ -277,8 +277,13 @@ unsafe fn close() {
     ACTIVE.store(false, SeqCst);
     crate::island::trim_memory(); // and gives the pages back right away
     if taken.0 > 0 {
-        let _ = PostMessageW(HWND(main as _), WM_APP_SNIP_DONE, WPARAM(taken.0 as usize), LPARAM(taken.1 as isize));
+        tell_done(main, taken);
     }
+}
+
+/// Tells the capsule a screenshot of `taken` (width, height) is on the clipboard.
+unsafe fn tell_done(main: isize, taken: (i32, i32)) {
+    let _ = PostMessageW(HWND(main as _), WM_APP_SNIP_DONE, WPARAM(taken.0 as usize), LPARAM(taken.1 as isize));
 }
 
 // ---- window ----------------------------------------------------------------
@@ -317,7 +322,7 @@ unsafe extern "system" fn proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> 
             let _ = EndPaint(hwnd, &ps);
         }
         WM_TIMER if wp.0 == T_FADE => {
-            s.fade = (s.fade + if s.leaving { -1.0 } else { 1.0 } / FADE_STEPS).clamp(0.0, 1.0);
+            s.fade = (s.fade + if s.leaving { -1.0 } else { 1.0 } / FADE_STEPS).fclamp(0.0, 1.0);
             let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), (ease_out(s.fade) * 255.0) as u8, LWA_ALPHA);
             if s.leaving && s.fade <= 0.0 {
                 close();
@@ -373,12 +378,8 @@ impl Snip {
         let old = self.drawn;
         self.sel = sel;
         let now = self.deco_rect();
-        let dirty = match old {
-            Some(o) => (o.0.min(now.0), o.1.min(now.1), o.2.max(now.2), o.3.max(now.3)),
-            None => now,
-        };
         self.drawn = sel.map(|_| now);
-        self.pending.push(dirty);
+        self.pending.push(old.map_or(now, |o| union(o, now)));
         if sel.is_none() {
             self.pending.push(self.hint_dirty());
             self.kick(); // the hint comes back
@@ -406,26 +407,19 @@ impl Snip {
                 self.pending.push(d);
             }
         }
-        if self.fly.is_some() {
+        if let Some(mut f) = self.fly {
             busy = true;
-            let (old, t, told) = {
-                let f = self.fly.as_mut().unwrap();
-                f.t = (f.t + dt / 0.46).min(1.0);
-                (f.shown.take(), f.t, f.told)
-            };
-            let (now, _) = self.fly_rect();
-            self.pending.push(match old {
-                Some(o) => (o.0.min(now.0), o.1.min(now.1), o.2.max(now.2), o.3.max(now.3)),
-                None => now,
-            });
-            if let Some(f) = self.fly.as_mut() {
-                f.shown = Some(now);
-                f.told = told || t > 0.82;
-            }
-            if !told && t > 0.82 {
+            f.t = (f.t + dt / 0.46).min(1.0);
+            let now = self.fly_rect(&f);
+            self.pending.push(f.shown.map_or(now, |o| union(o, now)));
+            f.shown = Some(now);
+            let tell = !f.told && f.t > 0.82;
+            f.told |= tell;
+            self.fly = Some(f);
+            if tell {
                 self.announce(); // the capsule starts dropping as the thumbnail lands
             }
-            if t >= 1.0 {
+            if f.t >= 1.0 {
                 self.land();
                 self.leave();
             }
@@ -438,32 +432,29 @@ impl Snip {
 
     fn flush(&mut self) {
         for r in std::mem::take(&mut self.pending) {
-            let r = (r.0.max(0), r.1.max(0), r.2.min(self.w), r.3.min(self.h));
             self.draw(r);
         }
     }
 
-    /// The thumbnail's current rectangle (with its shadow reach) and the corner radius.
-    fn fly_rect(&self) -> (Rect, f32) {
-        let Some(f) = &self.fly else { return ((0, 0, 0, 0), 0.0) };
+    /// The thumbnail's center and size on its way: (cx, cy, w, h).
+    fn fly_shape(&self, f: &Fly) -> (f32, f32, f32, f32) {
         let e = ease_in_out(f.t);
         let (fw, fh) = ((f.from.2 - f.from.0) as f32, (f.from.3 - f.from.1) as f32);
         let end = 46.0 * self.scale / fw.max(fh); // the longer side ends up this big
-        let (tw, th) = (fw * end, fh * end);
         let (fcx, fcy) = ((f.from.0 + f.from.2) as f32 / 2.0, (f.from.1 + f.from.3) as f32 / 2.0);
-        let (cx, cy) = (fcx + (self.target.0 - fcx) * e, fcy + (self.target.1 - fcy) * e);
-        let (w, h) = (fw + (tw - fw) * e, fh + (th - fh) * e);
+        (fcx + (self.target.0 - fcx) * e, fcy + (self.target.1 - fcy) * e, fw + (fw * end - fw) * e, fh + (fh * end - fh) * e)
+    }
+
+    /// The thumbnail's current rectangle, with its shadow reach.
+    fn fly_rect(&self, f: &Fly) -> Rect {
+        let (cx, cy, w, h) = self.fly_shape(f);
         let m = (14.0 * self.scale) as i32;
-        let r = ((cx - w / 2.0) as i32 - m, (cy - h / 2.0) as i32 - m, (cx + w / 2.0).ceil() as i32 + m, (cy + h / 2.0).ceil() as i32 + m);
-        (r, (e * 10.0 * self.scale).min(w.min(h) / 2.0))
+        ((cx - w / 2.0) as i32 - m, (cy - h / 2.0) as i32 - m, (cx + w / 2.0).ceil() as i32 + m, (cy + h / 2.0).ceil() as i32 + m)
     }
 
     /// Tells the capsule a screenshot is on the clipboard.
     fn announce(&mut self) {
-        let (main, taken) = (self.main, self.taken);
-        unsafe {
-            let _ = PostMessageW(HWND(main as _), WM_APP_SNIP_DONE, WPARAM(taken.0 as usize), LPARAM(taken.1 as isize));
-        }
+        unsafe { tell_done(self.main, self.taken) };
         self.taken = (0, 0); // once
     }
 
@@ -515,7 +506,7 @@ impl Snip {
 
     // ---- drawing ------------------------------------------------------------
 
-    fn render(&mut self, d: Rect) {
+    fn render(&self, d: Rect) {
         let (w, back, orig, sy) = (self.w as usize, self.back.pixels(), self.orig.pixels(), self.strip_y);
         for y in d.1.max(0)..d.3.min(self.h) {
             let row = y as usize * w; // in the screen grab
@@ -534,43 +525,38 @@ impl Snip {
             Some(s) => {
                 self.border(s, d);
                 self.handles(s, d);
-                let e = ease_out_back(self.label_p);
-                let text = format!("{} × {}", s.2 - s.0, s.3 - s.1);
-                let r = self.label_rect(s);
-                let lift = ((1.0 - e) * 8.0 * self.scale) as i32;
-                let r = (r.0, r.1 + lift, r.2, r.3 + lift);
-                let alpha = ease_out(self.label_p);
-                self.pill(r, d, alpha);
+                let (r, alpha) = self.springy_pill(self.label_rect(s), self.label_p, 8.0, d);
                 let (x, cy) = (r.0 as f32 + 14.0 * self.scale, (r.1 + r.3) as f32 / 2.0);
-                self.glyph_text(&text, x, cy, d, alpha);
+                self.glyph_text(&label_text(s), x, cy, d, alpha);
             }
             None if self.fly.is_some() => self.thumbnail(d),
             None => {
-                if self.hint_p > 0.0 && self.hint.is_some() {
-                    let e = ease_out_back(self.hint_p);
-                    let r = self.hint_rect();
-                    let slide = ((1.0 - e) * -34.0 * self.scale) as i32;
-                    let r = (r.0, r.1 + slide, r.2, r.3 + slide);
-                    let alpha = ease_out(self.hint_p);
-                    self.pill(r, d, alpha);
-                    let cy = (r.1 + r.3) as f32 / 2.0;
-                    if let Some(h) = self.hint.as_ref().map(|h| h as *const TextBmp) {
-                        self.blit_text(unsafe { &*h }, r.0 as f32 + 22.0 * self.scale, cy, d, alpha);
-                    }
+                if let Some(h) = self.hint.as_ref().filter(|_| self.hint_p > 0.0) {
+                    let (r, alpha) = self.springy_pill(self.hint_rect(), self.hint_p, -34.0, d);
+                    self.blit_text(h, r.0 as f32 + 22.0 * self.scale, (r.1 + r.3) as f32 / 2.0, d, alpha);
                 }
             }
         }
     }
 
+    /// Runs `f` on each pixel of the strip inside both `area` and `d`, with its screen x and y.
+    #[inline(always)]
+    fn each_px(&self, area: Rect, d: Rect, mut f: impl FnMut(&mut u32, i32, i32)) {
+        let (w, back, sy) = (self.w as usize, self.back.pixels(), self.strip_y);
+        for y in area.1.max(d.1)..area.3.min(d.3) {
+            let line = &mut back[(y - sy) as usize * w..];
+            for x in area.0.max(d.0)..area.2.min(d.2) {
+                f(&mut line[x as usize], x, y);
+            }
+        }
+    }
+
     /// The copied part, scaled down (box filtered from the original), rounded, with a hairline and a shadow.
-    fn thumbnail(&mut self, d: Rect) {
-        let Some(f) = &self.fly else { return };
+    fn thumbnail(&self, d: Rect) {
+        let Some(f) = self.fly else { return };
+        let (cx, cy, w, h) = self.fly_shape(&f);
         let (from, e) = (f.from, ease_in_out(f.t));
         let (fw, fh) = ((from.2 - from.0) as f32, (from.3 - from.1) as f32);
-        let end = 46.0 * self.scale / fw.max(fh);
-        let (fcx, fcy) = ((from.0 + from.2) as f32 / 2.0, (from.1 + from.3) as f32 / 2.0);
-        let (cx, cy) = (fcx + (self.target.0 - fcx) * e, fcy + (self.target.1 - fcy) * e);
-        let (w, h) = (fw + (fw * end - fw) * e, fh + (fh * end - fh) * e);
         let (rx, ry) = (cx - w / 2.0, cy - h / 2.0);
         let radius = (e * 10.0 * self.scale).min(w.min(h) / 2.0);
         let (hw, hh) = (w / 2.0, h / 2.0);
@@ -614,72 +600,49 @@ impl Snip {
                 }
                 let px = x as f32 + 0.5;
                 let sdf = rrect(px - cx, py - cy, hw, hh, radius);
-                let shadow = (1.0 - sstep(-2.0, reach as f32, rrect(px - cx, py - cy - 3.0 * self.scale, hw, hh, radius))) * 0.34;
-                if shadow > 0.0 {
-                    mix(target, BLACK, shadow);
-                }
+                mix(target, BLACK, (1.0 - sstep(-2.0, reach as f32, rrect(px - cx, py - cy - 3.0 * self.scale, hw, hh, radius))) * 0.34);
                 let a = cov(sdf, 1.0);
                 if a > 0.0 {
                     let (r, g, b) = average();
                     mix(target, [r as f32, g as f32, b as f32], a);
                 }
-                let hair = cov(sdf.abs() - 0.75, 1.0) * 0.55;
-                if hair > 0.0 {
-                    mix(target, WHITE, hair);
-                }
+                mix(target, WHITE, cov(sdf.abs() - 0.75, 1.0) * 0.55);
             }
         }
     }
 
     /// White 2 px line just outside the selection.
-    fn border(&mut self, s: Rect, d: Rect) {
+    fn border(&self, s: Rect, d: Rect) {
         let (cx, cy) = ((s.0 + s.2) as f32 / 2.0, (s.1 + s.3) as f32 / 2.0);
         let (hw, hh) = ((s.2 - s.0) as f32 / 2.0, (s.3 - s.1) as f32 / 2.0);
-        let (w, back, sy) = (self.w as usize, self.back.pixels(), self.strip_y);
-        for y in (s.1 - 3).max(d.1)..(s.3 + 3).min(d.3) {
-            let inner_row = y >= s.1 + 2 && y < s.3 - 2;
-            for x in (s.0 - 3).max(d.0)..(s.2 + 3).min(d.2) {
-                if inner_row && x >= s.0 + 2 && x < s.2 - 2 {
-                    continue; // the inside of the rectangle is left alone
-                }
-                let dist = rrect(x as f32 + 0.5 - cx, y as f32 + 0.5 - cy, hw, hh, 0.0);
-                let a = cov((dist - 1.0).abs() - 1.0, 1.0) * 0.95;
-                if a > 0.0 {
-                    mix(&mut back[(y - sy) as usize * w + x as usize], WHITE, a);
-                }
+        self.each_px((s.0 - 3, s.1 - 3, s.2 + 3, s.3 + 3), d, |px, x, y| {
+            if y >= s.1 + 2 && y < s.3 - 2 && x >= s.0 + 2 && x < s.2 - 2 {
+                return; // the inside of the rectangle is left alone
             }
-        }
+            let dist = rrect(x as f32 + 0.5 - cx, y as f32 + 0.5 - cy, hw, hh, 0.0);
+            mix(px, WHITE, cov((dist - 1.0).abs() - 1.0, 1.0) * 0.95);
+        });
     }
 
     /// Round handles on the four corners; they pop in with the label.
-    fn handles(&mut self, s: Rect, d: Rect) {
+    fn handles(&self, s: Rect, d: Rect) {
         let r = 5.0 * self.scale * ease_out_back(self.label_p).max(0.0);
         if r < 0.5 {
             return;
         }
-        let (w, sy) = (self.w as usize, self.strip_y);
-        let back = self.back.pixels();
+        let m = r as i32 + 3;
         for (cx, cy) in [(s.0 as f32, s.1 as f32), (s.2 as f32, s.1 as f32), (s.0 as f32, s.3 as f32), (s.2 as f32, s.3 as f32)] {
-            let m = r as i32 + 3;
-            for y in ((cy as i32 - m).max(d.1))..((cy as i32 + m).min(d.3)) {
-                for x in ((cx as i32 - m).max(d.0))..((cx as i32 + m).min(d.2)) {
-                    let dist = (x as f32 + 0.5 - cx).hypot(y as f32 + 0.5 - cy);
-                    let ring = cov(dist - (r + 1.2), 1.0) * 0.38;
-                    if ring > 0.0 {
-                        mix(&mut back[(y - sy) as usize * w + x as usize], BLACK, ring);
-                    }
-                    let a = cov(dist - r, 1.0);
-                    if a > 0.0 {
-                        mix(&mut back[(y - sy) as usize * w + x as usize], WHITE, a);
-                    }
-                }
-            }
+            let (x, y) = (cx as i32, cy as i32);
+            self.each_px((x - m, y - m, x + m, y + m), d, |px, x, y| {
+                let dist = (x as f32 + 0.5 - cx).hypot(y as f32 + 0.5 - cy);
+                mix(px, BLACK, cov(dist - (r + 1.2), 1.0) * 0.38);
+                mix(px, WHITE, cov(dist - r, 1.0));
+            });
         }
     }
 
     fn glyph(&self, c: char) -> Option<&TextBmp> {
-        let i = "0123456789 ×".chars().position(|g| g == c)?;
-        self.glyphs.get(i)
+        self.glyphs.get(GLYPHS.chars().position(|g| g == c)?)
     }
 
     fn glyph_width(&self, text: &str) -> f32 {
@@ -688,8 +651,7 @@ impl Snip {
 
     /// The size label: above the selection's top left corner, or inside it when there is no room.
     fn label_rect(&self, s: Rect) -> Rect {
-        let text = format!("{} × {}", s.2 - s.0, s.3 - s.1);
-        let (pw, ph) = ((self.glyph_width(&text) + 28.0 * self.scale) as i32, (34.0 * self.scale) as i32);
+        let (pw, ph) = ((self.glyph_width(&label_text(s)) + 28.0 * self.scale) as i32, (34.0 * self.scale) as i32);
         let gap = (12.0 * self.scale) as i32;
         let x = s.0.min(self.w - pw).max(0);
         let y = if s.1 - gap - ph >= 0 { s.1 - gap - ph } else { (s.1 + gap).min(self.h - ph) };
@@ -712,58 +674,47 @@ impl Snip {
         (r.0 - m, 0, r.2 + m, r.3 + (m * 2))
     }
 
+    /// The pill at `r` springing in with `p` (0..1): it comes from `off` logical px away and fades in.
+    /// Returns where it is drawn and its opacity.
+    fn springy_pill(&self, r: Rect, p: f32, off: f32, d: Rect) -> (Rect, f32) {
+        let shift = ((1.0 - ease_out_back(p)) * off * self.scale) as i32;
+        let (r, alpha) = ((r.0, r.1 + shift, r.2, r.3 + shift), ease_out(p));
+        self.pill(r, d, alpha);
+        (r, alpha)
+    }
+
     /// A black capsule like the island's, with a faint shadow and hairline.
-    fn pill(&mut self, r: Rect, d: Rect, alpha: f32) {
+    fn pill(&self, r: Rect, d: Rect, alpha: f32) {
         let (cx, cy) = ((r.0 + r.2) as f32 / 2.0, (r.1 + r.3) as f32 / 2.0);
         let (hw, hh) = ((r.2 - r.0) as f32 / 2.0, (r.3 - r.1) as f32 / 2.0);
         let reach = (16.0 * self.scale) as i32;
         let drop = 3.0 * self.scale;
-        let (w, back, sy) = (self.w as usize, self.back.pixels(), self.strip_y);
-        for y in (r.1 - reach).max(d.1)..(r.3 + reach).min(d.3) {
-            for x in (r.0 - reach).max(d.0)..(r.2 + reach).min(d.2) {
-                let (px, py) = (x as f32 + 0.5, y as f32 + 0.5);
-                let outside = rrect(px - cx, py - cy - drop, hw, hh, hh);
-                let shadow = (1.0 - sstep(-2.0, reach as f32, outside)) * 0.30 * alpha;
-                let target = &mut back[(y - sy) as usize * w + x as usize];
-                if shadow > 0.0 {
-                    mix(target, BLACK, shadow);
-                }
-                let sdf = rrect(px - cx, py - cy, hw, hh, hh);
-                let body = cov(sdf, 1.0) * 0.94 * alpha;
-                if body > 0.0 {
-                    mix(target, BLACK, body);
-                }
-                let hair = cov(sdf.abs() - 0.5, 1.0) * 0.10 * alpha;
-                if hair > 0.0 {
-                    mix(target, WHITE, hair);
-                }
-            }
-        }
+        self.each_px((r.0 - reach, r.1 - reach, r.2 + reach, r.3 + reach), d, |target, x, y| {
+            let (px, py) = (x as f32 + 0.5, y as f32 + 0.5);
+            let outside = rrect(px - cx, py - cy - drop, hw, hh, hh);
+            mix(target, BLACK, (1.0 - sstep(-2.0, reach as f32, outside)) * 0.30 * alpha);
+            let sdf = rrect(px - cx, py - cy, hw, hh, hh);
+            mix(target, BLACK, cov(sdf, 1.0) * 0.94 * alpha);
+            mix(target, WHITE, cov(sdf.abs() - 0.5, 1.0) * 0.10 * alpha);
+        });
     }
 
-    fn glyph_text(&mut self, text: &str, mut x: f32, cy: f32, d: Rect, alpha: f32) {
-        for c in text.chars() {
-            let Some(g) = self.glyph(c).map(|g| g as *const TextBmp) else { continue };
-            let g = unsafe { &*g };
+    fn glyph_text(&self, text: &str, mut x: f32, cy: f32, d: Rect, alpha: f32) {
+        for g in text.chars().filter_map(|c| self.glyph(c)) {
             self.blit_text(g, x, cy, d, alpha);
             x += g.size().0 * self.scale;
         }
     }
 
     /// White text from an alpha bitmap, vertically centered on `cy`.
-    fn blit_text(&mut self, t: &TextBmp, x: f32, cy: f32, d: Rect, alpha: f32) {
+    fn blit_text(&self, t: &TextBmp, x: f32, cy: f32, d: Rect, alpha: f32) {
         let (lw, lh) = t.size();
         let (dw, dh) = (lw * self.scale, lh * self.scale);
         let (top, k) = (cy - dh / 2.0, TEXT_R / self.scale);
-        let (w, back, sy) = (self.w as usize, self.back.pixels(), self.strip_y);
-        for y in (top.floor() as i32).max(d.1)..((top + dh).ceil() as i32).min(d.3) {
-            for px in (x.floor() as i32).max(d.0)..((x + dw).ceil() as i32).min(d.2) {
-                let a = t.sample((px as f32 + 0.5 - x) * k, (y as f32 + 0.5 - top) * k).powf(0.85) * alpha;
-                if a > 0.0 {
-                    mix(&mut back[(y - sy) as usize * w + px as usize], WHITE, a);
-                }
-            }
-        }
+        let area = (x.floor() as i32, top.floor() as i32, (x + dw).ceil() as i32, (top + dh).ceil() as i32);
+        self.each_px(area, d, |target, px, y| {
+            mix(target, WHITE, t.sample((px as f32 + 0.5 - x) * k, (y as f32 + 0.5 - top) * k).powf(0.85) * alpha);
+        });
     }
 
     // ---- result ---------------------------------------------------------------
@@ -775,37 +726,27 @@ impl Snip {
         let header = std::mem::size_of::<BITMAPINFOHEADER>();
         unsafe {
             if OpenClipboard(self.hwnd).is_ok() {
-                let _ = EmptyClipboard();
-                if let Ok(mem) = GlobalAlloc(GMEM_MOVEABLE, header + stride * sh) {
-                    let ptr = GlobalLock(mem) as *mut u8;
-                    let mut ok = false;
-                    if !ptr.is_null() {
-                        let info = BITMAPINFOHEADER {
-                            biSize: header as u32,
-                            biWidth: sw as i32,
-                            biHeight: sh as i32,
-                            biPlanes: 1,
-                            biBitCount: 24,
-                            biCompression: BI_RGB.0,
-                            biSizeImage: (stride * sh) as u32,
-                            ..Default::default()
-                        };
-                        std::ptr::copy_nonoverlapping(&info as *const _ as *const u8, ptr, header);
-                        let (src, out) = (self.orig.pixels(), std::slice::from_raw_parts_mut(ptr.add(header), stride * sh));
-                        for row in 0..sh {
-                            let line = &src[(r.1 as usize + row) * self.w as usize + r.0 as usize..][..sw];
-                            let dst = &mut out[(sh - 1 - row) * stride..][..sw * 3];
-                            for (px, d3) in line.iter().zip(dst.chunks_exact_mut(3)) {
-                                d3.copy_from_slice(&px.to_le_bytes()[..3]); // B, G, R
-                            }
+                crate::clipboard::write(CF_DIB.0 as u32, header + stride * sh, |ptr| {
+                    let info = BITMAPINFOHEADER {
+                        biSize: header as u32,
+                        biWidth: sw as i32,
+                        biHeight: sh as i32,
+                        biPlanes: 1,
+                        biBitCount: 24,
+                        biCompression: BI_RGB.0,
+                        biSizeImage: (stride * sh) as u32,
+                        ..Default::default()
+                    };
+                    std::ptr::copy_nonoverlapping(&info as *const _ as *const u8, ptr, header);
+                    let (src, out) = (self.orig.pixels(), std::slice::from_raw_parts_mut(ptr.add(header), stride * sh));
+                    for row in 0..sh {
+                        let line = &src[(r.1 as usize + row) * self.w as usize + r.0 as usize..][..sw];
+                        let dst = &mut out[(sh - 1 - row) * stride..][..sw * 3];
+                        for (px, d3) in line.iter().zip(dst.chunks_exact_mut(3)) {
+                            d3.copy_from_slice(&px.to_le_bytes()[..3]); // B, G, R
                         }
-                        let _ = GlobalUnlock(mem);
-                        ok = SetClipboardData(CF_DIB.0 as u32, HANDLE(mem.0)).is_ok(); // the clipboard owns it now
                     }
-                    if !ok {
-                        let _ = GlobalFree(mem);
-                    }
-                }
+                });
                 let _ = CloseClipboard();
             }
         }
@@ -827,14 +768,26 @@ fn dimmed(p: u32) -> u32 {
     ((p >> 1) & 0x007F_7F7F) + ((p >> 3) & 0x001F_1F1F)
 }
 
-/// `px` moved toward `color` by `a`.
+/// `px` moved toward `color` by `a` (left alone when `a` is not above 0).
 #[inline]
 fn mix(px: &mut u32, color: [f32; 3], a: f32) {
-    let c = |shift: u32, to: f32| {
-        let from = ((*px >> shift) & 0xFF) as f32;
-        (from + (to - from) * a) as u32
-    };
-    *px = (c(16, color[0]) << 16) | (c(8, color[1]) << 8) | c(0, color[2]);
+    if a > 0.0 {
+        let c = |shift: u32, to: f32| {
+            let from = ((*px >> shift) & 0xFF) as f32;
+            (from + (to - from) * a) as u32
+        };
+        *px = (c(16, color[0]) << 16) | (c(8, color[1]) << 8) | c(0, color[2]);
+    }
+}
+
+/// The smallest rectangle around both.
+fn union(a: Rect, b: Rect) -> Rect {
+    (a.0.min(b.0), a.1.min(b.1), a.2.max(b.2), a.3.max(b.3))
+}
+
+/// What the size label says.
+fn label_text(s: Rect) -> String {
+    format!("{} × {}", s.2 - s.0, s.3 - s.1)
 }
 
 // ---- frames on the display's beat ----------------------------------------------

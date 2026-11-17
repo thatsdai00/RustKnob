@@ -192,12 +192,6 @@ pub fn setup_element(tx: f32, ty: f32) -> Option<usize> {
 }
 
 pub fn setup_hit(tx: f32, ty: f32) -> Option<SetupHit> {
-    Some(match setup_element(tx, ty)? {
-        0 => SetupHit::Autostart,
-        1 => SetupHit::AutoUpdate,
-        2 => SetupHit::Language,
-        3 => SetupHit::Theme,
-        4 => SetupHit::Install,
-        _ => SetupHit::Portable,
-    })
+    use SetupHit::*;
+    [Autostart, AutoUpdate, Language, Theme, Install, Portable].get(setup_element(tx, ty)?).copied()
 }

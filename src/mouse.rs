@@ -33,6 +33,7 @@ use windows::Win32::Foundation::*;
 use windows::Win32::Storage::FileSystem::*;
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
+use crate::gfx::FClamp;
 use crate::asus::Asus;
 use crate::atk::Atk;
 use crate::g435::G435;
@@ -198,29 +199,13 @@ fn publish(s: Option<Status>) {
 /// Waits `d` (None: until told), or until the support is switched off or a rescan is asked for.
 /// Returns false when it was switched off.
 fn wait(d: Option<Duration>) -> bool {
-    let Ok(mut c) = CONTROL.0.lock() else { return false };
-    let deadline = d.map(|d| Instant::now() + d);
-    while c.on && !c.rescan {
-        match deadline {
-            Some(at) => {
-                let now = Instant::now();
-                if now >= at {
-                    break;
-                }
-                c = match CONTROL.1.wait_timeout(c, at - now) {
-                    Ok((g, _)) => g,
-                    Err(_) => return false,
-                };
-            }
-            None => {
-                c = match CONTROL.1.wait(c) {
-                    Ok(g) => g,
-                    Err(_) => return false,
-                };
-            }
-        }
-    }
-    c.on
+    let Ok(c) = CONTROL.0.lock() else { return false };
+    let waiting = |c: &mut Control| c.on && !c.rescan;
+    let c = match d {
+        Some(d) => CONTROL.1.wait_timeout_while(c, d, waiting).ok().map(|r| r.0),
+        None => CONTROL.1.wait_while(c, waiting).ok(),
+    };
+    c.is_some_and(|c| c.on)
 }
 
 fn take_rescan() -> bool {
@@ -231,12 +216,9 @@ fn run() {
     loop {
         // off: sleep until switched on
         {
-            let Ok(mut c) = CONTROL.0.lock() else { return };
-            while !c.on {
-                c = match CONTROL.1.wait(c) {
-                    Ok(g) => g,
-                    Err(_) => return,
-                };
+            let Ok(c) = CONTROL.0.lock() else { return };
+            if CONTROL.1.wait_while(c, |c| !c.on).is_err() {
+                return;
             }
         }
         settle_rescans();
@@ -265,7 +247,8 @@ fn watch(m: &mut Device) {
     let mut now: Option<Status> = None; // None while asleep
     let (mut battery_at, mut charging_at) = (Instant::now(), Instant::now());
     let (mut quiet, mut asleep_since) = (0u32, Instant::now());
-    let mut others = open_others(m.model());
+    let mut others = Vec::new(); // every other plugged-in device (one per brand: the followed one's brand is left out)
+    refresh_others(&mut others, m.model);
     let mut others_at: Option<Instant> = None; // when their batteries were last read (None: now)
     let mut others_charger_at = Instant::now();
     loop {
@@ -284,7 +267,7 @@ fn watch(m: &mut Device) {
                     quiet = 0;
                     let (stage, stages) = m.stages().unwrap_or((0, 0));
                     let (battery, charging) = m.battery().unwrap_or((None, false));
-                    let s = Status { model: m.model(), dpi, stage, stages, battery, charging };
+                    let s = Status { model: m.model, dpi, stage, stages, battery, charging };
                     battery_at = Instant::now();
                     load_picture(s.model); // fetched and decoded here, not on the UI thread when the card first draws
                     now = Some(s);
@@ -312,7 +295,7 @@ fn watch(m: &mut Device) {
                     }
                     if battery_at.elapsed() >= BATTERY_EVERY {
                         battery_at = Instant::now();
-                        let b = m.battery().ok().and_then(|b| b.0).or(s.battery);
+                        let b = m.percent_or(s.battery);
                         changed |= b != s.battery;
                         s.battery = b;
                     }
@@ -349,7 +332,7 @@ fn watch(m: &mut Device) {
         // a device came or went: is this still the way to the mouse (the cable wins when it is plugged in)?
         if take_rescan() {
             settle_rescans();
-            if Device::preferred().map(|p| p.1).as_deref() != Some(m.path()) {
+            if Device::preferred().map(|p| p.1).as_ref() != Some(&m.path) {
                 if now.is_some() {
                     post(EV_GONE);
                 }
@@ -357,7 +340,7 @@ fn watch(m: &mut Device) {
             }
             // the same device: another one may have come or gone (those still there keep what they said:
             // the G435 tells its charger from a change since the last look)
-            refresh_others(&mut others, m.model());
+            refresh_others(&mut others, m.model);
         }
     }
 }
@@ -374,22 +357,13 @@ struct Watched {
     last: Option<Other>,
 }
 
-/// Every other plugged-in device (one per brand: the followed one's brand is left out).
-fn open_others(followed: Model) -> Vec<Watched> {
-    Device::present()
-        .into_iter()
-        .filter(|(model, _)| *model != followed)
-        .filter_map(Device::open)
-        .map(|device| Watched { device, last: None })
-        .collect()
-}
-
-/// After a device change: drops the others that are gone, opens the new ones, keeps the rest as they are.
+/// After a device change (and at first): drops the others that are gone, opens the new ones, keeps the rest as
+/// they are.
 fn refresh_others(devices: &mut Vec<Watched>, followed: Model) {
     let present: Vec<(Model, Vec<u16>)> = Device::present().into_iter().filter(|(model, _)| *model != followed).collect();
-    devices.retain(|w| present.iter().any(|(_, p)| p.as_slice() == w.device.path()));
+    devices.retain(|w| present.iter().any(|(_, p)| *p == w.device.path));
     for p in present {
-        if !devices.iter().any(|w| w.device.path() == p.1.as_slice()) {
+        if !devices.iter().any(|w| w.device.path == p.1) {
             if let Some(device) = Device::open(p) {
                 devices.push(Watched { device, last: None });
             }
@@ -412,34 +386,28 @@ fn level(o: &Other) -> u8 {
 fn read_others(devices: &mut Vec<Watched>, full: bool) {
     devices.retain_mut(|w| {
         let now = if full {
-            match w.device.dpi() {
-                Ok(_) => {
-                    let (battery, charging) = w.device.battery().unwrap_or((None, false));
-                    Some(Other { model: w.device.model(), battery, charging })
-                }
-                Err(Error::Asleep) => None,
-                Err(Error::Io) => return false,
+            match w.device.look() {
+                Ok(n) => n,
+                Err(_) => return false,
             }
         } else {
             let Some(last) = w.last else {
                 // asleep (or switched off) at the last look: awake now? then everything, and a card
-                return match w.device.dpi() {
-                    Ok(_) => {
-                        let (battery, charging) = w.device.battery().unwrap_or((None, false));
-                        let n = Other { model: w.device.model(), battery, charging };
+                return match w.device.look() {
+                    Ok(Some(n)) => {
                         w.last = Some(n);
                         load_picture(n.model);
                         let why = if level(&n) > 0 { OTHER_LOW } else { OTHER_CONNECTED };
                         post_with(EV_OTHER, n.model as isize | why << 8);
                         true
                     }
-                    Err(Error::Asleep) => true,
-                    Err(Error::Io) => false,
+                    Ok(None) => true,
+                    Err(_) => false,
                 };
             };
             match w.device.charging() {
                 // the charger came or went: the level now too
-                Ok(c) if c != last.charging => Some(Other { charging: c, battery: w.device.battery().ok().and_then(|b| b.0).or(last.battery), ..last }),
+                Ok(c) if c != last.charging => Some(Other { charging: c, battery: w.device.percent_or(last.battery), ..last }),
                 Ok(_) => Some(last),
                 Err(Error::Asleep) => None,
                 Err(Error::Io) => return false,
@@ -469,116 +437,98 @@ fn read_others(devices: &mut Vec<Watched>, full: bool) {
     set_others(devices.iter().filter_map(|w| w.last).collect());
 }
 
-/// The mouse, whichever brand: all the thread needs from it.
-enum Device {
-    Razer(Razer),
-    Logitech(Logi),
-    Atk(Atk),
-    Asus(Asus),
-    Headset(G435),
+/// What the thread asks a device, whichever brand: each brand's file speaks its own protocol.
+pub trait Brand {
+    /// The DPI (0 when it is not told); answering at all means it is awake.
+    fn dpi(&mut self) -> Result<u16, Error>;
+
+    /// (active stage, how many); one that does not tell its stages has 0 of them (no markers are drawn).
+    fn stages(&mut self) -> Result<(usize, usize), Error> {
+        Ok((0, 0))
+    }
+
+    /// (percent, on the charger).
+    fn battery(&mut self) -> Result<(Option<u8>, bool), Error>;
+
+    fn charging(&mut self) -> Result<bool, Error> {
+        self.battery().map(|b| b.1)
+    }
 }
 
+/// The mouse, whichever brand: all the thread needs from it.
+struct Device {
+    model: Model,
+    path: Vec<u16>,
+    brand: Box<dyn Brand>,
+}
+
+impl std::ops::Deref for Device {
+    type Target = dyn Brand;
+    fn deref(&self) -> &Self::Target {
+        &*self.brand
+    }
+}
+
+impl std::ops::DerefMut for Device {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut *self.brand
+    }
+}
+
+/// How a brand finds the path to talk to (each prefers its cable to its receiver).
+type Find = fn() -> Option<Vec<u16>>;
+
+/// Every brand, in the order they are looked for.
+const BRANDS: [(Model, Find); 5] = [
+    (Model::ViperV3Pro, Razer::preferred),
+    (Model::Superlight2, Logi::preferred),
+    (Model::AtkA9Plus, Atk::preferred),
+    (Model::GladiusIII, Asus::preferred),
+    (Model::G435, G435::preferred),
+];
+
 impl Device {
-    /// The model and path to talk to: a Razer first, else a Logitech (each prefers its cable to its receiver).
+    /// The model and path to talk to: a Razer first, else a Logitech, and so on down BRANDS.
     fn preferred() -> Option<(Model, Vec<u16>)> {
-        Razer::preferred()
-            .map(|p| (Model::ViperV3Pro, p))
-            .or_else(|| Logi::preferred().map(|p| (Model::Superlight2, p)))
-            .or_else(|| Atk::preferred().map(|p| (Model::AtkA9Plus, p)))
-            .or_else(|| Asus::preferred().map(|p| (Model::GladiusIII, p)))
-            .or_else(|| G435::preferred().map(|p| (Model::G435, p)))
+        BRANDS.iter().find_map(|&(model, find)| find().map(|p| (model, p)))
     }
 
     /// Every brand's mouse that is plugged in, in the same order.
     fn present() -> Vec<(Model, Vec<u16>)> {
-        [
-            Razer::preferred().map(|p| (Model::ViperV3Pro, p)),
-            Logi::preferred().map(|p| (Model::Superlight2, p)),
-            Atk::preferred().map(|p| (Model::AtkA9Plus, p)),
-            Asus::preferred().map(|p| (Model::GladiusIII, p)),
-            G435::preferred().map(|p| (Model::G435, p)),
-        ]
-        .into_iter()
-        .flatten()
-        .collect()
+        BRANDS.iter().filter_map(|&(model, find)| find().map(|p| (model, p))).collect()
     }
 
     fn open((model, path): (Model, Vec<u16>)) -> Option<Device> {
-        match model {
-            Model::ViperV3Pro => Razer::open(path).map(Device::Razer),
-            Model::Superlight2 => Logi::open(path).map(Device::Logitech),
-            Model::AtkA9Plus => Atk::open(path).map(Device::Atk),
-            Model::GladiusIII => Asus::open(path).map(Device::Asus),
-            Model::G435 => G435::open(path).map(Device::Headset),
+        let brand: Box<dyn Brand> = match model {
+            Model::ViperV3Pro => Box::new(Razer::open(&path)?),
+            Model::Superlight2 => Box::new(Logi::open(&path)?),
+            Model::AtkA9Plus => Box::new(Atk::open(&path)?),
+            Model::GladiusIII => Box::new(Asus::open(&path)?),
+            Model::G435 => Box::new(G435::open(&path)?),
+        };
+        Some(Device { model, path, brand })
+    }
+
+    /// Awake (then with its battery: Some), asleep (None) or gone (Err).
+    fn look(&mut self) -> Result<Option<Other>, Error> {
+        match self.dpi() {
+            Ok(_) => {
+                let (battery, charging) = self.battery().unwrap_or((None, false));
+                Ok(Some(Other { model: self.model, battery, charging }))
+            }
+            Err(Error::Asleep) => Ok(None),
+            Err(e) => Err(e),
         }
     }
 
-    fn model(&self) -> Model {
-        match self {
-            Device::Razer(_) => Model::ViperV3Pro,
-            Device::Logitech(_) => Model::Superlight2,
-            Device::Atk(_) => Model::AtkA9Plus,
-            Device::Asus(_) => Model::GladiusIII,
-            Device::Headset(_) => Model::G435,
-        }
-    }
-
-    fn path(&self) -> &[u16] {
-        match self {
-            Device::Razer(m) => &m.path,
-            Device::Logitech(m) => &m.path,
-            Device::Atk(m) => &m.path,
-            Device::Asus(m) => &m.path,
-            Device::Headset(m) => &m.path,
-        }
-    }
-
-    fn dpi(&mut self) -> Result<u16, Error> {
-        match self {
-            Device::Razer(m) => m.dpi(),
-            Device::Logitech(m) => m.dpi(),
-            Device::Atk(m) => m.dpi(),
-            Device::Asus(m) => m.dpi(),
-            Device::Headset(m) => m.awake(),
-        }
-    }
-
-    /// (active stage, how many); the Logitech does not tell its stages (0 of them: no markers are drawn).
-    fn stages(&mut self) -> Result<(usize, usize), Error> {
-        match self {
-            Device::Razer(m) => m.stages(),
-            Device::Logitech(_) => Ok((0, 0)),
-            Device::Atk(m) => m.stages(),
-            Device::Asus(m) => m.stages(),
-            Device::Headset(_) => Ok((0, 0)),
-        }
-    }
-
-    /// (percent, on the charger).
-    fn battery(&mut self) -> Result<(Option<u8>, bool), Error> {
-        match self {
-            Device::Razer(m) => Ok((Some(m.battery()?), m.charging().unwrap_or(false))),
-            Device::Logitech(m) => m.battery(),
-            Device::Atk(m) => m.battery(),
-            Device::Asus(m) => m.battery(),
-            Device::Headset(m) => m.battery(),
-        }
-    }
-
-    fn charging(&mut self) -> Result<bool, Error> {
-        match self {
-            Device::Razer(m) => m.charging(),
-            Device::Logitech(m) => m.battery().map(|b| b.1),
-            Device::Atk(m) => m.battery().map(|b| b.1),
-            Device::Asus(m) => m.battery().map(|b| b.1),
-            Device::Headset(m) => m.charging(),
-        }
+    /// The percent now, or `last` when it does not tell.
+    fn percent_or(&mut self, last: Option<u8>) -> Option<u8> {
+        self.battery().ok().and_then(|b| b.0).or(last)
     }
 }
 
 struct Razer {
     handle: HANDLE,
-    path: Vec<u16>,
 }
 
 impl Drop for Razer {
@@ -590,17 +540,14 @@ impl Drop for Razer {
 }
 
 impl Razer {
-    fn open(path: Vec<u16>) -> Option<Razer> {
-        let handle = unsafe { open(&path)? };
-        Some(Razer { handle, path })
+    fn open(path: &[u16]) -> Option<Razer> {
+        Some(Razer { handle: unsafe { open(path)? } })
     }
 
     /// The configuration collection (a 91-byte feature report): the cable's when it is plugged in, else the
     /// receiver's.
     fn preferred() -> Option<Vec<u16>> {
-        let all = unsafe { hid_list("vid_1532") };
-        let pick = |pid: u16| all.iter().find(|d| d.vid == VID && d.pid == pid && d.feature_len as usize == REPORT_LEN).map(|d| d.path.clone());
-        pick(PID_WIRED).or_else(|| pick(PID_WIRELESS))
+        hid_find(VID, &[PID_WIRED], &|d| (d.pid == PID_WIRED || d.pid == PID_WIRELESS) && d.feature_len as usize == REPORT_LEN)
     }
 
     fn cmd(&mut self, class: u8, id: u8, size: u8, args: &[u8]) -> Result<[u8; 80], Error> {
@@ -631,22 +578,22 @@ impl Razer {
                         a.copy_from_slice(&r[9..89]);
                         return Ok(a);
                     }
-                    3 => break, // failed: send again
-                    4 => return Err(Error::Asleep),
-                    5 => return Err(Error::Asleep), // not supported: treat as no answer
-                    _ => continue,                  // new / busy
+                    3 => break,                         // failed: send again
+                    4 | 5 => return Err(Error::Asleep), // no answer; 5, not supported: treated as no answer
+                    _ => continue,                      // new / busy
                 }
             }
         }
         Err(Error::Asleep)
     }
+}
 
+impl Brand for Razer {
     fn dpi(&mut self) -> Result<u16, Error> {
         let a = self.cmd(0x04, 0x85, 0x07, &[VARSTORE])?;
         Ok(u16::from_be_bytes([a[1], a[2]]))
     }
 
-    /// (active stage, how many).
     fn stages(&mut self) -> Result<(usize, usize), Error> {
         let a = self.cmd(0x04, 0x86, 0x26, &[VARSTORE])?;
         let n = (a[2] as usize).min(STAGES_MAX);
@@ -654,10 +601,10 @@ impl Razer {
         Ok((active, n))
     }
 
-    /// Percent, from the mouse's 0..255 scale.
-    fn battery(&mut self) -> Result<u8, Error> {
+    /// The percent from the mouse's 0..255 scale, then the charger.
+    fn battery(&mut self) -> Result<(Option<u8>, bool), Error> {
         let a = self.cmd(0x07, 0x80, 0x02, &[])?;
-        Ok(((a[1] as u32 * 100 + 127) / 255) as u8)
+        Ok((Some(((a[1] as u32 * 100 + 127) / 255) as u8), self.charging().unwrap_or(false)))
     }
 
     fn charging(&mut self) -> Result<bool, Error> {
@@ -683,8 +630,15 @@ pub struct HidInfo {
     pub output_len: u16,
 }
 
+/// The path of the first present collection of vendor `vid` that is `ours`: one whose product id is in `cable`
+/// (on its cable) before any other.
+pub fn hid_find(vid: u16, cable: &[u16], ours: &dyn Fn(&HidInfo) -> bool) -> Option<Vec<u16>> {
+    let all = unsafe { hid_list(&format!("vid_{vid:04x}")) };
+    all.into_iter().filter(|d| d.vid == vid && ours(d)).min_by_key(|d| !cable.contains(&d.pid)).map(|d| d.path)
+}
+
 /// Every present HID collection whose path carries `vid_tag` ("vid_1532"): only those are opened.
-pub unsafe fn hid_list(vid_tag: &str) -> Vec<HidInfo> {
+unsafe fn hid_list(vid_tag: &str) -> Vec<HidInfo> {
     let mut out = Vec::new();
     let guid = HidD_GetHidGuid();
     let Ok(set) = SetupDiGetClassDevsW(Some(&guid), PCWSTR::null(), None, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE) else { return out };
@@ -750,7 +704,7 @@ unsafe fn probe(path: Vec<u16>) -> Option<HidInfo> {
     result
 }
 
-// ---- reports with timeouts (Logitech, ATK) -----------------------------------
+// ---- reports with timeouts (Logitech, ATK, ASUS, G435) -------------------------
 
 /// A HID collection opened for output and input reports, every wait bounded (a mouse that is not there must
 /// not hang the thread). Razer needs none of this: it talks through feature reports.
@@ -788,28 +742,21 @@ impl HidIo {
     /// Sends `report` (its id first) and returns the first input report within `within` that `answer` takes
     /// (it returns None for reports that are something else: notifications, other requests' answers).
     pub fn ask<R>(&mut self, report: &[u8], within: Duration, mut answer: impl FnMut(&[u8]) -> Option<Result<R, Error>>) -> Result<R, Error> {
-        let mut out = report.to_vec();
-        out.resize(self.out_len.max(report.len()), 0);
+        let out = self.padded(report);
         unsafe {
-            if !HidD_SetOutputReport(self.handle, out.as_ptr() as *const _, out.len() as u32).as_bool() {
-                // some devices only take it as a plain write
-                let mut n = 0u32;
-                if !self.overlapped(200, |h, ov| WriteFile(h, Some(&out), None, Some(ov)), &mut n)? {
-                    return Err(Error::Asleep);
-                }
+            // some devices only take it as a plain write
+            if !HidD_SetOutputReport(self.handle, out.as_ptr() as *const _, out.len() as u32).as_bool() && self.send(&out, 200)?.is_none() {
+                return Err(Error::Asleep);
             }
             let until = Instant::now() + within;
-            let mut buf = vec![0u8; self.in_len.max(2)];
+            let mut buf = self.input_buffer();
             loop {
                 let left = until.saturating_duration_since(Instant::now());
                 if left.is_zero() {
                     return Err(Error::Asleep);
                 }
-                let mut n = 0u32;
-                if !self.overlapped(left.as_millis() as u32, |h, ov| ReadFile(h, Some(&mut buf), None, Some(ov)), &mut n)? {
-                    return Err(Error::Asleep);
-                }
-                if let Some(r) = answer(&buf[..n as usize]) {
+                let Some(n) = self.receive(&mut buf, left.as_millis() as u32)? else { return Err(Error::Asleep) };
+                if let Some(r) = answer(&buf[..n]) {
                     return r;
                 }
             }
@@ -818,35 +765,52 @@ impl HidIo {
 
     /// Sends `report` (its id first) as a plain write.
     pub fn write(&mut self, report: &[u8]) -> Result<(), Error> {
-        let mut out = report.to_vec();
-        out.resize(self.out_len.max(report.len()), 0);
-        let mut n = 0u32;
-        match unsafe { self.overlapped(500, |h, ov| WriteFile(h, Some(&out), None, Some(ov)), &mut n)? } {
-            true => Ok(()),
-            false => Err(Error::Asleep),
-        }
+        unsafe { self.send(&self.padded(report), 500)? }.map(|_| ()).ok_or(Error::Asleep)
     }
 
     /// The next input report within `within` (None: none came).
     pub fn read(&mut self, within: Duration) -> Result<Option<Vec<u8>>, Error> {
-        let mut buf = vec![0u8; self.in_len.max(2)];
-        let mut n = 0u32;
-        let got = unsafe { self.overlapped(within.as_millis().max(1) as u32, |h, ov| ReadFile(h, Some(&mut buf), None, Some(ov)), &mut n)? };
-        buf.truncate(n as usize);
-        Ok(got.then_some(buf))
+        let mut buf = self.input_buffer();
+        let n = unsafe { self.receive(&mut buf, within.as_millis().max(1) as u32)? };
+        Ok(n.map(|n| {
+            buf.truncate(n);
+            buf
+        }))
     }
 
     /// Input report 0, asked for over the control pipe.
     pub fn input_report(&mut self) -> Option<Vec<u8>> {
-        let mut buf = vec![0u8; self.in_len.max(2)];
+        let mut buf = self.input_buffer();
         unsafe { HidD_GetInputReport(self.handle, buf.as_mut_ptr() as *mut _, buf.len() as u32) }.as_bool().then_some(buf)
     }
 
-    /// One overlapped transfer, waited for at most `ms`; false when it did not finish in time.
-    unsafe fn overlapped(&self, ms: u32, start: impl FnOnce(HANDLE, &mut windows::Win32::System::IO::OVERLAPPED) -> windows::core::Result<()>, n: &mut u32) -> Result<bool, Error> {
+    /// `report` filled up to the collection's output report size.
+    fn padded(&self, report: &[u8]) -> Vec<u8> {
+        let mut out = report.to_vec();
+        out.resize(self.out_len.max(report.len()), 0);
+        out
+    }
+
+    fn input_buffer(&self) -> Vec<u8> {
+        vec![0u8; self.in_len.max(2)]
+    }
+
+    /// One plain write, waited for at most `ms`; None when it did not finish in time.
+    unsafe fn send(&self, out: &[u8], ms: u32) -> Result<Option<usize>, Error> {
+        self.overlapped(ms, |h, ov| WriteFile(h, Some(out), None, Some(ov)))
+    }
+
+    /// One read into `buf`, waited for at most `ms`: the bytes read, None when none came in time.
+    unsafe fn receive(&self, buf: &mut [u8], ms: u32) -> Result<Option<usize>, Error> {
+        self.overlapped(ms, |h, ov| ReadFile(h, Some(buf), None, Some(ov)))
+    }
+
+    /// One overlapped transfer, waited for at most `ms`: the bytes moved, None when it did not finish in time.
+    unsafe fn overlapped(&self, ms: u32, start: impl FnOnce(HANDLE, &mut windows::Win32::System::IO::OVERLAPPED) -> windows::core::Result<()>) -> Result<Option<usize>, Error> {
         use windows::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
         use windows::Win32::System::Threading::{ResetEvent, WaitForSingleObject};
         let mut ov = OVERLAPPED { hEvent: self.event, ..Default::default() };
+        let mut n = 0u32;
         let _ = ResetEvent(self.event);
         if let Err(e) = start(self.handle, &mut ov) {
             // the error carries the code: GetLastError afterwards may already say something else
@@ -856,17 +820,33 @@ impl HidIo {
         }
         if WaitForSingleObject(self.event, ms) != WAIT_OBJECT_0 {
             let _ = CancelIoEx(self.handle, Some(&ov));
-            let _ = GetOverlappedResult(self.handle, &ov, n, true);
-            return Ok(false);
+            let _ = GetOverlappedResult(self.handle, &ov, &mut n, true);
+            return Ok(None);
         }
-        GetOverlappedResult(self.handle, &ov, n, false).map_err(|_| Error::Io)?;
-        Ok(true)
+        GetOverlappedResult(self.handle, &ov, &mut n, false).map_err(|_| Error::Io)?;
+        Ok(Some(n as usize))
     }
+}
+
+/// A lithium cell's charge from its voltage: a straight line between the two points of `curve` (falling: mV and
+/// the percent there, the first at 100) around `mv`, rounded.
+pub fn percent_on(curve: &[(u16, u8)], mv: u16) -> u8 {
+    if mv >= curve[0].0 {
+        return 100;
+    }
+    for w in curve.windows(2) {
+        let ((hi_mv, hi), (lo_mv, lo)) = (w[0], w[1]);
+        if mv >= lo_mv {
+            let (span, up) = ((hi_mv - lo_mv) as u32, (mv - lo_mv) as u32);
+            return ((lo as u32 * span + (hi - lo) as u32 * up + span / 2) / span) as u8;
+        }
+    }
+    0
 }
 
 // ---- the picture of the mouse ----------------------------------------------
 
-/// A small premultiplied picture (0xAARRGGBB), with halved copies of it for small sizes on screen.
+/// A small premultiplied picture, with halved copies of it for small sizes on screen.
 pub struct Picture {
     levels: Vec<Level>, // full size first
     pub dark: bool,     // mostly dark (a black headset): lifted a little on the dark theme, or it would vanish
@@ -879,9 +859,8 @@ struct Level {
 }
 
 impl Picture {
-    fn new(w: usize, h: usize, argb: &[u32]) -> Picture {
-        let ch = |p: u32, shift: u32| ((p >> shift) & 0xFF) as u8;
-        let mut levels = vec![Level { w, h, px: argb.iter().map(|&p| [ch(p, 16), ch(p, 8), ch(p, 0), ch(p, 24)]).collect() }];
+    fn new(w: usize, h: usize, px: Vec<[u8; 4]>) -> Picture {
+        let mut levels = vec![Level { w, h, px }];
         while let Some(l) = levels.last().filter(|l| l.h >= 32 && l.w >= 32) {
             let (w, h) = (l.w / 2, l.h / 2);
             let px = (0..w * h)
@@ -914,8 +893,8 @@ impl Picture {
     /// `shown_h` (device pixels) tall.
     pub fn sample(&self, u: f32, v: f32, shown_h: f32) -> [f32; 4] {
         let l = self.levels.iter().rev().find(|l| l.h as f32 >= shown_h).unwrap_or(&self.levels[0]);
-        let x = (u * l.w as f32 - 0.5).clamp(0.0, l.w as f32 - 1.001);
-        let y = (v * l.h as f32 - 0.5).clamp(0.0, l.h as f32 - 1.001);
+        let x = (u * l.w as f32 - 0.5).fclamp(0.0, l.w as f32 - 1.001);
+        let y = (v * l.h as f32 - 0.5).fclamp(0.0, l.h as f32 - 1.001);
         let (x0, y0) = (x as usize, y as usize);
         let (fx, fy) = (x - x0 as f32, y - y0 as f32);
         let at = |xx: usize, yy: usize| l.px[yy * l.w + xx];
@@ -925,7 +904,7 @@ impl Picture {
     }
 }
 
-static PICTURES: [OnceLock<Picture>; 5] = [OnceLock::new(), OnceLock::new(), OnceLock::new(), OnceLock::new(), OnceLock::new()];
+static PICTURES: [OnceLock<Picture>; 5] = [const { OnceLock::new() }; 5];
 
 /// The mouse from the side, once `load_picture` has it (no file or network work here: the UI asks each frame).
 pub fn picture(model: Model) -> Option<&'static Picture> {
@@ -991,8 +970,7 @@ fn decode(png: &[u8]) -> Option<Picture> {
     bitmap.CopyToBuffer(&buffer).ok()?;
     let reader = windows::Storage::Streams::DataReader::FromBuffer(&buffer).ok()?;
     reader.ReadBytes(&mut bytes).ok()?;
-    let px: Vec<u32> = bytes.chunks_exact(4).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
-    Some(Picture::new(w, h, &px))
+    Some(Picture::new(w, h, bytes.as_chunks::<4>().0.iter().map(|&[b, g, r, a]| [r, g, b, a]).collect()))
 }
 
 #[cfg(test)]
@@ -1002,7 +980,7 @@ mod tests {
     #[ignore]
     fn read_mouse() {
         let mut m = super::Device::preferred().and_then(super::Device::open).expect("no mouse found");
-        println!("model {:?}", m.model());
+        println!("model {:?}", m.model);
         let t = std::time::Instant::now();
         println!("dpi {:?}", m.dpi());
         println!("stages {:?}", m.stages());

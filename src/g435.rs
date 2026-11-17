@@ -21,7 +21,7 @@
 
 use std::time::{Duration, Instant};
 
-use crate::mouse::{Error, HidIo, HidInfo};
+use crate::mouse::{Brand, Error, HidIo};
 
 const VID: u16 = 0x046d;
 const PID: u16 = 0x0adf;
@@ -36,7 +36,6 @@ const PERCENT_PER_MINUTE: f32 = 0.8; // empty to full in about two hours
 
 pub struct G435 {
     io: HidIo,
-    pub path: Vec<u16>,
     transmission: u8,
     linked: Option<(Instant, Result<(), Error>)>, // the last look at the headset, and when
     millivolts: Option<(Instant, u16)>,           // the last voltage, and when
@@ -49,14 +48,12 @@ pub struct G435 {
 impl G435 {
     /// The dongle's vendor collection.
     pub fn preferred() -> Option<Vec<u16>> {
-        let all = unsafe { crate::mouse::hid_list("vid_046d") };
-        let ours = |d: &&HidInfo| d.vid == VID && d.pid == PID && d.usage_page == 0xff00;
-        all.iter().find(ours).map(|d| d.path.clone())
+        crate::mouse::hid_find(VID, &[], &|d| d.pid == PID && d.usage_page == 0xff00)
     }
 
-    pub fn open(path: Vec<u16>) -> Option<G435> {
-        let io = HidIo::open(&path)?;
-        let mut g = G435 { io, path, transmission: 0, linked: None, millivolts: None, charging: false, plugged: None, climb_from: None, unplugged_at: None };
+    pub fn open(path: &[u16]) -> Option<G435> {
+        let io = HidIo::open(path)?;
+        let mut g = G435 { io, transmission: 0, linked: None, millivolts: None, charging: false, plugged: None, climb_from: None, unplugged_at: None };
         let _ = g.command(0x85, &[1], false);
         Some(g)
     }
@@ -126,8 +123,16 @@ impl G435 {
         }
     }
 
-    /// Is the headset on and linked? Looked at every few seconds; in between the last answer stands.
-    pub fn awake(&mut self) -> Result<u16, Error> {
+    fn millivolts(&mut self) -> Result<u16, Error> {
+        let t = self.radio(vec![0x50, 0x41, 0x06, 0, 1, 0, 0x31])?;
+        self.wait(|p| (p.len() >= 5 && p[0] == 0x06 && p[1] & 0x7f == t && p[2] == 0).then(|| u16::from_le_bytes([p[3], p[4]])))
+    }
+}
+
+impl Brand for G435 {
+    /// Is the headset on and linked (it has no DPI: 0)? Looked at every few seconds; in between the last answer
+    /// stands.
+    fn dpi(&mut self) -> Result<u16, Error> {
         if let Some((at, last)) = &self.linked {
             if at.elapsed() < LINK_EVERY {
                 return last.clone().map(|_| 0);
@@ -142,13 +147,8 @@ impl G435 {
         now.map(|_| 0)
     }
 
-    fn millivolts(&mut self) -> Result<u16, Error> {
-        let t = self.radio(vec![0x50, 0x41, 0x06, 0, 1, 0, 0x31])?;
-        self.wait(|p| (p.len() >= 5 && p[0] == 0x06 && p[1] & 0x7f == t && p[2] == 0).then(|| u16::from_le_bytes([p[3], p[4]])))
-    }
-
     /// On the charger? From a voltage jump (see the top); the voltage is read again every few seconds.
-    pub fn charging(&mut self) -> Result<bool, Error> {
+    fn charging(&mut self) -> Result<bool, Error> {
         if self.millivolts.is_none_or(|(at, _)| at.elapsed() >= CHARGER_EVERY) {
             self.battery()?;
         }
@@ -156,7 +156,7 @@ impl G435 {
     }
 
     /// (percent, on the charger).
-    pub fn battery(&mut self) -> Result<(Option<u8>, bool), Error> {
+    fn battery(&mut self) -> Result<(Option<u8>, bool), Error> {
         let remote = self.link(0xe0, &[])? == 1;
         if !remote {
             self.set_remote(true)?;
@@ -218,16 +218,7 @@ fn crc16(data: &[u8]) -> u16 {
 /// A 3.7 V lithium cell's voltage as a percent.
 fn percent(mv: u16) -> u8 {
     const CURVE: [(u16, u8); 11] = [(4200, 100), (4100, 90), (4000, 80), (3900, 65), (3800, 50), (3750, 40), (3700, 30), (3650, 20), (3600, 10), (3500, 5), (3300, 0)];
-    if mv >= CURVE[0].0 {
-        return 100;
-    }
-    for w in CURVE.windows(2) {
-        let ((hi_mv, hi), (lo_mv, lo)) = (w[0], w[1]);
-        if mv >= lo_mv {
-            return (lo as f32 + (hi - lo) as f32 * (mv - lo_mv) as f32 / (hi_mv - lo_mv) as f32).round() as u8;
-        }
-    }
-    0
+    crate::mouse::percent_on(&CURVE, mv)
 }
 
 #[cfg(test)]
@@ -240,12 +231,34 @@ mod tests {
         assert_eq!(super::percent(3200), 0);
     }
 
+    /// The shared curve gives what this file's own float version gave, for every voltage.
+    #[test]
+    fn curve_as_before() {
+        const CURVE: [(u16, u8); 11] = [(4200, 100), (4100, 90), (4000, 80), (3900, 65), (3800, 50), (3750, 40), (3700, 30), (3650, 20), (3600, 10), (3500, 5), (3300, 0)];
+        let before = |mv: u16| -> u8 {
+            if mv >= CURVE[0].0 {
+                return 100;
+            }
+            for w in CURVE.windows(2) {
+                let ((hi_mv, hi), (lo_mv, lo)) = (w[0], w[1]);
+                if mv >= lo_mv {
+                    return (lo as f32 + (hi - lo) as f32 * (mv - lo_mv) as f32 / (hi_mv - lo_mv) as f32).round() as u8;
+                }
+            }
+            0
+        };
+        for mv in 0..=u16::MAX {
+            assert_eq!(super::percent(mv), before(mv), "{mv} mV");
+        }
+    }
+
     /// Reads the real headset. `cargo test g435 -- --ignored --nocapture`
     #[test]
     #[ignore]
     fn read_g435() {
-        let mut g = super::G435::open(super::G435::preferred().expect("no dongle")).expect("open");
-        println!("awake {:?}", g.awake());
+        use crate::mouse::Brand;
+        let mut g = super::G435::open(&super::G435::preferred().expect("no dongle")).expect("open");
+        println!("awake {:?}", g.dpi());
         let t = std::time::Instant::now();
         println!("battery {:?} in {:?}", g.battery(), t.elapsed());
     }

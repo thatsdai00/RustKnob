@@ -98,6 +98,11 @@ fn song(artist: &str, title: &str, art: Option<Art>) -> Song {
     Song { big: raster(title, -64, 700).unwrap(), small: raster(artist, -48, 400), line: raster(&line, -44, 400).unwrap(), art, key: line }
 }
 
+/// Not a song (a notification, a screenshot): the headline, the line under it, and both in one line.
+fn plain_song(big: &str, small: &str, line: &str) -> Song {
+    Song { big: raster(big, -64, 700).unwrap(), small: raster(small, -48, 400), line: raster(line, -44, 400).unwrap(), art: None, key: String::new() }
+}
+
 /// A made-up cover: a diagonal blend of two colors with a bright disc.
 fn cover(a: [f32; 3], b: [f32; 3], accent: [f32; 3]) -> Art {
     let mut px = Vec::with_capacity(ART_PX * ART_PX);
@@ -656,7 +661,7 @@ pub fn run(dir: &str) {
     );
 
     // 4. screenshots
-    let shot_song = Song { big: raster(en.snip_copied, -64, 700).unwrap(), small: raster("1920 × 1080", -48, 400), line: raster("Screenshot copied", -44, 400).unwrap(), art: None, key: String::new() };
+    let shot_song = plain_song(en.snip_copied, "1920 × 1080", "Screenshot copied");
     let mut copied_scene = capsule(ui::SONG, Kind::Song, 1.9);
     copied_scene.frame = true;
     copied_scene.song = Some(&shot_song);
@@ -684,7 +689,7 @@ pub fn run(dir: &str) {
     );
 
     // 5. notifications
-    let note_song = Song { big: raster("Deploy finished", -64, 700).unwrap(), small: raster("production · 2 minutes ago", -48, 400), line: raster("Deploy finished", -44, 400).unwrap(), art: None, key: String::new() };
+    let note_song = plain_song("Deploy finished", "production · 2 minutes ago", "Deploy finished");
     let mut bell_scene = capsule(ui::SONG, Kind::Song, 2.2);
     bell_scene.bell = true;
     bell_scene.song = Some(&note_song);
@@ -766,7 +771,7 @@ pub fn run(dir: &str) {
 
     // ---------------------------------------------------------------- numbers
     let mut stats = Canvas::solid(2400, 640, [0.0, 0.0, 0.0]);
-    let facts = [("0.7 MB", "one file. No installer,\nno runtime."), ("~0%", "CPU when nothing is\nhappening."), ("100 FPS", "paced by your display's\nvertical blank."), ("0", "telemetry. Nothing phones\nhome unless you ask.")];
+    let facts = [("0.5 MB", "one file. No installer,\nno runtime."), ("~0%", "CPU when nothing is\nhappening."), ("100 FPS", "paced by your display's\nvertical blank."), ("0", "telemetry. Nothing phones\nhome unless you ask.")];
     for (i, (big, small_text)) in facts.iter().enumerate() {
         let cx = 300.0 + i as f32 * 600.0;
         let b = type_bmp(big, 130, 600);

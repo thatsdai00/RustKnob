@@ -25,7 +25,7 @@ impl Px {
     /// 0xAARRGGBB, every channel scaled by `fade`.
     #[inline]
     pub fn pack(self, fade: f32) -> u32 {
-        let q = |v: f32| ((v * fade).clamp(0.0, 1.0) * 255.0 + 0.5) as u32;
+        let q = |v: f32| ((v * fade).fclamp(0.0, 1.0) * 255.0 + 0.5) as u32;
         q(self.a) << 24 | q(self.r) << 16 | q(self.g) << 8 | q(self.b)
     }
 }
@@ -35,7 +35,7 @@ pub const ARC_SWEEP: f32 = 270.0;
 
 #[inline]
 pub fn sstep(e0: f32, e1: f32, x: f32) -> f32 {
-    let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
+    let t = ((x - e0) / (e1 - e0)).fclamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
 }
 
@@ -47,7 +47,7 @@ pub fn lerp(a: f32, b: f32, t: f32) -> f32 {
 /// Anti-aliased coverage from a signed distance; `aa` is one pixel in logical units.
 #[inline]
 pub fn cov(sdf: f32, aa: f32) -> f32 {
-    (0.5 - sdf / aa).clamp(0.0, 1.0)
+    (0.5 - sdf / aa).fclamp(0.0, 1.0)
 }
 
 /// Rounded rectangle with half sizes `hw`,`hh` and corner radius `r`.
@@ -62,7 +62,7 @@ pub fn rrect(px: f32, py: f32, hw: f32, hh: f32, r: f32) -> f32 {
 pub fn seg(px: f32, py: f32, a: (f32, f32), b: (f32, f32), hw: f32) -> f32 {
     let (vx, vy) = (b.0 - a.0, b.1 - a.1);
     let (wx, wy) = (px - a.0, py - a.1);
-    let t = ((wx * vx + wy * vy) / (vx * vx + vy * vy).max(1e-6)).clamp(0.0, 1.0);
+    let t = ((wx * vx + wy * vy) / (vx * vx + vy * vy).max(1e-6)).fclamp(0.0, 1.0);
     ((wx - vx * t).powi(2) + (wy - vy * t).powi(2)).sqrt() - hw
 }
 
@@ -135,7 +135,7 @@ pub struct Digits {
 impl Digits {
     /// `value` is a fraction: 0.42 shows "42", 1.0 shows "100".
     pub fn percent(value: f32) -> Digits {
-        Digits::number((value * 100.0).round().clamp(0.0, 100.0) as u32)
+        Digits::number((value * 100.0).round().fclamp(0.0, 100.0) as u32)
     }
 
     pub fn number(n: u32) -> Digits {
@@ -176,7 +176,7 @@ impl Digits {
         for s in &self.segs[..self.n] {
             let (vx, vy) = (s.2 - s.0, s.3 - s.1);
             let (wx, wy) = (x - s.0, y - s.1);
-            let t = ((wx * vx + wy * vy) / (vx * vx + vy * vy).max(1e-6)).clamp(0.0, 1.0);
+            let t = ((wx * vx + wy * vy) / (vx * vx + vy * vy).max(1e-6)).fclamp(0.0, 1.0);
             let (cx, cy) = (wx - vx * t, wy - vy * t);
             best = best.min(cx * cx + cy * cy);
         }
@@ -281,3 +281,15 @@ pub fn note_sdf(x: f32, y: f32) -> f32 {
     let flag = seg(x, y, (0.9, -8.6), (7.0, -3.6), 1.4);
     head.min(stem).min(flag)
 }
+
+/// `f32::clamp` without its panic path, whose message formats the bounds as floats and so pulls all of float
+/// formatting into the exe (~13 KB). The same result for every input, NaN included (it stays NaN).
+pub trait FClamp: Sized + PartialOrd {
+    #[inline]
+    fn fclamp(self, lo: Self, hi: Self) -> Self {
+        if self < lo { lo } else if self > hi { hi } else { self }
+    }
+}
+
+impl FClamp for f32 {}
+impl FClamp for f64 {}

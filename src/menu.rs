@@ -22,8 +22,7 @@ pub fn remove_old_entries() {
         let _ = RegDeleteKeyW(HKEY_CURRENT_USER, OLD_VERB);
     }
     if package_registered() {
-        let script = format!("Get-AppxPackage -Name '{PACKAGE_NAME}' | Remove-AppxPackage");
-        crate::install::start(&crate::install::powershell(), &["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-Command", &script], true, true);
+        crate::autostart::powershell(&format!("Get-AppxPackage -Name '{PACKAGE_NAME}' | Remove-AppxPackage"));
     }
     notify_shell();
 }
@@ -43,7 +42,7 @@ fn package_registered() -> bool {
             if RegEnumKeyExW(key, index, PWSTR(name.as_mut_ptr()), &mut len, None, PWSTR::null(), None, None).is_err() {
                 break;
             }
-            if String::from_utf16_lossy(&name[..len as usize]).starts_with(&format!("{PACKAGE_NAME}_")) {
+            if String::from_utf16_lossy(&name[..len as usize]).strip_prefix(PACKAGE_NAME).is_some_and(|rest| rest.starts_with('_')) {
                 found = true;
                 break;
             }

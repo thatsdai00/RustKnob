@@ -4,6 +4,8 @@ use std::path::PathBuf;
 
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 
+use crate::install::{env_path, exe_dir};
+
 pub const STEPS: [u32; 5] = [1, 2, 3, 5, 10]; // wheel step choices, percent
 pub const NOTIFY_VOLUMES: [u32; 7] = [5, 10, 20, 30, 50, 75, 100]; // notification sound level choices, percent
 
@@ -90,12 +92,12 @@ impl Config {
         let Some(text) = find_ini().and_then(|p| std::fs::read_to_string(p).ok()) else { return cfg };
         for line in text.trim_start_matches('\u{feff}').lines().map(str::trim).filter(|l| !l.starts_with([';', '#'])) {
             let Some((key, val)) = line.split_once('=') else { continue };
-            let (key, val) = (key.trim().to_lowercase(), val.trim());
+            let (key, val) = (key.trim().to_ascii_lowercase(), val.trim());
             let flag = val != "0";
             match key.as_str() {
-                "hotkey" => cfg.hotkey = val.to_lowercase(),
-                "settings_hotkey" => cfg.settings_hotkey = val.to_lowercase(),
-                "history_hotkey" => cfg.history_hotkey = val.to_lowercase(),
+                "hotkey" => cfg.hotkey = val.to_ascii_lowercase(),
+                "settings_hotkey" => cfg.settings_hotkey = val.to_ascii_lowercase(),
+                "history_hotkey" => cfg.history_hotkey = val.to_ascii_lowercase(),
                 "step" => cfg.step = val.parse().unwrap_or(cfg.step).clamp(1, 25),
                 "hide_ms" => cfg.hide_ms = val.parse().unwrap_or(cfg.hide_ms).clamp(200, 10000),
                 "notify_song" | "title" => cfg.notify_song = flag,
@@ -135,8 +137,8 @@ impl Config {
              hotkey={}\nsettings_hotkey={}\nhistory_hotkey={}\n\
              ; tekerlek / ses tusu basina ses adimi (yuzde)\nstep={}\n\
              ; tekerlek birakildiktan sonra kapanma suresi (ms)\nhide_ms={}\n\
-             notify_song={}\nnotify_device={}\nvolume_keys={}\nclick_sound={}\nlow_power={}\nupload_sound={}\nscreenshot={}\npin_media={}\npin_fullscreen={}\npin_lyrics={}
-lyric_words={}\nmouse={}\ntray_battery={}\ndiscord={}\nauto_update={}\n\
+             notify_song={}\nnotify_device={}\nvolume_keys={}\nclick_sound={}\nlow_power={}\nupload_sound={}\nscreenshot={}\npin_media={}\npin_fullscreen={}\npin_lyrics={}\n\
+             lyric_words={}\nmouse={}\ntray_battery={}\ndiscord={}\nauto_update={}\n\
              ; ntfy bildirimleri: topic bos birakilirsa kapali. ntfy_sound: mp3/wav yolu (bos = yerlesik cin sesi).\n\
              ntfy_server={}\nntfy_topic={}\nntfy_token={}\nntfy_sound={}\nntfy_volume={}\n\
              ; sozler sesten ne kadar once gosterilsin (ms; gecikiyorsa artir, erken geliyorsa eksi yap)\nlyric_ahead_ms={}\n\
@@ -210,13 +212,9 @@ pub fn parse_hotkey(spec: &str, default_vk: u32) -> (HOT_KEY_MODIFIERS, u32) {
     (mods, vk)
 }
 
-fn exe_dir() -> PathBuf {
-    std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf())).unwrap_or_default()
-}
-
 /// Where settings live when there is no file beside the exe: %APPDATA%\\RustKnob.
 fn appdata_dir() -> PathBuf {
-    PathBuf::from(std::env::var("APPDATA").unwrap_or_default()).join("RustKnob")
+    env_path("APPDATA").join("RustKnob")
 }
 
 /// Next to the exe (portable / installed copy), two levels up (cargo's target/release during
@@ -234,7 +232,7 @@ fn find_ini() -> Option<PathBuf> {
         }
     }
     // %APPDATA%\DigitalKnob\digitalknob.ini from before the rename
-    let legacy = PathBuf::from(std::env::var("APPDATA").unwrap_or_default()).join("DigitalKnob").join("digitalknob.ini");
+    let legacy = env_path("APPDATA").join("DigitalKnob").join("digitalknob.ini");
     if legacy.exists() {
         let target = appdata_dir().join("rustknob.ini");
         let _ = std::fs::create_dir_all(appdata_dir());

@@ -153,12 +153,12 @@ pub struct Layer {
 impl Layer {
     /// `p`: 0 = in place, 1 = gone.
     pub fn leaving(kind: Kind, p: f32) -> Layer {
-        Layer { kind, alpha: 1.0 - sstep(0.0, 1.0, p.clamp(0.0, 1.0)) }
+        Layer { kind, alpha: 1.0 - sstep(0.0, 1.0, p.fclamp(0.0, 1.0)) }
     }
 
     /// `q`: 0 = just started, 1 = settled.
     pub fn entering(kind: Kind, q: f32) -> Layer {
-        Layer { kind, alpha: sstep(0.0, 1.0, q.clamp(0.0, 1.0)) }
+        Layer { kind, alpha: sstep(0.0, 1.0, q.fclamp(0.0, 1.0)) }
     }
 }
 
@@ -268,6 +268,12 @@ fn switch(p: &mut Px, lx: f32, ry: f32, t: f32, pal: &Palette, ca: f32, aa: f32)
 
 // ---- the Razer mouse ---------------------------------------------------------
 
+/// Fast at first, gentle at the end: `t` 0..1 (clamped).
+#[inline]
+fn ease_out(t: f32) -> f32 {
+    1.0 - (1.0 - t.fclamp(0.0, 1.0)).powi(3)
+}
+
 /// Battery colors: low, nearly empty, charging (darker on the light theme, so they read on it).
 fn battery_color(pal: &Palette, level: u8, charging: bool) -> [f32; 3] {
     match (charging, level, pal.light) {
@@ -294,7 +300,7 @@ fn battery_icon(p: &mut Px, x: f32, y: f32, k: f32, fill: f32, color: [f32; 3], 
     let outline = if color == pal.fg { pal.mix(0.55) } else { color };
     p.over(outline, ca * 0.9 * breathe * cov(rrect(x, y, 11.0, 6.0, 2.6).abs() - 0.7, aa));
     p.over(outline, ca * 0.9 * breathe * cov(rrect(x - 12.4, y, 1.0, 2.4, 1.0), aa));
-    let half = 8.9 * fill.clamp(0.0, 1.0); // the charge grows from the left end
+    let half = 8.9 * fill.fclamp(0.0, 1.0); // the charge grows from the left end
     if half > 0.05 {
         let body = cov(rrect(x + 8.9 - half, y, half, 4.0, half.min(1.6)), aa);
         p.over(color, ca * body);
@@ -374,7 +380,7 @@ fn mouse_others(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) {
         p.over(pal.dim, ca * text_left(name, tx - 60.0, ry, s.w - 60.0 - percent_w - 34.0, 0.0, unit));
     }
     if let Some(percent) = &o.percent {
-        p.over(color, ca * text_left(percent, tx - (s.w - 24.0 - percent_w), ry, percent_w, 0.0, unit));
+        p.over(color, ca * text_right(percent, tx, ry, s.w, 24.0, unit));
     }
 }
 
@@ -383,7 +389,7 @@ fn mouse_dpi_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) 
     mouse_others(p, tx, ty, aa, s, ca);
     let unit = 1.0 / aa;
     let ry = ty - s.h.min(ui::MOUSE_ROW_H) / 2.0; // the card's own row (others may follow below)
-    let e = 1.0 - (1.0 - m.intro.clamp(0.0, 1.0)).powi(3);
+    let e = ease_out(m.intro);
 
     mouse_art(p, m, tx - 16.0 + (1.0 - e) * 14.0, ry + 1.0, 38.0, unit, ca * e, pal.light);
 
@@ -393,7 +399,7 @@ fn mouse_dpi_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) 
     let number_w = m.dpi.map_or(0.0, |d| d.size().0);
     let cx = (16.0 + art_width(m, 38.0) + 10.0 + right) / 2.0;
     let left = cx - (number_w + label_w) / 2.0;
-    let rise = 1.0 - (1.0 - m.roll.clamp(0.0, 1.0)).powi(3);
+    let rise = ease_out(m.roll);
     let leave = sstep(0.0, 0.7, m.roll);
     const TRAVEL: f32 = 17.0;
     if let Some(old) = m.dpi_old.filter(|_| m.roll < 1.0) {
@@ -434,7 +440,7 @@ fn mouse_battery_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f
     let unit = 1.0 / aa;
     let ry = ty - s.h.min(ui::MOUSE_ROW_H) / 2.0;
     let color = battery_color(pal, m.level, m.charging);
-    let e = 1.0 - (1.0 - m.intro.clamp(0.0, 1.0)).powi(3);
+    let e = ease_out(m.intro);
     let pop = 0.82 + 0.18 * e + 0.06 * (std::f32::consts::PI * e).sin(); // a little overshoot as it lands
     battery_icon(p, tx - 42.0, ry, 1.65 * pop, m.fill, color, m.charging.then_some(s.marq), pal, ca, aa);
     let percent_w = m.percent.map_or(0.0, |t| t.size().0);
@@ -443,7 +449,7 @@ fn mouse_battery_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f
         p.over(if m.level == 2 { color } else { pal.fg }, ca * text_left(warn, tx - 76.0, ry, view, 0.0, unit));
     }
     if let Some(percent) = m.percent {
-        p.over(color, ca * text_left(percent, tx - (s.w - 24.0 - percent_w), ry, percent_w, 0.0, unit));
+        p.over(color, ca * text_right(percent, tx, ry, s.w, 24.0, unit));
     }
 }
 
@@ -454,16 +460,15 @@ pub const LINK_REST: f32 = 0.6; // the name, the battery and the other devices' 
 
 fn mouse_link_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) {
     let (Some(m), pal) = (&s.mouse, &s.pal) else { return };
-    let t = m.intro.clamp(0.0, 1.0);
-    let ease = |x: f32| 1.0 - (1.0 - x.clamp(0.0, 1.0)).powi(3);
-    let appear = ease(t / 0.25);
+    let t = m.intro.fclamp(0.0, 1.0);
+    let appear = ease_out(t / 0.25);
     let travel = sstep(LINK_MOVE.0, LINK_MOVE.1, t);
-    let rest = ease((t - LINK_REST) / (1.0 - LINK_REST));
+    let rest = ease_out((t - LINK_REST) / (1.0 - LINK_REST));
     mouse_others(p, tx, ty, aa, s, ca * rest);
     let unit = 1.0 / aa;
 
     // the picture: large and centered on the whole card, then 38 tall at the left of its own row
-    let big = (s.h - 14.0).clamp(38.0, 64.0) * (0.86 + 0.14 * appear);
+    let big = (s.h - 14.0).fclamp(38.0, 64.0) * (0.86 + 0.14 * appear);
     // from where it ends, so the settled card is exactly the one without the intro
     let back = |end: f32, start: f32| end + (start - end) * (1.0 - travel);
     let h = back(38.0, big);
@@ -543,12 +548,12 @@ struct PinFrame<'a> {
 
 fn pin_frame<'a>(s: &Scene<'a>) -> Option<PinFrame<'a>> {
     let (v, pal) = (s.pin.as_ref()?, &s.pal);
-    let row = if v.tall { 24.0 + 4.0 * ((s.h - 48.0) / 32.0).clamp(0.0, 1.0) } else { s.h / 2.0 };
+    let row = if v.tall { 24.0 + 4.0 * ((s.h - 48.0) / 32.0).fclamp(0.0, 1.0) } else { s.h / 2.0 };
     let k = if pal.light { 0.55 / 255.0 } else { 1.0 / 255.0 }; // darker on the light theme
     let tint = |song: Option<&Song>| song.and_then(|x| x.art.as_ref()).map_or([235.0; 3], |a| a.accent);
 
     // 0 = the old song, 1 = the new one
-    let swap = v.swap.clamp(0.0, 1.0);
+    let swap = v.swap.fclamp(0.0, 1.0);
     let (old, new) = (v.prev, v.song);
     let into = sstep(0.0, 1.0, swap);
     let accent_now = std::array::from_fn::<f32, 3, _>(|c| lerp(tint(old)[c], tint(new)[c], into) * k);
@@ -557,18 +562,17 @@ fn pin_frame<'a>(s: &Scene<'a>) -> Option<PinFrame<'a>> {
     if v.prev.is_some() {
         let back = |t: f32| {
             // overshoots a little before it settles
-            let t = t.clamp(0.0, 1.0) - 1.0;
+            let t = t.fclamp(0.0, 1.0) - 1.0;
             1.0 + 2.70158 * t * t * t + 1.70158 * t * t
         };
         motion[0] = (new, sstep(0.25, 1.0, swap), (1.0 - sstep(0.0, 1.0, swap)) * 18.0, 0.78 + 0.22 * back(swap)); // arriving
         motion[1] = (old, 1.0 - sstep(0.0, 0.55, swap), -sstep(0.0, 1.0, swap) * 18.0, 1.0 - 0.18 * sstep(0.0, 0.6, swap)); // leaving
     }
     let layers = motion.map(|(song, alpha, slide, scale)| {
-        let accent = song.and_then(|x| x.art.as_ref()).map_or([235.0; 3], |a| a.accent).map(|c| c * k);
-        let accent = if v.prev.is_some() { accent_now } else { accent };
+        let accent = if v.prev.is_some() { accent_now } else { tint(song).map(|c| c * k) };
         (song, alpha, slide, scale, accent, accent.map(|c| c * 0.72))
     });
-    let rise = 1.0 - (1.0 - v.lyric_swap.clamp(0.0, 1.0)).powi(3);
+    let rise = ease_out(v.lyric_swap);
     let leave = sstep(0.0, 1.0, v.lyric_swap);
     Some(PinFrame { row, accent_now, layers, rise, leave })
 }
@@ -586,7 +590,7 @@ pub fn render(buf: &mut [u32], pw: usize, ph: usize, rect: (usize, usize, usize,
     ];
 
     let up_digits = Digits::percent(s.upload.as_ref().map_or(0.0, |u| u.progress));
-    let prog = s.volume.clamp(0.0, 1.0) * ARC_SWEEP;
+    let prog = s.volume.fclamp(0.0, 1.0) * ARC_SWEEP;
     let knob = KnobGeom {
         track_caps: arc_caps(RING_R, ARC_SWEEP),
         prog_caps: arc_caps(RING_R, prog),
@@ -860,25 +864,38 @@ fn slot_icon(p: &mut Px, lx: f32, ly: f32, aa: f32, s: &Scene, ca: f32, glyph: f
     }
 }
 
+/// A progress bar from x = 52 to `w - 70` (at least `min_end`) on the row at `ry` = 0, filled to `level` 0..1
+/// (`fill`: drawn at all), and the percent after it.
+#[allow(clippy::too_many_arguments)]
+fn meter(p: &mut Px, tx: f32, ry: f32, aa: f32, s: &Scene, ca: f32, min_end: f32, level: f32, fill: bool, digits: &Digits) {
+    let pal = &s.pal;
+    let (x0, x1) = (52.0, (s.w - 70.0).max(min_end));
+    let len = x1 - x0;
+    let mid = |l: f32| x0 + l / 2.0;
+    p.over(pal.mix(0.24), ca * cov(rrect(tx - mid(len), ry, len / 2.0, 3.0, 3.0), aa));
+    let done = (len * level).max(6.0);
+    if fill {
+        p.over(pal.fg, ca * cov(rrect(tx - mid(done), ry, done / 2.0, 3.0, 3.0), aa));
+    }
+    small_digits(p, digits, tx - (s.w - 34.0), ry, (44.0, 22.0), pal, ca, aa);
+}
+
+/// 7-segment digits at half size, centered on (x, y) = 0; `reach` is how far they can draw (in digit space).
+#[allow(clippy::too_many_arguments)]
+fn small_digits(p: &mut Px, digits: &Digits, x: f32, y: f32, reach: (f32, f32), pal: &Palette, ca: f32, aa: f32) {
+    let (xd, yd) = (x / 0.5, y / 0.5);
+    if xd.abs() < reach.0 && yd.abs() < reach.1 {
+        p.over(pal.text, ca * 0.95 * cov((digits.dist(xd, yd) - DIGIT_STROKE) * 0.5, aa));
+    }
+}
+
 fn volume_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32, digits: &Digits) {
     let pal = &s.pal;
     let row = 24.0;
     let glyph = speaker_sdf(tx - 26.0, ty - row, s.volume, s.muted);
     slot_icon(p, tx - 26.0, ty - row, aa, s, ca, glyph);
 
-    let (x0, x1) = (52.0, (s.w - 70.0).max(100.0));
-    let len = x1 - x0;
-    let mid = |l: f32| x0 + l / 2.0;
-    p.over(pal.mix(0.24), ca * cov(rrect(tx - mid(len), ty - row, len / 2.0, 3.0, 3.0), aa));
-    let fill = (len * s.volume).max(6.0);
-    if s.volume > 0.003 {
-        p.over(pal.fg, ca * cov(rrect(tx - mid(fill), ty - row, fill / 2.0, 3.0, 3.0), aa));
-    }
-
-    let (xd, yd) = ((tx - (s.w - 34.0)) / 0.5, (ty - row) / 0.5);
-    if xd.abs() < 44.0 && yd.abs() < 22.0 {
-        p.over(pal.text, ca * 0.95 * cov((digits.dist(xd, yd) - DIGIT_STROKE) * 0.5, aa));
-    }
+    meter(p, tx, ty - row, aa, s, ca, 100.0, s.volume, s.volume > 0.003, digits);
 
     if let Some(sub) = s.sub {
         p.over(pal.dim, ca * 0.95 * text_mid(sub, tx, ty - 52.0, 20.0, s.w - 40.0, s.marq, 1.0 / aa));
@@ -900,7 +917,6 @@ fn pinned_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32, f: 
     let (Some(v), pal) = (&s.pin, &s.pal) else { return };
     // the cover, title and visualizer sit at f.row: a little higher while the capsule is tall
     let ry = ty - f.row;
-    let accent_now = f.accent_now;
 
     for &(song, alpha, slide, scale, accent, dim) in &f.layers {
         if alpha <= 0.003 {
@@ -916,16 +932,8 @@ fn pinned_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32, f: 
                 match song.and_then(|x| x.art.as_ref()) {
                     Some(art) => {
                         let n = ART_PX as f32;
-                        let (u, w) = ((ax + 17.0) / 34.0 * n - 0.5, (ay + 17.0) / 34.0 * n - 0.5);
-                        let (u, w) = (u.clamp(0.0, n - 1.001), w.clamp(0.0, n - 1.001));
-                        let (x0, y0) = (u as usize, w as usize);
-                        let (fx, fy) = (u - x0 as f32, w - y0 as f32);
-                        let at = |x: usize, y: usize, shift: u32| ((art.px[y * ART_PX + x] >> shift) & 0xFF) as f32;
-                        let mix = |shift: u32| {
-                            let top = at(x0, y0, shift) * (1.0 - fx) + at(x0 + 1, y0, shift) * fx;
-                            let bot = at(x0, y0 + 1, shift) * (1.0 - fx) + at(x0 + 1, y0 + 1, shift) * fx;
-                            (top * (1.0 - fy) + bot * fy) / 255.0
-                        };
+                        let at = ArtSample::new(&art.px, (ax + 17.0) / 34.0 * n - 0.5, (ay + 17.0) / 34.0 * n - 0.5);
+                        let mix = |shift: u32| at.mix(shift, |b| b) / 255.0;
                         p.over([mix(16), mix(8), mix(0)], ca * a);
                     }
                     None => {
@@ -958,7 +966,7 @@ fn pinned_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32, f: 
             let (rise, leave) = (f.rise, f.leave);
             let mut line = |tb: Option<&TextBmp>, off: f32, fill: Option<f32>| {
                 if let Some(tb) = tb {
-                    p.over(accent_now, ca * mask * text_fit(tb, tx, ty - (60.0 + off), left, view, unit, fill));
+                    p.over(f.accent_now, ca * mask * text_fit(tb, tx, ty - (60.0 + off), left, view, unit, fill));
                 }
             };
             if v.lyric_swap < 1.0 {
@@ -971,13 +979,38 @@ fn pinned_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32, f: 
     }
 
     // visualizer: five rounded bars
-    let accent = accent_now;
     let vx = tx - (s.w - 27.0);
     if vx.abs() < 18.0 && ry.abs() < 14.0 {
         for (i, level) in v.bars.iter().enumerate() {
             let half = 2.0 + 9.0 * level;
-            p.over(accent, ca * cov(rrect(vx - (i as f32 - 2.0) * 5.5, ry, 1.35, half, 1.35), aa));
+            p.over(f.accent_now, ca * cov(rrect(vx - (i as f32 - 2.0) * 5.5, ry, 1.35, half, 1.35), aa));
         }
+    }
+}
+
+/// Bilinear sampling of an ART_PX x ART_PX 0xAARRGGBB image (media.rs) at texel (u, v), clamped to the image.
+struct ArtSample<'a> {
+    px: &'a [u32],
+    x0: usize,
+    y0: usize,
+    fx: f32,
+    fy: f32,
+}
+
+impl ArtSample<'_> {
+    fn new(px: &[u32], u: f32, v: f32) -> ArtSample<'_> {
+        let n = ART_PX as f32;
+        let (u, v) = (u.fclamp(0.0, n - 1.001), v.fclamp(0.0, n - 1.001));
+        let (x0, y0) = (u as usize, v as usize);
+        ArtSample { px, x0, y0, fx: u - x0 as f32, fy: v - y0 as f32 }
+    }
+
+    /// One channel (`shift`); `texel` scales each texel's byte before the blend.
+    #[inline]
+    fn mix(&self, shift: u32, texel: impl Fn(f32) -> f32) -> f32 {
+        let (x0, y0, fx, fy) = (self.x0, self.y0, self.fx, self.fy);
+        let at = |x: usize, y: usize| texel(((self.px[y * ART_PX + x] >> shift) & 0xFF) as f32);
+        (at(x0, y0) * (1.0 - fx) + at(x0 + 1, y0) * fx) * (1.0 - fy) + (at(x0, y0 + 1) * (1.0 - fx) + at(x0 + 1, y0 + 1) * fx) * fy
     }
 }
 
@@ -986,12 +1019,9 @@ fn app_icon_at(p: &mut Px, art: &crate::media::Art, x: f32, y: f32, half: f32, c
     if x.abs() >= half || y.abs() >= half {
         return;
     }
-    let n = crate::media::ART_PX as f32;
-    let (u, v) = (((x / half + 1.0) / 2.0 * n - 0.5).clamp(0.0, n - 1.001), ((y / half + 1.0) / 2.0 * n - 0.5).clamp(0.0, n - 1.001));
-    let (x0, y0) = (u as usize, v as usize);
-    let (fx, fy) = (u - x0 as f32, v - y0 as f32);
-    let at = |x: usize, y: usize, shift: u32| ((art.px[y * crate::media::ART_PX + x] >> shift) & 0xFF) as f32 / 255.0;
-    let mix = |shift: u32| (at(x0, y0, shift) * (1.0 - fx) + at(x0 + 1, y0, shift) * fx) * (1.0 - fy) + (at(x0, y0 + 1, shift) * (1.0 - fx) + at(x0 + 1, y0 + 1, shift) * fx) * fy;
+    let n = ART_PX as f32;
+    let at = ArtSample::new(&art.px, (x / half + 1.0) / 2.0 * n - 0.5, (y / half + 1.0) / 2.0 * n - 0.5);
+    let mix = |shift: u32| at.mix(shift, |b| b / 255.0);
     let a = mix(24);
     if a > 0.002 {
         p.over([mix(16) / a, mix(8) / a, mix(0) / a], ca * a);
@@ -1068,10 +1098,7 @@ fn settings_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32, s
                 p.over(pal.fg, ca * cov(rrect(lx, ry, 1.0, 4.5, 1.0), aa));
             }
         }
-        let (xd, yd) = ((tx - (w - ui::STEP_VALUE_X)) / 0.5, ry / 0.5);
-        if xd.abs() < 30.0 && yd.abs() < 20.0 {
-            p.over(pal.text, ca * 0.95 * cov((step_digits.dist(xd, yd) - DIGIT_STROKE) * 0.5, aa));
-        }
+        small_digits(p, step_digits, tx - (w - ui::STEP_VALUE_X), ry, (30.0, 20.0), pal, ca, aa);
     } else if field_row {
         // an input box with the value inside
         let editing = v.editing == Some(row);
@@ -1109,14 +1136,14 @@ fn settings_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32, s
 fn knob_content(p: &mut Px, dx: f32, dy: f32, aa: f32, s: &Scene, ca: f32, k: &KnobGeom, digits: &Digits) {
     let pal = &s.pal;
     let d = dx.hypot(dy);
-    let v = s.volume.clamp(0.0, 1.0);
+    let v = s.volume.fclamp(0.0, 1.0);
 
     // ticks, track and progress arc
     if d > 74.0 && d < RING_R + RING_HW + 4.0 {
         let ang = (fast_atan2_deg(dy, dx) - ARC_START).rem_euclid(360.0);
 
         if d > 82.0 && d < 94.0 {
-            let idx = (ang / 10.0).round().clamp(0.0, 27.0);
+            let idx = (ang / 10.0).round().fclamp(0.0, 27.0);
             let (tx, ty) = k.ticks[idx as usize];
             let dd = ((dx - tx).powi(2) + (dy - ty).powi(2)).sqrt() - 1.5;
             if idx * 10.0 <= k.prog + 0.5 && v > 0.003 {
@@ -1137,7 +1164,7 @@ fn knob_content(p: &mut Px, dx: f32, dy: f32, aa: f32, s: &Scene, ca: f32, k: &K
     let (isn, ics) = k.indicator;
     let (lx, ly) = (dx * ics + dy * isn, -dx * isn + dy * ics);
     if d < 72.0 && lx > 28.0 && lx < 66.0 && ly.abs() < 14.0 {
-        let px = lx.clamp(41.0, 57.0);
+        let px = lx.fclamp(41.0, 57.0);
         p.over(pal.fg, ca * cov(((lx - px).powi(2) + ly * ly).sqrt() - 2.5, aa));
     }
 
@@ -1193,16 +1220,7 @@ fn upload_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32, dig
         if let Some(info) = u.info {
             p.over(pal.dim, ca * 0.95 * text_right(info, tx, ty - 24.0, s.w, 18.0, unit));
         }
-        let (x0, x1) = (52.0, (s.w - 70.0).max(120.0));
-        let len = x1 - x0;
-        let mid = |l: f32| x0 + l / 2.0;
-        p.over(pal.mix(0.24), ca * cov(rrect(tx - mid(len), ty - 50.0, len / 2.0, 3.0, 3.0), aa));
-        let fill = (len * u.progress).max(6.0);
-        p.over(pal.fg, ca * cov(rrect(tx - mid(fill), ty - 50.0, fill / 2.0, 3.0, 3.0), aa));
-        let (xd, yd) = ((tx - (s.w - 34.0)) / 0.5, (ty - 50.0) / 0.5);
-        if xd.abs() < 44.0 && yd.abs() < 22.0 {
-            p.over(pal.text, ca * 0.95 * cov((digits.dist(xd, yd) - DIGIT_STROKE) * 0.5, aa));
-        }
+        meter(p, tx, ty - 50.0, aa, s, ca, 120.0, u.progress, true, digits);
     } else {
         let color = if u.phase == UploadPhase::Failed { pal.red } else { pal.text };
         if let Some(msg) = u.msg {

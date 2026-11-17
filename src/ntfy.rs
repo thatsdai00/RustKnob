@@ -7,12 +7,13 @@ use std::sync::atomic::{AtomicIsize, AtomicU32, Ordering};
 use std::sync::{Condvar, Mutex};
 use std::time::Duration;
 
-use windows::core::{w, HSTRING, PCWSTR};
+use windows::core::w;
 use windows::Win32::Foundation::*;
 use windows::Win32::Networking::WinHttp::*;
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 use crate::config::Config;
+use crate::{json, net};
 
 pub struct Notice {
     pub title: String,
@@ -60,65 +61,49 @@ pub fn start(cfg: &Config, hwnd: isize, msg: u32) {
     });
 }
 
-/// "https://ntfy.sh" -> (secure, host, port)
-fn parse_server(server: &str) -> (bool, String, u16) {
+/// "https://ntfy.sh" (the scheme may be left out) -> the topic's stream on it
+fn stream_url(server: &str, topic: &str) -> net::Url {
     let s = server.trim().trim_end_matches('/');
     let (secure, rest) = match s.strip_prefix("http://") {
         Some(r) => (false, r),
         None => (true, s.strip_prefix("https://").unwrap_or(s)),
     };
-    match rest.rsplit_once(':').and_then(|(h, p)| p.parse::<u16>().ok().map(|p| (h, p))) {
-        Some((h, p)) => (secure, h.to_string(), p),
-        None => (secure, rest.to_string(), if secure { 443 } else { 80 }),
-    }
+    let (host, port) = net::host_port(rest, secure);
+    net::Url { secure, host, port, target: format!("/{topic}/json") }
 }
 
 /// One connection; returns true when it received anything (so the retry delay can reset).
 unsafe fn stream(server: &str, topic: &str, token: &str, hwnd: isize, msg: u32, gen: u32) -> bool {
-    let (secure, host, port) = parse_server(server);
-    let session = WinHttpOpen(w!("RustKnob"), WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, PCWSTR::null(), PCWSTR::null(), 0);
+    let session = net::session(w!("RustKnob"));
     if session.is_null() {
         return false;
     }
     let mut got_data = false;
-    let host_w = HSTRING::from(host);
-    let connection = WinHttpConnect(session, &host_w, port, 0);
-    if !connection.is_null() {
-        let path = HSTRING::from(format!("/{topic}/json"));
-        let flags = if secure { WINHTTP_FLAG_SECURE } else { WINHTTP_OPEN_REQUEST_FLAGS(0) };
-        let request = WinHttpOpenRequest(connection, w!("GET"), &path, PCWSTR::null(), PCWSTR::null(), std::ptr::null(), flags);
-        if !request.is_null() {
-            if !token.is_empty() {
-                let header: Vec<u16> = format!("Authorization: Bearer {token}").encode_utf16().collect();
-                let _ = WinHttpAddRequestHeaders(request, &header, WINHTTP_ADDREQ_FLAG_ADD);
-            }
-            // keepalives arrive about every 45 s: two minutes of silence means the link is dead
-            let _ = WinHttpSetTimeouts(request, 0, 30_000, 30_000, 120_000);
-            // an older listener must not take the slot of a newer one (a restart could not close the newer one then)
-            let mine = GEN.load(Ordering::SeqCst) == gen && ACTIVE.compare_exchange(0, request as isize, Ordering::SeqCst, Ordering::SeqCst).is_ok();
-            if mine
-                && GEN.load(Ordering::SeqCst) == gen
-                && WinHttpSendRequest(request, None, None, 0, 0, 0).is_ok()
-                && WinHttpReceiveResponse(request, std::ptr::null_mut()).is_ok()
-                && status_code(request) == 200 // an error page (wrong token, no such topic) is not a stream: back off
-            {
-                got_data = read_lines(request, hwnd, msg, gen);
-            }
-            // a restart may already have closed it
-            if !mine || ACTIVE.compare_exchange(request as isize, 0, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
-                let _ = WinHttpCloseHandle(request);
-            }
+    if let Some((connection, request)) = net::open_request(session, w!("GET"), &stream_url(server, topic)) {
+        if !token.is_empty() {
+            let header: Vec<u16> = format!("Authorization: Bearer {token}").encode_utf16().collect();
+            let _ = WinHttpAddRequestHeaders(request, &header, WINHTTP_ADDREQ_FLAG_ADD);
+        }
+        // keepalives arrive about every 45 s: two minutes of silence means the link is dead
+        let _ = WinHttpSetTimeouts(request, 0, 30_000, 30_000, 120_000);
+        // an older listener must not take the slot of a newer one (a restart could not close the newer one then)
+        let mine = GEN.load(Ordering::SeqCst) == gen && ACTIVE.compare_exchange(0, request as isize, Ordering::SeqCst, Ordering::SeqCst).is_ok();
+        if mine
+            && GEN.load(Ordering::SeqCst) == gen
+            && WinHttpSendRequest(request, None, None, 0, 0, 0).is_ok()
+            && WinHttpReceiveResponse(request, std::ptr::null_mut()).is_ok()
+            && net::status_code(request) == 200 // an error page (wrong token, no such topic) is not a stream: back off
+        {
+            got_data = read_lines(request, hwnd, msg, gen);
+        }
+        // a restart may already have closed it
+        if !mine || ACTIVE.compare_exchange(request as isize, 0, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+            let _ = WinHttpCloseHandle(request);
         }
         let _ = WinHttpCloseHandle(connection);
     }
     let _ = WinHttpCloseHandle(session);
     got_data
-}
-
-unsafe fn status_code(request: *mut c_void) -> u32 {
-    let (mut code, mut size) = (0u32, 4u32);
-    let _ = WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, PCWSTR::null(), Some(&mut code as *mut u32 as *mut c_void), &mut size, std::ptr::null_mut());
-    code
 }
 
 unsafe fn read_lines(request: *mut c_void, hwnd: isize, msg: u32, gen: u32) -> bool {
@@ -153,11 +138,11 @@ unsafe fn read_lines(request: *mut c_void, hwnd: isize, msg: u32, gen: u32) -> b
 
 /// Only `"event":"message"` lines count (the stream also carries open / keepalive events).
 fn parse_line(line: &str) -> Option<Notice> {
-    if crate::json::str_field(line, "event")? != "message" {
+    if json::str_field(line, "event")? != "message" {
         return None;
     }
-    let message = crate::json::str_field(line, "message").unwrap_or_default();
-    let title = crate::json::str_field(line, "title").unwrap_or_default();
+    let message = json::str_field(line, "message").unwrap_or_default();
+    let title = json::str_field(line, "title").unwrap_or_default();
     if message.is_empty() && title.is_empty() {
         return None;
     }

@@ -180,7 +180,7 @@ unsafe fn discord_window() -> Option<HWND> {
     unsafe extern "system" fn each(hwnd: HWND, found: LPARAM) -> BOOL {
         let mut class = [0u16; 32];
         let n = GetClassNameW(hwnd, &mut class) as usize;
-        if String::from_utf16_lossy(&class[..n]) == "Chrome_WidgetWin_1" && GetWindowTextLengthW(hwnd) > 0 && is_discord(hwnd) {
+        if class[..n].iter().copied().eq("Chrome_WidgetWin_1".encode_utf16()) &&GetWindowTextLengthW(hwnd) > 0 && is_discord(hwnd) {
             *(found.0 as *mut Option<HWND>) = Some(hwnd);
             return false.into();
         }
@@ -192,6 +192,6 @@ unsafe fn discord_window() -> Option<HWND> {
 }
 
 unsafe fn is_discord(hwnd: HWND) -> bool {
-    let name = exe_path(hwnd).unwrap_or_default().to_lowercase();
+    let name = exe_path(hwnd).unwrap_or_default().to_ascii_lowercase();
     ["\\discord.exe", "\\discordptb.exe", "\\discordcanary.exe"].iter().any(|n| name.ends_with(n))
 }

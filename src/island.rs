@@ -17,6 +17,7 @@ use windows::Win32::System::Threading::*;
 use windows::Win32::UI::HiDpi::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
+use crate::gfx::FClamp;
 use crate::mouse;
 use crate::dragsrc;
 use crate::pace;
@@ -398,13 +399,18 @@ fn st() -> &'static mut State {
 
 fn settings_open() -> bool {
     let s = st();
-    s.visible && !s.closing && s.kind == Kind::Settings
+    s.live() && s.kind == Kind::Settings
 }
 
-/// A clickable panel is up (settings, link history or setup).
+/// Settings, link history and setup: clickable panels.
+fn is_panel(kind: Kind) -> bool {
+    matches!(kind, Kind::Settings | Kind::History | Kind::Setup)
+}
+
+/// A clickable panel is up.
 fn panel_open() -> bool {
     let s = st();
-    s.live() && matches!(s.kind, Kind::Settings | Kind::History | Kind::Setup)
+    s.live() && is_panel(s.kind)
 }
 
 impl State {
@@ -544,9 +550,14 @@ impl State {
         }
     }
 
-    fn toggle_targets(&self) -> [f32; ui::TOGGLES] {
-        let c = &self.cfg;
-        [c.click_sound, c.notify_song, c.notify_device, c.volume_keys, c.low_power, c.upload_sound, c.screenshot, c.pin_media, c.pin_fullscreen, c.pin_lyrics, c.lyric_words, c.mouse, c.tray_battery, c.auto_update, self.autostart, c.discord].map(|b| f32::from(u8::from(b)))
+    /// The settings switches, in the panel's order.
+    fn switches(&mut self) -> [&mut bool; ui::TOGGLES] {
+        let c = &mut self.cfg;
+        [&mut c.click_sound, &mut c.notify_song, &mut c.notify_device, &mut c.volume_keys, &mut c.low_power, &mut c.upload_sound, &mut c.screenshot, &mut c.pin_media, &mut c.pin_fullscreen, &mut c.pin_lyrics, &mut c.lyric_words, &mut c.mouse, &mut c.tray_battery, &mut c.auto_update, &mut self.autostart, &mut c.discord]
+    }
+
+    fn toggle_targets(&mut self) -> [f32; ui::TOGGLES] {
+        self.switches().map(|b| f32::from(u8::from(*b)))
     }
 
     /// Screen-space rectangle of the shape at its target (for the mouse hook).
@@ -561,7 +572,7 @@ impl State {
         let ui_open = self.volume_ui();
         CAPTURE_WHEEL.store(ui_open || (self.live() && self.kind == Kind::History), Relaxed);
         CAPTURE_BUTTONS.store(ui_open, Relaxed);
-        SETTINGS_OPEN.store(self.live() && matches!(self.kind, Kind::Settings | Kind::History | Kind::Setup), Relaxed);
+        SETTINGS_OPEN.store(self.live() && is_panel(self.kind), Relaxed);
         set_hover_track(self.live() && matches!(self.kind, Kind::Volume | Kind::Song | Kind::Knob | Kind::Upload));
         // the pinned capsule steps aside for the pointer (the reach scales with the screen)
         set_fade_track(self.live() && self.fades(), (PIN_FADE_REACH * self.unit_goal) as i32);
@@ -616,7 +627,7 @@ fn read_volume(s: &mut State) {
 
 /// Settings, history and setup are dense, so they are drawn larger than the volume capsule and knob.
 fn kind_scale(s: &State, kind: Kind) -> f32 {
-    if matches!(kind, Kind::Settings | Kind::History | Kind::Setup) { s.boost } else { s.fit }
+    if is_panel(kind) { s.boost } else { s.fit }
 }
 
 // ---- lifecycle -------------------------------------------------------------
@@ -649,8 +660,6 @@ unsafe fn open(hwnd: HWND, kind: Kind, manual: bool, hide: Option<u32>) {
         read_volume(s);
         s.disp = s.want();
         crate::efficiency_mode(false); // full speed while it is on screen
-    }
-    if fresh {
         s.kind = kind;
     } else {
         s.set_kind(kind);
@@ -687,10 +696,10 @@ unsafe fn place(s: &mut State, mon: HMONITOR, kind: Kind) {
     s.base = dpi_x as f32 / 96.0;
     // panels grow with the screen: 1.0 up to 1080 logical px tall, 1.33 at 1440, at most 1.6
     let tall = (mi.rcMonitor.bottom - mi.rcMonitor.top) as f32 / s.base; // logical px
-    s.boost = (tall / 1080.0).clamp(1.0, 1.6);
+    s.boost = (tall / 1080.0).fclamp(1.0, 1.6);
     // the capsules are drawn for a 1440 px tall screen: on a smaller one they keep their share of it
     // (0.75 at 1080), never smaller than that, never larger than drawn
-    s.fit = (tall / 1440.0).clamp(0.75, 1.0);
+    s.fit = (tall / 1440.0).fclamp(0.75, 1.0);
     s.unit_goal = s.base * kind_scale(s, kind);
     s.unit = s.unit_goal;
     let (pw, ph) = ((ui::WIN_W * s.base * s.boost).round() as usize, (ui::WIN_H * s.base * s.boost).round() as usize);
@@ -746,47 +755,34 @@ unsafe fn begin_close(hwnd: HWND) {
     }
     end_edit(hwnd, true);
     // a nearly empty mouse battery stays on show: whatever else was up gives way to its warning
-    if s.mouse.crit && s.cfg.mouse {
+    let hide = if s.mouse.crit && s.cfg.mouse {
         if s.kind == Kind::MouseBattery {
             return; // it stays until the mouse charges (mouse_event clears crit first)
         }
         mouse_warning(s, true);
         s.set_kind(Kind::MouseBattery);
         s.manual = false;
-        s.apply_targets();
-        s.sync_hooks();
-        hide_after(hwnd, None);
-        s.last_tick = Some(Instant::now());
-        frames(hwnd);
-        return;
-    }
-    if std::mem::take(&mut s.mouse.low_pending) && s.cfg.mouse && s.kind == Kind::MouseLink {
+        None
+    } else if std::mem::take(&mut s.mouse.low_pending) && s.cfg.mouse && s.kind == Kind::MouseLink {
         mouse_warning(s, false);
         s.set_kind(Kind::MouseBattery);
-        s.apply_targets();
-        s.sync_hooks();
-        hide_after(hwnd, Some(MOUSE_LOW_MS));
-        s.last_tick = Some(Instant::now());
-        frames(hwnd);
-        return;
-    }
-    // with the media pinned, whatever was on show gives way to it instead of shrinking to the dot
-    if s.kind != Kind::Pinned && s.pin_wanted() {
+        Some(MOUSE_LOW_MS)
+    } else if s.kind != Kind::Pinned && s.pin_wanted() {
+        // with the media pinned, whatever was on show gives way to it instead of shrinking to the dot
         s.set_kind(Kind::Pinned);
         (s.manual, s.song, s.marq) = (false, media::song(), 0.0);
+        None
+    } else {
+        // first the elements fade out, then the shape shrinks back to the dot (see tick)
+        (s.closing, s.close_phase) = (true, 1);
+        (s.delay, s.queued, s.staged) = (0.0, false, None);
+        None
+    };
+    if !s.closing {
         s.apply_targets();
-        s.sync_hooks();
-        hide_after(hwnd, None);
-        s.last_tick = Some(Instant::now());
-        frames(hwnd);
-        return;
     }
-    // first the elements fade out, then the shape shrinks back to the dot (see tick)
-    s.closing = true;
-    s.close_phase = 1;
-    (s.delay, s.queued, s.staged) = (0.0, false, None);
     s.sync_hooks();
-    hide_after(hwnd, None);
+    hide_after(hwnd, hide);
     s.last_tick = Some(Instant::now());
     frames(hwnd);
 }
@@ -891,7 +887,7 @@ unsafe fn change_volume(s: &mut State, delta: f32, toggle_mute: bool) {
         s.muted = false;
     }
     let old = s.vol;
-    s.vol = (s.vol + delta * s.cfg.step_fraction()).clamp(0.0, 1.0);
+    s.vol = (s.vol + delta * s.cfg.step_fraction()).fclamp(0.0, 1.0);
     let _ = ep.SetMasterVolumeLevelScalar(s.vol, std::ptr::null());
     if s.vol != old && s.cfg.click_sound {
         s.clicker.get_or_insert_with(Clicker::new).play(ep);
@@ -926,15 +922,16 @@ unsafe fn volume_key(hwnd: HWND, which: usize) {
         return;
     }
     let manual = s.live() && s.manual;
+    let hide = Some(if manual { linger_ms(s.cfg.hide_ms) } else { HIDE_VOLUME_KEY_MS });
     if s.live() && s.kind == Kind::Knob {
         frames(hwnd);
-        hide_after(hwnd, Some(if manual { linger_ms(s.cfg.hide_ms) } else { HIDE_VOLUME_KEY_MS }));
+        hide_after(hwnd, hide);
         return;
     }
     if !s.visible {
         s.device_line = None;
     }
-    open(hwnd, Kind::Volume, manual, Some(if manual { linger_ms(s.cfg.hide_ms) } else { HIDE_VOLUME_KEY_MS }));
+    open(hwnd, Kind::Volume, manual, hide);
 }
 
 /// Hotkey / double middle click: the volume capsule. The hotkey also closes it again.
@@ -981,8 +978,6 @@ unsafe fn play_state(hwnd: HWND) {
         _ => {}
     }
 }
-
-// ---- notifications ---------------------------------------------------------
 
 // ---- updates ----------------------------------------------------------------
 
@@ -1051,16 +1046,9 @@ unsafe fn update_apply(hwnd: HWND) {
 
 /// "RustKnob updated · v1.2.3", once, after an automatic update.
 unsafe fn announce_update(hwnd: HWND) {
-    let s = st();
-    let big = text::raster(s.strings().updated_title, -64, 700);
-    let small = text::raster(&format!("v{}", crate::update::VERSION), -48, 400);
-    let line = text::raster(&format!("{} · v{}", s.strings().updated_title, crate::update::VERSION), -44, 400);
-    s.notice = big.zip(line).map(|(big, line)| Arc::new(Song { big, small, line, art: None, key: String::new() }));
-    s.notice_icon = 2;
-    s.marq = 0.0;
-    if !panel_open() {
-        open(hwnd, Kind::Song, false, Some(HIDE_NTFY_MS));
-    }
+    let title = st().strings().updated_title;
+    let version = format!("v{}", crate::update::VERSION);
+    show_notice(hwnd, title, Some(&version), &format!("{title} · {version}"), 2, HIDE_NTFY_MS);
 }
 
 // ---- pinned media -----------------------------------------------------------
@@ -1259,22 +1247,16 @@ impl MouseUi {
         }
     }
 
-    fn set_battery(&mut self, t: &i18n::Strings, now: &mouse::Status) {
-        self.level = match now.battery {
-            Some(p) if !now.charging && p <= 5 => 2,
-            Some(p) if !now.charging && p < 25 => 1,
-            _ => 0,
-        };
-        self.charging = now.charging;
-        self.fill_goal = now.battery.map_or(0.0, |b| b as f32 / 100.0);
-        if now.battery.map(|b| (b, t.percent_first)) != self.battery_text {
-            self.battery_text = now.battery.map(|b| (b, t.percent_first));
-            self.percent = now.battery.and_then(|b| text::raster(&if t.percent_first { format!("%{b}") } else { format!("{b}%") }, -60, 700));
+    fn set_battery(&mut self, t: &i18n::Strings, battery: Option<u8>, charging: bool) {
+        self.level = battery_level(battery, charging);
+        self.charging = charging;
+        self.fill_goal = battery.map_or(0.0, |b| b as f32 / 100.0);
+        if battery.map(|b| (b, t.percent_first)) != self.battery_text {
+            self.battery_text = battery.map(|b| (b, t.percent_first));
+            self.percent = battery.and_then(|b| percent_text(t, b, -60));
         }
     }
-}
 
-impl MouseUi {
     /// The rows for the other plugged-in mice (made again only when what they say changed).
     fn set_others(&mut self, t: &i18n::Strings, now: Vec<mouse::Other>) {
         if now == self.others_from {
@@ -1284,18 +1266,41 @@ impl MouseUi {
             .iter()
             .map(|o| render::MouseOther {
                 name: text::raster(o.model.name(), -46, 400),
-                percent: o.battery.and_then(|b| text::raster(&if t.percent_first { format!("%{b}") } else { format!("{b}%") }, -46, 700)),
+                percent: o.battery.and_then(|b| percent_text(t, b, -46)),
                 fill: o.battery.map_or(0.0, |b| b as f32 / 100.0),
-                level: match o.battery {
-                    Some(p) if !o.charging && p <= 5 => 2,
-                    Some(p) if !o.charging && p < 25 => 1,
-                    _ => 0,
-                },
+                level: battery_level(o.battery, o.charging),
                 charging: o.charging,
             })
             .collect();
         self.others_from = now;
     }
+
+    /// The card is about `model`: its name is the title.
+    fn set_model(&mut self, model: mouse::Model) {
+        if self.model != Some(model) {
+            self.model = Some(model);
+            self.title = text::raster(model.name(), -64, 700);
+        }
+    }
+}
+
+/// 0 fine, 1 low, 2 critical (on the charger it is always fine).
+fn battery_level(battery: Option<u8>, charging: bool) -> u8 {
+    match battery {
+        Some(p) if !charging && p <= 5 => 2,
+        Some(p) if !charging && p < 25 => 1,
+        _ => 0,
+    }
+}
+
+/// "80%" (or "%80" where the language puts it first), bold.
+fn percent_text(t: &i18n::Strings, battery: u8, height: i32) -> Option<TextBmp> {
+    text::raster(&if t.percent_first { format!("%{battery}") } else { format!("{battery}%") }, height, 700)
+}
+
+/// The followed device as one of the others (for the rows and the tray).
+fn followed() -> Option<mouse::Other> {
+    mouse::status().map(|p| mouse::Other { model: p.model, battery: p.battery, charging: p.charging })
 }
 
 fn is_mouse(kind: Kind) -> bool {
@@ -1377,16 +1382,13 @@ unsafe fn mouse_event(hwnd: HWND, ev: usize) {
         return;
     };
     let t = s.strings();
-    s.mouse.set_battery(t, &now);
+    s.mouse.set_battery(t, now.battery, now.charging);
     let rows = s.mouse.others.len();
     s.mouse.set_others(t, mouse::others());
     if rows != s.mouse.others.len() && s.live() && is_mouse(s.kind) {
         s.apply_targets(); // a row more or less: the card on show grows or shrinks
     }
-    if s.mouse.model != Some(now.model) {
-        s.mouse.model = Some(now.model);
-        s.mouse.title = text::raster(now.model.name(), -64, 700);
-    }
+    s.mouse.set_model(now.model);
     let level = s.mouse.level;
     // a little slack before a warning counts as over: the reading jitters by a percent or so
     let pct = now.battery.unwrap_or(100);
@@ -1439,31 +1441,19 @@ unsafe fn mouse_event(hwnd: HWND, ev: usize) {
         mouse::EV_BATTERY if plugged => {
             // on the charger: the card again, saying so, its battery green with a bolt (any warning ends)
             (s.mouse.crit, s.mouse.low_pending) = (false, false);
-            s.mouse.sub = text::raster(t.mouse_charging, -48, 400);
-            s.mouse.fill = 0.0;
             if s.live() && s.kind == Kind::MouseBattery {
                 s.set_kind(Kind::MouseLink); // the warning turns into the card
-                s.mouse.intro = 0.0;
+                link_text(s, t.mouse_charging);
                 s.apply_targets();
                 s.sync_hooks();
                 hide_after(hwnd, Some(MOUSE_LINK_MS));
                 frames(hwnd);
             } else {
-                if s.live() && s.kind == Kind::MouseLink {
-                    s.mouse.intro = 0.0; // plays again with the new text
-                }
-                mouse_show(hwnd, Kind::MouseLink, Some(MOUSE_LINK_MS));
+                link_card(hwnd, t.mouse_charging);
             }
         }
-        mouse::EV_BATTERY if unplugged && level == 0 => {
-            // off the charger (and not low: then the warning comes instead): the card says so
-            s.mouse.sub = text::raster(t.mouse_unplugged, -48, 400);
-            s.mouse.fill = 0.0;
-            if s.live() && s.kind == Kind::MouseLink {
-                s.mouse.intro = 0.0;
-            }
-            mouse_show(hwnd, Kind::MouseLink, Some(MOUSE_LINK_MS));
-        }
+        // off the charger (and not low: then the warning comes instead): the card says so
+        mouse::EV_BATTERY if unplugged && level == 0 => link_card(hwnd, t.mouse_unplugged),
         mouse::EV_BATTERY => {
             if level == 2 && !s.mouse.crit {
                 s.mouse.crit = true;
@@ -1496,15 +1486,13 @@ unsafe fn other_event(hwnd: HWND, model: usize, why: isize) {
     let all = mouse::others();
     let Some(o) = all.iter().copied().find(|o| o.model as usize == model) else { return };
     let t = s.strings();
-    let as_status = mouse::Status { model: o.model, battery: o.battery, charging: o.charging, ..Default::default() };
-    s.mouse.set_battery(t, &as_status);
-    if s.mouse.model != Some(o.model) {
-        s.mouse.model = Some(o.model);
-        s.mouse.title = text::raster(o.model.name(), -64, 700);
-    }
-    let followed = mouse::status().map(|p| mouse::Other { model: p.model, battery: p.battery, charging: p.charging });
-    let rows = followed.into_iter().chain(all.into_iter().filter(|x| x.model != o.model)).collect();
+    s.mouse.set_battery(t, o.battery, o.charging);
+    s.mouse.set_model(o.model);
+    let rows = followed().into_iter().chain(all.into_iter().filter(|x| x.model != o.model)).collect();
     s.mouse.set_others(t, rows);
+    if s.live() && is_mouse(s.kind) {
+        s.apply_targets(); // the rows may differ from the card on show
+    }
     if why != mouse::OTHER_LOW {
         let sub = match why {
             mouse::OTHER_CHARGING => t.mouse_charging,
@@ -1513,23 +1501,27 @@ unsafe fn other_event(hwnd: HWND, model: usize, why: isize) {
             mouse::OTHER_ASKED => t.mouse_on_battery,
             _ => t.mouse_connected,
         };
-        s.mouse.sub = text::raster(sub, -48, 400);
-        s.mouse.fill = 0.0;
-        if s.live() && s.kind == Kind::MouseLink {
-            s.mouse.intro = 0.0;
-        }
-        if s.live() && is_mouse(s.kind) {
-            s.apply_targets(); // the rows may differ from the card on show
-        }
-        mouse_show(hwnd, Kind::MouseLink, Some(MOUSE_LINK_MS));
+        link_card(hwnd, sub);
     } else {
-        if s.live() && is_mouse(s.kind) {
-            s.apply_targets();
-        }
         let critical = s.mouse.level == 2;
         mouse_warning(s, critical);
         mouse_show(hwnd, Kind::MouseBattery, Some(MOUSE_LOW_MS));
     }
+}
+
+/// The "connected" card's line under the name: its battery fills again and, already on show, it plays again.
+fn link_text(s: &mut State, sub: &str) {
+    s.mouse.sub = text::raster(sub, -48, 400);
+    s.mouse.fill = 0.0;
+    if s.live() && s.kind == Kind::MouseLink {
+        s.mouse.intro = 0.0; // plays again with the new text
+    }
+}
+
+/// The "connected" card, saying `sub`.
+unsafe fn link_card(hwnd: HWND, sub: &str) {
+    link_text(st(), sub);
+    mouse_show(hwnd, Kind::MouseLink, Some(MOUSE_LINK_MS));
 }
 
 /// One icon per device in the notification area with its battery (when that is on), up to date.
@@ -1537,8 +1529,7 @@ unsafe fn tray_refresh(hwnd: HWND) {
     let s = st();
     let mut now = Vec::new();
     if s.cfg.mouse && s.cfg.tray_battery {
-        let followed = mouse::status().map(|p| mouse::Other { model: p.model, battery: p.battery, charging: p.charging });
-        for o in followed.into_iter().chain(mouse::others()) {
+        for o in followed().into_iter().chain(mouse::others()) {
             now.push(tray::Battery { model: o.model as u32, percent: o.battery, charging: o.charging, name: o.model.name() });
         }
     }
@@ -1553,21 +1544,13 @@ unsafe fn device_card(hwnd: HWND, model: usize) {
         return;
     };
     let t = s.strings();
-    s.mouse.set_battery(t, &now);
+    s.mouse.set_battery(t, now.battery, now.charging);
     s.mouse.set_others(t, mouse::others());
-    if s.mouse.model != Some(now.model) {
-        s.mouse.model = Some(now.model);
-        s.mouse.title = text::raster(now.model.name(), -64, 700);
-    }
-    s.mouse.sub = text::raster(if now.charging { t.mouse_charging } else { t.mouse_on_battery }, -48, 400);
-    s.mouse.fill = 0.0;
-    if s.live() && s.kind == Kind::MouseLink {
-        s.mouse.intro = 0.0;
-    }
+    s.mouse.set_model(now.model);
     if s.live() && is_mouse(s.kind) {
         s.apply_targets();
     }
-    mouse_show(hwnd, Kind::MouseLink, Some(MOUSE_LINK_MS));
+    link_card(hwnd, if now.charging { t.mouse_charging } else { t.mouse_on_battery });
 }
 
 /// A full-screen app in front hides the pinned capsule (unless "pin over full-screen apps" is on); it comes
@@ -1600,11 +1583,10 @@ impl State {
 /// spectrum.rs). They rise fast and fall slower, and settle when nothing plays.
 fn viz_step(s: &mut State, dt: f32) {
     let playing = media::playing();
-    let heard = spectrum::levels();
-    for i in 0..5 {
-        let target = if playing { 0.07 + 0.93 * heard[i] } else { 0.06 };
-        let rate = if target > s.viz[i] { 34.0 } else { 11.0 };
-        s.viz[i] += (target - s.viz[i]) * (1.0 - (-dt * rate).exp());
+    for (bar, heard) in s.viz.iter_mut().zip(spectrum::levels()) {
+        let target = if playing { 0.07 + 0.93 * heard } else { 0.06 };
+        let rate = if target > *bar { 34.0 } else { 11.0 };
+        *bar += (target - *bar) * (1.0 - (-dt * rate).exp());
     }
 }
 
@@ -1640,19 +1622,24 @@ unsafe fn device_changed(hwnd: HWND) {
     open(hwnd, Kind::Volume, false, Some(HIDE_DEVICE_MS));
 }
 
-/// The screenshot was pasted (Ctrl+V): say where, like a phone does.
-unsafe fn snip_pasted(hwnd: HWND) {
+/// A card in the song capsule's place (a push notification, a screenshot, ...): `big` over `small`, and `line`
+/// under the volume bar, with icon `icon` (see `notice_icon`). It waits for an open panel to close.
+unsafe fn show_notice(hwnd: HWND, big: &str, small: Option<&str>, line: &str, icon: u8, hide: u32) {
     let s = st();
-    let app = foreground_app_name();
-    let big = text::raster(s.strings().snip_pasted, -64, 700);
-    let small = text::raster(&app, -48, 400);
-    let line = text::raster(&format!("{} · {app}", s.strings().snip_pasted), -44, 400);
-    s.notice = big.zip(line).map(|(big, line)| Arc::new(Song { big, small, line, art: None, key: String::new() }));
-    s.notice_icon = 2;
+    let small = small.and_then(|t| text::raster(t, -48, 400));
+    s.notice = text::raster(big, -64, 700).zip(text::raster(line, -44, 400)).map(|(big, line)| Arc::new(Song { big, small, line, art: None, key: String::new() }));
+    s.notice_icon = icon;
     s.marq = 0.0;
     if !panel_open() {
-        open(hwnd, Kind::Song, false, Some(HIDE_SNIP_MS));
+        open(hwnd, Kind::Song, false, Some(hide));
     }
+}
+
+/// The screenshot was pasted (Ctrl+V): say where, like a phone does.
+unsafe fn snip_pasted(hwnd: HWND) {
+    let app = foreground_app_name();
+    let title = st().strings().snip_pasted;
+    show_notice(hwnd, title, Some(&app), &format!("{title} · {app}"), 2, HIDE_SNIP_MS);
 }
 
 /// "Discord", "Brave", ...: the program of the window that has the focus.
@@ -1682,16 +1669,9 @@ unsafe fn foreground_app_name() -> String {
 
 /// A screenshot went to the clipboard: say so in the capsule.
 unsafe fn snip_taken(hwnd: HWND, w: i32, h: i32) {
-    let s = st();
-    let big = text::raster(s.strings().snip_copied, -64, 700);
-    let small = text::raster(&format!("{w} × {h}"), -48, 400);
-    let line = text::raster(&format!("{} · {w} × {h}", s.strings().snip_copied), -44, 400);
-    s.notice = big.zip(line).map(|(big, line)| Arc::new(Song { big, small, line, art: None, key: String::new() }));
-    s.notice_icon = 1;
-    s.marq = 0.0;
-    if !panel_open() {
-        open(hwnd, Kind::Song, false, Some(HIDE_SNIP_MS));
-    }
+    let title = st().strings().snip_copied;
+    let size = format!("{w} × {h}");
+    show_notice(hwnd, title, Some(&size), &format!("{title} · {size}"), 1, HIDE_SNIP_MS);
 }
 
 /// Discord's microphone or headphones switch changed (discord.rs; wparam: bit 0 muted, bit 1 deafened, bit 2
@@ -1709,13 +1689,8 @@ unsafe fn discord_event(hwnd: HWND, w: usize) {
         (false, _, true) => t.discord_muted,
         (false, _, false) => t.discord_unmuted,
     };
-    let big = text::raster(what, -64, 700);
-    let small = text::raster("Discord", -48, 400);
-    let line = text::raster(&format!("Discord · {what}"), -44, 400);
-    s.notice = big.zip(line).map(|(big, line)| Arc::new(Song { big, small, line, art: None, key: String::new() }));
-    s.notice_icon = if crate::discord::icon().is_some() { 3 } else { 0 };
-    s.marq = 0.0;
-    open(hwnd, Kind::Song, false, Some(HIDE_SNIP_MS));
+    let icon = if crate::discord::icon().is_some() { 3 } else { 0 };
+    show_notice(hwnd, what, Some("Discord"), &format!("Discord · {what}"), icon, HIDE_SNIP_MS);
 }
 
 /// A push notification: chime, and the capsule stays up for five seconds.
@@ -1726,19 +1701,12 @@ unsafe fn push_notice(hwnd: HWND) {
     if panel_open() {
         return;
     }
-    let title = if n.title.is_empty() { "ntfy".to_string() } else { n.title.clone() };
-    let line = if n.message.is_empty() { title.clone() } else { format!("{title} — {}", n.message) };
-    let song = if n.message.is_empty() {
-        text::raster(&title, -64, 700).zip(text::raster(&line, -44, 400)).map(|(big, line)| Song { big, small: None, line, art: None, key: String::new() })
+    let title = if n.title.is_empty() { "ntfy" } else { &n.title };
+    if n.message.is_empty() {
+        show_notice(hwnd, title, None, title, 0, HIDE_NTFY_MS);
     } else {
-        text::raster(&title, -64, 700)
-            .zip(text::raster(&line, -44, 400))
-            .map(|(big, line)| Song { big, small: text::raster(&n.message.replace('\n', " "), -48, 400), line, art: None, key: String::new() })
-    };
-    s.notice = song.map(Arc::new);
-    s.notice_icon = 0;
-    s.marq = 0.0;
-    open(hwnd, Kind::Song, false, Some(HIDE_NTFY_MS));
+        show_notice(hwnd, title, Some(&n.message.replace('\n', " ")), &format!("{title} — {}", n.message), 0, HIDE_NTFY_MS);
+    }
 }
 
 // ---- settings --------------------------------------------------------------
@@ -1753,9 +1721,8 @@ impl State {
         }
     }
 
-    /// Rebuilds the value bitmaps of the topic / server / token / sound rows.
-    fn refresh_values(&mut self) {
-        let sound = std::path::Path::new(&self.cfg.ntfy_sound).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    /// The names of the chosen language and theme, in the current language.
+    fn look_names(&self) -> (&'static str, &'static str) {
         let t = self.strings();
         let language = match self.cfg.language.as_str() {
             "en" => t.english,
@@ -1767,6 +1734,14 @@ impl State {
             "light" => t.light,
             _ => t.auto,
         };
+        (language, theme)
+    }
+
+    /// Rebuilds the value bitmaps of the topic / server / token / sound rows.
+    fn refresh_values(&mut self) {
+        let sound = std::path::Path::new(&self.cfg.ntfy_sound).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let t = self.strings();
+        let (language, theme) = self.look_names();
         let fields = [
             (self.cfg.ntfy_topic.clone(), t.tap_to_type),
             (self.cfg.ntfy_server.clone(), "https://ntfy.sh"),
@@ -1858,68 +1833,46 @@ unsafe fn settings_click(hwnd: HWND, screen: POINT) {
                 s.refresh_values();
             }
         }
-        ui::Hit::Toggle(0) => s.cfg.click_sound ^= true,
-        ui::Hit::Toggle(1) => s.cfg.notify_song ^= true,
-        ui::Hit::Toggle(2) => s.cfg.notify_device ^= true,
-        ui::Hit::Toggle(3) => {
-            s.cfg.volume_keys ^= true;
-            VOLUME_KEYS.store(s.cfg.volume_keys, Relaxed);
-        }
-        ui::Hit::Toggle(4) => s.cfg.low_power ^= true,
-        ui::Hit::Toggle(5) => s.cfg.upload_sound ^= true,
-        ui::Hit::Toggle(6) => {
-            s.cfg.screenshot ^= true;
-            SNIP_KEY.store(s.cfg.screenshot, Relaxed);
-        }
-        ui::Hit::Toggle(7) => {
-            s.cfg.pin_media ^= true;
-            media::set_pin(s.cfg.pin_media);
-            pin_refresh(hwnd);
-        }
-        ui::Hit::Toggle(11) => {
-            s.cfg.mouse ^= true;
-            mouse::set_enabled(s.cfg.mouse, hwnd.0 as isize, WM_APP_MOUSE);
-            if !s.cfg.mouse {
-                (s.mouse.crit, s.mouse.low_pending) = (false, false); // its warnings go with it
-            } else if mouse::status().is_some() {
-                s.mouse.crit = s.mouse.level == 2; // already awake: no wake-up will come to say so
+        ui::Hit::Toggle(i) => {
+            if let Some(on) = s.switches().into_iter().nth(i) {
+                *on ^= true;
             }
-            tray_refresh(hwnd);
-        }
-        ui::Hit::Toggle(ui::TOGGLE_TRAY_BATTERY) => {
-            s.cfg.tray_battery ^= true;
-            tray_refresh(hwnd);
-        }
-        ui::Hit::Toggle(ui::TOGGLE_AUTO_UPDATE) => {
-            s.cfg.auto_update ^= true;
-            if s.cfg.auto_update && install::running_installed() {
-                SetTimer(hwnd, T_UPDATE, 3000, None); // look right away
+            // what a switch does besides being saved
+            match i {
+                3 => VOLUME_KEYS.store(s.cfg.volume_keys, Relaxed),
+                6 => SNIP_KEY.store(s.cfg.screenshot, Relaxed),
+                7 => {
+                    media::set_pin(s.cfg.pin_media);
+                    pin_refresh(hwnd);
+                }
+                8 => pin_poll(hwnd), // in or out of full-screen apps right away
+                9 | 10 => {
+                    if i == 9 {
+                        media::set_lyrics(s.cfg.pin_lyrics);
+                    }
+                    lyric_reset(s);
+                    pin_refresh(hwnd);
+                }
+                11 => {
+                    mouse::set_enabled(s.cfg.mouse, hwnd.0 as isize, WM_APP_MOUSE);
+                    if !s.cfg.mouse {
+                        (s.mouse.crit, s.mouse.low_pending) = (false, false); // its warnings go with it
+                    } else if mouse::status().is_some() {
+                        s.mouse.crit = s.mouse.level == 2; // already awake: no wake-up will come to say so
+                    }
+                    tray_refresh(hwnd);
+                }
+                ui::TOGGLE_TRAY_BATTERY => tray_refresh(hwnd),
+                ui::TOGGLE_AUTO_UPDATE => {
+                    if s.cfg.auto_update && install::running_installed() {
+                        SetTimer(hwnd, T_UPDATE, 3000, None); // look right away
+                    }
+                }
+                ui::TOGGLE_AUTOSTART => autostart::set(s.autostart),
+                ui::TOGGLE_DISCORD => crate::discord::set_enabled(s.cfg.discord, hwnd.0 as isize, WM_APP_DISCORD),
+                _ => {}
             }
         }
-        ui::Hit::Toggle(8) => {
-            s.cfg.pin_fullscreen ^= true;
-            pin_poll(hwnd); // in or out of full-screen apps right away
-        }
-        ui::Hit::Toggle(9) => {
-            s.cfg.pin_lyrics ^= true;
-            media::set_lyrics(s.cfg.pin_lyrics);
-            lyric_reset(s);
-            pin_refresh(hwnd);
-        }
-        ui::Hit::Toggle(10) => {
-            s.cfg.lyric_words ^= true;
-            lyric_reset(s);
-            pin_refresh(hwnd);
-        }
-        ui::Hit::Toggle(ui::TOGGLE_DISCORD) => {
-            s.cfg.discord ^= true;
-            crate::discord::set_enabled(s.cfg.discord, hwnd.0 as isize, WM_APP_DISCORD);
-        }
-        ui::Hit::Toggle(ui::TOGGLE_AUTOSTART) => {
-            s.autostart ^= true;
-            autostart::set(s.autostart);
-        }
-        ui::Hit::Toggle(_) => {}
         ui::Hit::VolMinus | ui::Hit::VolPlus => {
             let at = NOTIFY_VOLUMES.iter().position(|&v| v >= s.cfg.ntfy_volume).unwrap_or(2) as i32;
             let next = (at + if hit == ui::Hit::VolPlus { 1 } else { -1 }).clamp(0, NOTIFY_VOLUMES.len() as i32 - 1);
@@ -2076,17 +2029,25 @@ unsafe fn panel_hover(hwnd: HWND) {
     if top > bottom || !steady {
         draw_and_present(hwnd);
     } else {
-        draw_and_present_rows(hwnd, top, bottom);
+        draw_and_present_region(hwnd, (top, bottom), None); // only the rows between them: a hover moved
     }
 }
 
 // ---- uploads ---------------------------------------------------------------
 
+/// "1.5 MB/s", "300 KB/s": rounded half to even, as `{:.1}` / `{:.0}` would, without float formatting.
 fn speed_text(bytes_per_sec: f32) -> String {
+    // exact in f64: an f32 times 10, over a power of two
+    let round = |v: f64| {
+        let n = v as u64;
+        let frac = v - n as f64;
+        n + u64::from(frac > 0.5 || frac == 0.5 && n % 2 == 1)
+    };
     if bytes_per_sec >= 1_048_576.0 {
-        format!("{:.1} MB/s", bytes_per_sec / 1_048_576.0)
+        let tenths = round(bytes_per_sec as f64 * 10.0 / 1_048_576.0);
+        format!("{}.{} MB/s", tenths / 10, tenths % 10)
     } else {
-        format!("{:.0} KB/s", bytes_per_sec / 1024.0)
+        format!("{} KB/s", round(bytes_per_sec as f64 / 1024.0))
     }
 }
 
@@ -2230,16 +2191,7 @@ unsafe fn history_click(hwnd: HWND, screen: POINT) {
 fn build_setup_texts(s: &mut State) {
     let t = s.strings();
     let update = s.setup.as_ref().is_some_and(|x| x.update);
-    let language = match s.cfg.language.as_str() {
-        "en" => t.english,
-        "tr" => t.turkish,
-        _ => t.auto,
-    };
-    let theme = match s.cfg.theme.as_str() {
-        "dark" => t.dark,
-        "light" => t.light,
-        _ => t.auto,
-    };
+    let (language, theme) = s.look_names();
     let texts = [
         (t.setup_title, -64, 700),
         (if update { t.setup_update_sub } else { t.setup_sub }, -44, 400),
@@ -2269,23 +2221,18 @@ unsafe fn setup_click(hwnd: HWND, screen: POINT) {
     let s = st();
     let (tx, ty) = pointer_in_shape(s, screen);
     match ui::setup_hit(tx, ty) {
-        Some(ui::SetupHit::Autostart) => {
+        Some(hit @ (ui::SetupHit::Autostart | ui::SetupHit::AutoUpdate)) => {
             if let Some(x) = s.setup.as_mut() {
-                x.autostart ^= true;
+                let flag = if hit == ui::SetupHit::Autostart { &mut x.autostart } else { &mut x.auto_update };
+                *flag ^= true;
             }
         }
-        Some(ui::SetupHit::AutoUpdate) => {
-            if let Some(x) = s.setup.as_mut() {
-                x.auto_update ^= true;
+        Some(hit @ (ui::SetupHit::Language | ui::SetupHit::Theme)) => {
+            if hit == ui::SetupHit::Language {
+                s.cfg.cycle_language();
+            } else {
+                s.cfg.cycle_theme();
             }
-        }
-        Some(ui::SetupHit::Language) => {
-            s.cfg.cycle_language();
-            s.refresh_look();
-            build_setup_texts(s);
-        }
-        Some(ui::SetupHit::Theme) => {
-            s.cfg.cycle_theme();
             s.refresh_look();
             build_setup_texts(s);
         }
@@ -2422,7 +2369,7 @@ unsafe fn tick(hwnd: HWND) {
     } else {
         let miss = |now: f32, to: f32, from: f32| (now - to).abs() / (from - to).abs().max(1.0);
         let away = miss(s.w, s.tw, s.from.0).max(miss(s.h, s.th, s.from.1));
-        s.reveal = s.reveal.max(1.0 - away.clamp(0.0, 1.0)); // never flickers back during the bounce
+        s.reveal = s.reveal.max(1.0 - away.fclamp(0.0, 1.0)); // never flickers back during the bounce
         s.reveal
     };
     if s.closing {
@@ -2536,13 +2483,6 @@ unsafe fn draw_and_present(hwnd: HWND) {
     s.surf.present(hwnd, s.win.0, s.win.1);
 }
 
-/// Redraws only the rows between `top` and `bottom` (logical, from the shape's top edge): a hover moved.
-unsafe fn draw_and_present_rows(hwnd: HWND, top: f32, bottom: f32) {
-    draw(Some((top, bottom)), None);
-    let s = st();
-    s.surf.present(hwnd, s.win.0, s.win.1);
-}
-
 /// Redraws only a band of rows and, if given, a stretch of columns (logical units from the shape's top left).
 unsafe fn draw_and_present_region(hwnd: HWND, rows: (f32, f32), cols: Option<(f32, f32)>) {
     draw(Some(rows), cols);
@@ -2593,7 +2533,7 @@ fn draw(rows: Option<(f32, f32)>, cols: Option<(f32, f32)>) {
         w: s.w,
         h: s.h,
         radius: s.rad,
-        alpha: s.fade_in.clamp(0.0, 1.0) * if s.fades() { 1.0 - s.pin_fade } else { 1.0 },
+        alpha: s.fade_in.fclamp(0.0, 1.0) * if s.fades() { 1.0 - s.pin_fade } else { 1.0 },
         layers,
         marq: s.marq,
         volume: if s.muted { 0.0 } else { s.disp },
@@ -2761,7 +2701,7 @@ pub unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPAR
         WM_APP_FADE => {
             let s = st();
             if s.fades() {
-                s.pin_fade_goal = (wp.0 as f32 / FADE_STEPS as f32).clamp(0.0, 1.0);
+                s.pin_fade_goal = (wp.0 as f32 / FADE_STEPS as f32).fclamp(0.0, 1.0);
                 s.steady_drawn = false; // the whole capsule changes opacity
                 frames(hwnd);
             }

@@ -14,7 +14,7 @@
 
 use std::time::Duration;
 
-use crate::mouse::{Error, HidIo, HidInfo};
+use crate::mouse::{Brand, Error, HidIo};
 
 const VID: u16 = 0x0b05;
 const WIRED: [u16; 3] = [0x197d, 0x1a70, 0x1b0a]; // on the cable
@@ -25,7 +25,6 @@ const ANSWER_WITHIN: Duration = Duration::from_millis(300);
 
 pub struct Asus {
     io: HidIo,
-    pub path: Vec<u16>,
     xy: bool,
     last_dpi: u16, // the last believable reading: a garbled one shows this instead
 }
@@ -33,20 +32,15 @@ pub struct Asus {
 impl Asus {
     /// The collection to talk to: the mouse on its cable before its receiver.
     pub fn preferred() -> Option<Vec<u16>> {
-        let all = unsafe { crate::mouse::hid_list("vid_0b05") };
-        let ours = |d: &&HidInfo| {
-            d.vid == VID
-                && (WIRED.contains(&d.pid) || RECEIVERS.contains(&d.pid))
-                && d.output_len == 65
-                && String::from_utf16_lossy(&d.path).to_ascii_lowercase().contains("mi_00")
-        };
-        all.iter().filter(ours).min_by_key(|d| !WIRED.contains(&d.pid)).map(|d| d.path.clone())
+        crate::mouse::hid_find(VID, &WIRED, &|d| {
+            (WIRED.contains(&d.pid) || RECEIVERS.contains(&d.pid)) && d.output_len == 65 && String::from_utf16_lossy(&d.path).to_ascii_lowercase().contains("mi_00")
+        })
     }
 
-    pub fn open(path: Vec<u16>) -> Option<Asus> {
-        let io = HidIo::open(&path)?;
+    pub fn open(path: &[u16]) -> Option<Asus> {
+        let io = HidIo::open(path)?;
         let xy = XY.contains(&io.pid);
-        Some(Asus { io, path, xy, last_dpi: 0 })
+        Some(Asus { io, xy, last_dpi: 0 })
     }
 
     /// One request; the answer that echoes its command bytes.
@@ -63,9 +57,11 @@ impl Asus {
             (a[1..1 + command.len()] == *command).then(|| Ok(a.to_vec()))
         })
     }
+}
 
+impl Brand for Asus {
     /// (active stage, how many).
-    pub fn stages(&mut self) -> Result<(usize, usize), Error> {
+    fn stages(&mut self) -> Result<(usize, usize), Error> {
         let a = self.ask(&[0x12, 0x00, 0x00])?;
         Ok(match a[12] as usize {
             s @ 1..=STAGES => (s - 1, STAGES),
@@ -74,7 +70,7 @@ impl Asus {
     }
 
     /// The DPI of the active stage (0 when it was never told); answering at all means it is awake.
-    pub fn dpi(&mut self) -> Result<u16, Error> {
+    fn dpi(&mut self) -> Result<u16, Error> {
         let (stage, count) = self.stages()?;
         if count == 0 {
             return Ok(self.last_dpi);
@@ -89,7 +85,7 @@ impl Asus {
     }
 
     /// (percent, on the charger).
-    pub fn battery(&mut self) -> Result<(Option<u8>, bool), Error> {
+    fn battery(&mut self) -> Result<(Option<u8>, bool), Error> {
         let a = self.ask(&[0x12, 0x07])?;
         Ok(((a[5] <= 100).then_some(a[5]), a[10] != 0))
     }

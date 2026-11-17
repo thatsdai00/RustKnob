@@ -11,6 +11,7 @@ use std::time::Duration;
 use windows::core::Result;
 use windows::Win32::Media::Audio::*;
 use windows::Win32::System::Com::*;
+use crate::gfx::FClamp;
 
 pub const BANDS: usize = 5;
 const WINDOW: usize = 2048; // samples looked at: about 43 ms
@@ -65,13 +66,12 @@ fn run() {
     }
     loop {
         {
-            let Ok(mut on) = GATE.0.lock() else { return };
-            while !*on {
+            let Ok(on) = GATE.0.lock() else { return };
+            if !*on {
                 publish([0.0; BANDS]);
-                on = match GATE.1.wait(on) {
-                    Ok(g) => g,
-                    Err(_) => return,
-                };
+                if GATE.1.wait_while(on, |on| !*on).is_err() {
+                    return;
+                }
             }
         }
         if unsafe { capture() }.is_err() {
@@ -132,7 +132,6 @@ unsafe fn capture() -> Result<()> {
 
 /// Reads the capture until the visualizer is no longer wanted (or the default device changes).
 unsafe fn listen(capture: &IAudioCaptureClient, format: &Format, device_now: u32) -> Result<()> {
-
     let window: Vec<f32> = (0..WINDOW).map(|i| 0.5 - 0.5 * (TAU * i as f32 / WINDOW as f32).cos()).collect(); // Hann
     let coefficients: [[f32; 2]; BANDS] = std::array::from_fn(|b| std::array::from_fn(|k| 2.0 * (TAU * BINS[b][k] / format.rate).cos()));
     let mut ring = vec![0.0f32; WINDOW];
@@ -175,8 +174,7 @@ unsafe fn listen(capture: &IAudioCaptureClient, format: &Format, device_now: u32
             }
             for b in 0..BANDS {
                 let mut power = 0.0;
-                for k in 0..2 {
-                    let coef = coefficients[b][k];
+                for &coef in &coefficients[b] {
                     let (mut s1, mut s2) = (0.0f32, 0.0f32);
                     for &x in &frame {
                         let s0 = x + coef * s1 - s2;
@@ -188,7 +186,7 @@ unsafe fn listen(capture: &IAudioCaptureClient, format: &Format, device_now: u32
                 // amplitude of the tone (the Hann window halves it), in dB, then a fixed scale for a bar
                 let amplitude = (power * 0.5).sqrt() * 4.0 / WINDOW as f32;
                 let db = 20.0 * amplitude.max(1e-6).log10() + TILT_DB[b];
-                now[b] = ((db + 62.0) / 44.0).clamp(0.0, 1.0);
+                now[b] = ((db + 62.0) / 44.0).fclamp(0.0, 1.0);
             }
         }
         // nothing arrives while nothing plays: let the bars fall

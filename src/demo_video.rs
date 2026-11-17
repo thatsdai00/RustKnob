@@ -8,7 +8,7 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-use super::{rgb, scene, type_bmp, wallpaper, write_png, Canvas, Rgb, GRAY, WHITE};
+use super::{cover, plain_song, rgb, scene, song, type_bmp, wallpaper, write_png, Canvas, Rgb, GRAY, WHITE};
 use crate::gfx::{cov, lerp, rrect, sstep};
 use crate::i18n;
 use crate::media::{Art, Song, ART_PX};
@@ -143,16 +143,6 @@ fn mic_art() -> Art {
     Art { px, accent: [140.0, 150.0, 255.0] }
 }
 
-/// A made-up cover: two colors and a soft disc.
-fn art(a: [f32; 3], b: [f32; 3], accent: [f32; 3]) -> Art {
-    super::cover(a, b, accent)
-}
-
-fn song(title: &str, artist: &str, cover: Option<Art>) -> Song {
-    let line = format!("{title} — {artist}");
-    Song { big: raster(title, -64, 700).unwrap(), small: raster(artist, -48, 400), line: raster(&line, -44, 400).unwrap(), art: cover, key: line }
-}
-
 fn keep<T>(t: T) -> &'static T {
     Box::leak(Box::new(t))
 }
@@ -271,13 +261,13 @@ pub fn video(dir: &str, ffmpeg: &str, out: &str) {
     let indigo = rgb(110, 90, 255);
 
     // ---- what the capsules show
-    let song_a = keep(song("Neon Tide", "Lumen Park", Some(art([200.0, 40.0, 70.0], [24.0, 10.0, 30.0], [255.0, 120.0, 140.0]))));
-    let song_b = keep(song("Afterglow", "Northbound", Some(art([40.0, 110.0, 230.0], [10.0, 16.0, 60.0], [130.0, 190.0, 255.0]))));
-    let knob_song = keep(song("Neon Tide", "Lumen Park", None));
+    let song_a = keep(song("Lumen Park", "Neon Tide", Some(cover([200.0, 40.0, 70.0], [24.0, 10.0, 30.0], [255.0, 120.0, 140.0]))));
+    let song_b = keep(song("Northbound", "Afterglow", Some(cover([40.0, 110.0, 230.0], [10.0, 16.0, 60.0], [130.0, 190.0, 255.0]))));
+    let knob_song = keep(song("Lumen Park", "Neon Tide", None));
     let lyric = keep(raster("Hold on to the night", -64, 700).unwrap());
-    let bell_song = keep(Song { big: raster("Deploy finished", -64, 700).unwrap(), small: raster("ntfy · production", -48, 400), line: raster("Deploy finished", -44, 400).unwrap(), art: None, key: String::new() });
-    let mute_song = keep(Song { big: raster(en.discord_muted, -64, 700).unwrap(), small: raster("Discord", -48, 400), line: raster("Discord", -44, 400).unwrap(), art: None, key: String::new() });
-    let shot_song = keep(Song { big: raster(en.snip_copied, -64, 700).unwrap(), small: raster("520 × 320", -48, 400), line: raster("Screenshot copied", -44, 400).unwrap(), art: None, key: String::new() });
+    let bell_song = keep(plain_song("Deploy finished", "ntfy · production", "Deploy finished"));
+    let mute_song = keep(plain_song(en.discord_muted, "Discord", "Discord"));
+    let shot_song = keep(plain_song(en.snip_copied, "520 × 320", "Screenshot copied"));
     let mic = keep(mic_art());
     let device = keep(raster("Speakers (Realtek Audio)", -44, 400));
     let hint = keep(raster(en.drop_hint, -56, 700));

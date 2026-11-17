@@ -20,7 +20,7 @@
 
 use std::time::Duration;
 
-use crate::mouse::{Error, HidIo};
+use crate::mouse::{Brand, Error, HidIo};
 
 const VID: u16 = 0x046d;
 /// The Superlight 2's Lightspeed receiver.
@@ -33,7 +33,6 @@ const ANSWER_WITHIN: Duration = Duration::from_millis(250);
 
 pub struct Logi {
     io: HidIo,
-    pub path: Vec<u16>,
     device: u8,           // 1: the first device on a receiver; 0xFF: the mouse itself on its cable
     features: Option<Features>, // looked up once the mouse answers
 }
@@ -48,16 +47,15 @@ impl Logi {
     /// The path to talk to: the cable's when it is plugged in, else the receiver's.
     /// The long HID++ collection (vendor page 0xFF00, usage 2, 20-byte reports) of the cable or the receiver.
     pub fn preferred() -> Option<Vec<u16>> {
-        let all = unsafe { crate::mouse::hid_list("vid_046d") };
-        let hidpp = |d: &&crate::mouse::HidInfo| d.vid == VID && d.usage_page == 0xff00 && d.usage == 0x0002 && d.input_len as usize == LONG;
-        let pick = |pids: &[u16]| all.iter().filter(hidpp).find(|d| pids.contains(&d.pid)).map(|d| d.path.clone());
-        pick(&WIRED).or_else(|| pick(&RECEIVERS))
+        crate::mouse::hid_find(VID, &WIRED, &|d| {
+            (WIRED.contains(&d.pid) || RECEIVERS.contains(&d.pid)) && d.usage_page == 0xff00 && d.usage == 0x0002 && d.input_len as usize == LONG
+        })
     }
 
-    pub fn open(path: Vec<u16>) -> Option<Logi> {
-        let io = HidIo::open(&path)?;
+    pub fn open(path: &[u16]) -> Option<Logi> {
+        let io = HidIo::open(path)?;
         let device = if WIRED.contains(&io.pid) { 0xff } else { 1 };
-        Some(Logi { io, path, device, features: None })
+        Some(Logi { io, device, features: None })
     }
 
     /// One request and its answer (the 16 bytes after the header).
@@ -107,9 +105,11 @@ impl Logi {
         self.features = Some(f);
         Ok(f)
     }
+}
 
+impl Brand for Logi {
     /// The DPI (0 when the mouse does not tell it); answering at all means it is awake.
-    pub fn dpi(&mut self) -> Result<u16, Error> {
+    fn dpi(&mut self) -> Result<u16, Error> {
         let f = self.features()?;
         match f.dpi {
             Some(index) => {
@@ -124,7 +124,7 @@ impl Logi {
     }
 
     /// (percent, on the charger).
-    pub fn battery(&mut self) -> Result<(Option<u8>, bool), Error> {
+    fn battery(&mut self) -> Result<(Option<u8>, bool), Error> {
         let Some((index, id)) = self.features()?.battery else { return Ok((None, false)) };
         Ok(match id {
             0x1004 => {
@@ -146,17 +146,7 @@ impl Logi {
 /// A lithium cell's charge from its voltage (the curve libratbag and Solaar use, coarsely).
 fn percent_from_mv(mv: u16) -> u8 {
     const CURVE: [(u16, u8); 11] = [(4186, 100), (4067, 90), (3989, 80), (3922, 70), (3859, 60), (3811, 50), (3778, 40), (3751, 30), (3717, 20), (3671, 10), (3500, 0)];
-    if mv >= CURVE[0].0 {
-        return 100;
-    }
-    for w in CURVE.windows(2) {
-        let ((hi_mv, hi), (lo_mv, lo)) = (w[0], w[1]);
-        if mv >= lo_mv {
-            let t = (mv - lo_mv) as f32 / (hi_mv - lo_mv) as f32;
-            return (lo as f32 + t * (hi - lo) as f32).round() as u8;
-        }
-    }
-    0
+    crate::mouse::percent_on(&CURVE, mv)
 }
 
 #[cfg(test)]
@@ -167,5 +157,27 @@ mod tests {
         assert_eq!(super::percent_from_mv(3811), 50);
         assert_eq!(super::percent_from_mv(3400), 0);
         assert!((super::percent_from_mv(3790) as i32 - 44).abs() <= 2);
+    }
+
+    /// The shared curve gives what this file's own float version gave, for every voltage.
+    #[test]
+    fn voltage_curve_as_before() {
+        const CURVE: [(u16, u8); 11] = [(4186, 100), (4067, 90), (3989, 80), (3922, 70), (3859, 60), (3811, 50), (3778, 40), (3751, 30), (3717, 20), (3671, 10), (3500, 0)];
+        let before = |mv: u16| -> u8 {
+            if mv >= CURVE[0].0 {
+                return 100;
+            }
+            for w in CURVE.windows(2) {
+                let ((hi_mv, hi), (lo_mv, lo)) = (w[0], w[1]);
+                if mv >= lo_mv {
+                    let t = (mv - lo_mv) as f32 / (hi_mv - lo_mv) as f32;
+                    return (lo as f32 + t * (hi - lo) as f32).round() as u8;
+                }
+            }
+            0
+        };
+        for mv in 0..=u16::MAX {
+            assert_eq!(super::percent_from_mv(mv), before(mv), "{mv} mV");
+        }
     }
 }

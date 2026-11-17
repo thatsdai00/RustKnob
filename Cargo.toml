@@ -53,7 +53,8 @@ features = [
 ]
 
 [profile.release]
-opt-level = 3
+# smallest code: about 100 KB less than opt-level 3, and a frame still takes about a millisecond to draw
+opt-level = "z"
 lto = true
 codegen-units = 1
 panic = "abort"

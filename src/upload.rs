@@ -11,13 +11,13 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
-use windows::core::{w, HSTRING, PCWSTR};
+use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::*;
 use windows::Win32::Networking::WinHttp::*;
 use windows::Win32::System::DataExchange::COPYDATASTRUCT;
 use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, PostMessageW, SendMessageW, WM_COPYDATA};
 
-use crate::{clipboard, history, json};
+use crate::{clipboard, history, json, net};
 
 const ORIGIN: &str = "https://fuckingfast.net";
 const PART_SIZE: u64 = 100 * 1024 * 1024;
@@ -102,7 +102,7 @@ fn notify(hwnd: isize, msg: u32) {
 
 fn worker(hwnd: isize, msg: u32) {
     unsafe {
-        let session = WinHttpOpen(w!("RustKnob"), WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, PCWSTR::null(), PCWSTR::null(), 0);
+        let session = net::session(w!("RustKnob"));
         loop {
             let next = QUEUE.lock().ok().and_then(|mut q| q.pop_front());
             let Some(path) = next else { break };
@@ -142,96 +142,26 @@ fn worker(hwnd: isize, msg: u32) {
 
 // ---- HTTP ------------------------------------------------------------------
 
-struct Url {
-    secure: bool,
-    host: String,
-    port: u16,
-    target: String, // path and query
-}
-
-fn parse_url(url: &str) -> Option<Url> {
-    let (secure, rest) = match url.strip_prefix("http://") {
-        Some(r) => (false, r),
-        None => (true, url.strip_prefix("https://")?),
-    };
-    let (authority, target) = match rest.find('/') {
-        Some(i) => (&rest[..i], rest[i..].to_string()),
-        None => (rest, "/".to_string()),
-    };
-    let (host, port) = match authority.rsplit_once(':').and_then(|(h, p)| p.parse::<u16>().ok().map(|p| (h, p))) {
-        Some((h, p)) => (h.to_string(), p),
-        None => (authority.to_string(), if secure { 443 } else { 80 }),
-    };
-    Some(Url { secure, host, port, target })
-}
-
 fn common_headers() -> String {
     format!("Accept: */*\r\nOrigin: {ORIGIN}\r\nReferer: {ORIGIN}/\r\nUser-Agent: Mozilla/5.0\r\n")
 }
 
-/// Opens a request on `url`; the caller closes both handles.
-unsafe fn open_request(session: *mut c_void, method: PCWSTR, url: &Url) -> Option<(*mut c_void, *mut c_void)> {
-    let connection = WinHttpConnect(session, &HSTRING::from(url.host.as_str()), url.port, 0);
-    if connection.is_null() {
-        return None;
-    }
-    let flags = if url.secure { WINHTTP_FLAG_SECURE } else { WINHTTP_OPEN_REQUEST_FLAGS(0) };
-    let request = WinHttpOpenRequest(connection, method, &HSTRING::from(url.target.as_str()), PCWSTR::null(), PCWSTR::null(), std::ptr::null(), flags);
-    if request.is_null() {
-        let _ = WinHttpCloseHandle(connection);
-        return None;
-    }
-    Some((connection, request))
-}
-
-unsafe fn status_code(request: *mut c_void) -> u32 {
-    let mut code = 0u32;
-    let mut size = 4u32;
-    let _ = WinHttpQueryHeaders(
-        request,
-        WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-        PCWSTR::null(),
-        Some(&mut code as *mut u32 as *mut c_void),
-        &mut size,
-        std::ptr::null_mut(),
-    );
-    code
-}
-
-unsafe fn read_body(request: *mut c_void) -> String {
-    let mut body = Vec::new();
-    loop {
-        let mut available = 0u32;
-        if WinHttpQueryDataAvailable(request, &mut available).is_err() || available == 0 {
-            break;
-        }
-        let mut chunk = vec![0u8; available.min(65536) as usize];
-        let mut read = 0u32;
-        if WinHttpReadData(request, chunk.as_mut_ptr() as *mut c_void, chunk.len() as u32, &mut read).is_err() || read == 0 {
-            break;
-        }
-        body.extend_from_slice(&chunk[..read as usize]);
-    }
-    String::from_utf8_lossy(&body).into_owned()
+/// The answer: its status and its body as text.
+unsafe fn answer(request: *mut c_void) -> (u32, String) {
+    (net::status_code(request), String::from_utf8_lossy(&net::read_body(request, usize::MAX)).into_owned())
 }
 
 /// A small request with a text body; returns (status, body). Status 0 means no connection.
 unsafe fn call(session: usize, method: PCWSTR, url: &str, body: &[u8], json_body: bool) -> (u32, String) {
-    let Some(parsed) = parse_url(url) else { return (0, String::new()) };
-    let Some((connection, request)) = open_request(session as *mut c_void, method, &parsed) else { return (0, String::new()) };
+    let Some(parsed) = net::parse_url(url) else { return (0, String::new()) };
+    let Some((connection, request)) = net::open_request(session as *mut c_void, method, &parsed) else { return (0, String::new()) };
     let mut headers = common_headers();
     if json_body {
         headers.push_str("Content-Type: application/json\r\n");
     }
-    let wide: Vec<u16> = headers.encode_utf16().collect();
     let _ = WinHttpSetTimeouts(request, 0, 20_000, 30_000, 30_000);
-    let mut result = (0, String::new());
-    let sent = WinHttpSendRequest(request, Some(&wide), if body.is_empty() { None } else { Some(body.as_ptr() as *const c_void) }, body.len() as u32, body.len() as u32, 0);
-    if sent.is_ok() && WinHttpReceiveResponse(request, std::ptr::null_mut()).is_ok() {
-        result = (status_code(request), read_body(request));
-    }
-    let _ = WinHttpCloseHandle(request);
-    let _ = WinHttpCloseHandle(connection);
+    let result = if net::send(request, &headers, body) { answer(request) } else { (0, String::new()) };
+    net::close(connection, request);
     result
 }
 
@@ -271,8 +201,8 @@ unsafe fn init_upload(session: usize, name: &str) -> Result<(String, String), St
 /// Sends bytes [start, start + size) of the file as one PATCH. Returns the HTTP status (0 = network error).
 unsafe fn patch_part(session: usize, location: &str, path: &Path, start: u64, size: u64, part_no: u64, added: &mut u64, stop: &AtomicBool) -> (u32, String) {
     use std::io::{Read, Seek, SeekFrom};
-    let Some(parsed) = parse_url(location) else { return (0, "bad upload address".into()) };
-    let Some((connection, request)) = open_request(session as *mut c_void, w!("PATCH"), &parsed) else { return (0, "no connection".into()) };
+    let Some(parsed) = net::parse_url(location) else { return (0, "bad upload address".into()) };
+    let Some((connection, request)) = net::open_request(session as *mut c_void, w!("PATCH"), &parsed) else { return (0, "no connection".into()) };
     let headers = format!("{}Upload-Length: {size}\r\nUpload-Part-Number: {part_no}\r\n", common_headers());
     let wide: Vec<u16> = headers.encode_utf16().collect();
     let _ = WinHttpSetTimeouts(request, 0, 30_000, 60_000, 600_000);
@@ -306,11 +236,10 @@ unsafe fn patch_part(session: usize, location: &str, path: &Path, start: u64, si
             SENT.fetch_add(n as u64, Ordering::Relaxed);
         }
         if WinHttpReceiveResponse(request, std::ptr::null_mut()).is_ok() {
-            result = (status_code(request), read_body(request));
+            result = answer(request);
         }
     }
-    let _ = WinHttpCloseHandle(request);
-    let _ = WinHttpCloseHandle(connection);
+    net::close(connection, request);
     result
 }
 
@@ -389,7 +318,6 @@ unsafe fn upload_file(session: usize, path: &Path, name: &str, size: u64) -> Res
     let file_id = json::str_field(&payload, "id").ok_or("the server gave no download link")?;
     Ok(format!("{ORIGIN}/{}", json::url_encode(&file_id)))
 }
-
 
 // ---- handing files to an already running RustKnob -----------------------
 

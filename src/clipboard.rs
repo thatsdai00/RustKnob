@@ -1,4 +1,4 @@
-// Text on the Windows clipboard.
+// Text on the Windows clipboard (and the writing part for the screenshot, see snip.rs).
 
 use windows::Win32::Foundation::*;
 use windows::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, GetClipboardData, OpenClipboard, SetClipboardData};
@@ -42,27 +42,32 @@ pub fn get() -> Option<String> {
 }
 
 pub fn set(text: &str) -> bool {
+    let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
     unsafe {
-        let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
-        let bytes = wide.len() * 2;
         if !open() {
             return false;
         }
-        let _ = EmptyClipboard();
-        let mut ok = false;
-        if let Ok(mem) = GlobalAlloc(GMEM_MOVEABLE, bytes) {
-            let ptr = GlobalLock(mem) as *mut u16;
-            if !ptr.is_null() {
-                std::ptr::copy_nonoverlapping(wide.as_ptr(), ptr, wide.len());
-                let _ = GlobalUnlock(mem);
-                // the clipboard owns the memory once SetClipboardData succeeds
-                ok = SetClipboardData(CF_UNICODETEXT, HANDLE(mem.0)).is_ok();
-            }
-            if !ok {
-                let _ = GlobalFree(mem); // still ours
-            }
-        }
+        let ok = write(CF_UNICODETEXT, wide.len() * 2, |ptr| std::ptr::copy_nonoverlapping(wide.as_ptr(), ptr as *mut u16, wide.len()));
         let _ = CloseClipboard();
         ok
     }
+}
+
+/// Empties the (opened) clipboard and puts `bytes` bytes on it as `format`, written by `fill`.
+pub unsafe fn write(format: u32, bytes: usize, fill: impl FnOnce(*mut u8)) -> bool {
+    let _ = EmptyClipboard();
+    let mut ok = false;
+    if let Ok(mem) = GlobalAlloc(GMEM_MOVEABLE, bytes) {
+        let ptr = GlobalLock(mem) as *mut u8;
+        if !ptr.is_null() {
+            fill(ptr);
+            let _ = GlobalUnlock(mem);
+            // the clipboard owns the memory once SetClipboardData succeeds
+            ok = SetClipboardData(format, HANDLE(mem.0)).is_ok();
+        }
+        if !ok {
+            let _ = GlobalFree(mem); // still ours
+        }
+    }
+    ok
 }

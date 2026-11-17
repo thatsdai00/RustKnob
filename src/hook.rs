@@ -143,6 +143,16 @@ unsafe fn post(msg: u32, wparam: usize, lparam: isize) {
     let _ = PostMessageW(HWND(MAIN_HWND.load(Relaxed) as _), msg, WPARAM(wparam), LPARAM(lparam));
 }
 
+/// A screen point packed into an lparam: x | y << 16.
+fn pack(x: isize, y: isize) -> isize {
+    (x as i16 as u16 as isize) | ((y as i16 as u16 as isize) << 16)
+}
+
+/// Is the key held right now?
+unsafe fn down(k: VIRTUAL_KEY) -> bool {
+    GetAsyncKeyState(k.0 as i32) as u16 & 0x8000 != 0
+}
+
 unsafe extern "system" fn mouse_proc(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     if code == HC_ACTION as i32 {
         let ms = &*(lp.0 as *const MSLLHOOKSTRUCT);
@@ -192,8 +202,7 @@ unsafe extern "system" fn mouse_proc(code: i32, wp: WPARAM, lp: LPARAM) -> LRESU
                 let (dx, dy) = (ms.pt.x as isize - DRAG_FROM[0].load(Relaxed), ms.pt.y as isize - DRAG_FROM[1].load(Relaxed));
                 if dx * dx + dy * dy > 20 * 20 {
                     DRAG_SENT.store(true, Relaxed);
-                    let (x, y) = (DRAG_FROM[0].load(Relaxed), DRAG_FROM[1].load(Relaxed));
-                    post(WM_APP_DRAGCHECK, 0, (x as i16 as u16 as isize) | ((y as i16 as u16 as isize) << 16));
+                    post(WM_APP_DRAGCHECK, 0, pack(DRAG_FROM[0].load(Relaxed), DRAG_FROM[1].load(Relaxed)));
                 }
             }
             WM_LBUTTONUP => {
@@ -210,7 +219,7 @@ unsafe extern "system" fn mouse_proc(code: i32, wp: WPARAM, lp: LPARAM) -> LRESU
                 if SETTINGS_OPEN.load(Relaxed) && slot == 0 {
                     if in_area(ms.pt) {
                         SWALLOWED[0].store(true, Relaxed);
-                        post(WM_APP_CLICK, 0, (ms.pt.x as i16 as u16 as isize) | ((ms.pt.y as i16 as u16 as isize) << 16));
+                        post(WM_APP_CLICK, 0, pack(ms.pt.x as isize, ms.pt.y as isize));
                         return LRESULT(1);
                     }
                     post(WM_APP_DISMISS, 0, 0); // the click itself still goes through
@@ -244,7 +253,6 @@ unsafe extern "system" fn mouse_proc(code: i32, wp: WPARAM, lp: LPARAM) -> LRESU
 /// What a key press means for a text field: a character, or 8 / 13 / 27 / 22 (backspace, enter, esc, paste).
 /// Shortcuts (Ctrl / Alt / Win combos, except AltGr and Ctrl+V) are left alone.
 unsafe fn typed(kb: &KBDLLHOOKSTRUCT) -> Option<u32> {
-    let down = |k: VIRTUAL_KEY| GetAsyncKeyState(k.0 as i32) as u16 & 0x8000 != 0;
     let (ctrl, alt, shift) = (down(VK_CONTROL), down(VK_MENU), down(VK_SHIFT));
     if down(VK_LWIN) || down(VK_RWIN) {
         return None;
@@ -288,10 +296,10 @@ unsafe fn mask_start_menu() {
 }
 
 unsafe extern "system" fn key_proc(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT {
-    if code == HC_ACTION as i32 && matches!(wp.0 as u32, WM_KEYDOWN | WM_SYSKEYDOWN) {
+    if code == HC_ACTION as i32 {
         let kb = &*(lp.0 as *const KBDLLHOOKSTRUCT);
-        if kb.flags.0 & LLKHF_INJECTED.0 == 0 {
-            let down = |k: VIRTUAL_KEY| GetAsyncKeyState(k.0 as i32) as u16 & 0x8000 != 0;
+        let pressed = matches!(wp.0 as u32, WM_KEYDOWN | WM_SYSKEYDOWN);
+        if pressed && kb.flags.0 & LLKHF_INJECTED.0 == 0 {
             if kb.vkCode == VK_ESCAPE.0 as u32 && crate::snip::ACTIVE.load(Relaxed) {
                 post(WM_APP_SNIP_CANCEL, 0, 0);
                 return LRESULT(1);
@@ -308,29 +316,27 @@ unsafe extern "system" fn key_proc(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT
                 return LRESULT(1);
             }
         }
-    }
-    if code == HC_ACTION as i32 && EDITING.load(Relaxed) {
-        let kb = &*(lp.0 as *const KBDLLHOOKSTRUCT);
-        if let Some(ch) = typed(kb) {
-            if matches!(wp.0 as u32, WM_KEYDOWN | WM_SYSKEYDOWN) {
-                post(WM_APP_KEY, ch as usize, 0);
+        if EDITING.load(Relaxed) {
+            if let Some(ch) = typed(kb) {
+                if pressed {
+                    post(WM_APP_KEY, ch as usize, 0);
+                }
+                return LRESULT(1);
             }
-            return LRESULT(1);
         }
-    }
-    if code == HC_ACTION as i32 && VOLUME_KEYS.load(Relaxed) {
-        let kb = &*(lp.0 as *const KBDLLHOOKSTRUCT);
-        let which = match VIRTUAL_KEY(kb.vkCode as u16) {
-            VK_VOLUME_UP => 1,
-            VK_VOLUME_DOWN => 2,
-            VK_VOLUME_MUTE => 3,
-            _ => 0,
-        };
-        if which != 0 {
-            if matches!(wp.0 as u32, WM_KEYDOWN | WM_SYSKEYDOWN) {
-                post(WM_APP_VOLKEY, which, 0);
+        if VOLUME_KEYS.load(Relaxed) {
+            let which = match VIRTUAL_KEY(kb.vkCode as u16) {
+                VK_VOLUME_UP => 1,
+                VK_VOLUME_DOWN => 2,
+                VK_VOLUME_MUTE => 3,
+                _ => 0,
+            };
+            if which != 0 {
+                if pressed {
+                    post(WM_APP_VOLKEY, which, 0);
+                }
+                return LRESULT(1);
             }
-            return LRESULT(1);
         }
     }
     CallNextHookEx(None, code, wp, lp)

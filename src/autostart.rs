@@ -65,5 +65,10 @@ fn set_task(on: bool, exe: &Path) {
     } else {
         "Unregister-ScheduledTask -TaskName RustKnob -Confirm:$false -ErrorAction SilentlyContinue".to_string()
     };
-    crate::install::start(&crate::install::powershell(), &["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-Command", &script], true, true);
+    powershell(&script);
+}
+
+/// Runs `script` in a hidden PowerShell and waits for it.
+pub fn powershell(script: &str) {
+    crate::install::start(&crate::install::powershell(), &["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-Command", script], true, true);
 }
