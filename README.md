@@ -41,6 +41,10 @@
 
 ## In motion
 
+https://github.com/user-attachments/assets/72b16687-b600-4464-982f-e8e94bb795a8
+
+<sub>Every capsule in the video is drawn by RustKnob's own renderer. Music: "Night Owl" by Broke For Free, [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/).</sub>
+
 <p align="center">
   <img src="docs/img/song-change.png" alt="A song change in the pinned capsule" width="88%">
 </p>
