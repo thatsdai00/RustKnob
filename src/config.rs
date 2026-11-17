@@ -27,6 +27,7 @@ pub struct Config {
     pub lyric_words: bool,    // ... lit up word by word, as sung (beta); off: line by line
     pub mouse: bool,          // gaming mouse (Razer Viper V3 Pro, Logitech Superlight 2): DPI, battery, wake-ups
     pub tray_battery: bool,   // each device's battery as an icon of its own in the notification area
+    pub discord: bool,        // a card when Discord's microphone or headphones switch changes (discord.rs)
     pub auto_update: bool,    // fetch new releases from GitHub by itself
     pub ntfy_server: String,
     pub ntfy_topic: String, // empty = ntfy off
@@ -59,6 +60,7 @@ impl Default for Config {
             lyric_words: false,
             mouse: true,
             tray_battery: true,
+            discord: true,
             auto_update: true,
             ntfy_server: "https://ntfy.sh".into(),
             ntfy_topic: String::new(),
@@ -109,6 +111,7 @@ impl Config {
                 "lyric_words" => cfg.lyric_words = flag,
                 "mouse" | "razer" => cfg.mouse = flag,
                 "tray_battery" => cfg.tray_battery = flag,
+                "discord" => cfg.discord = flag,
                 "auto_update" => cfg.auto_update = flag,
                 "ntfy_server" if !val.is_empty() => cfg.ntfy_server = val.to_string(),
                 "ntfy_topic" => cfg.ntfy_topic = val.to_string(),
@@ -133,7 +136,7 @@ impl Config {
              ; tekerlek / ses tusu basina ses adimi (yuzde)\nstep={}\n\
              ; tekerlek birakildiktan sonra kapanma suresi (ms)\nhide_ms={}\n\
              notify_song={}\nnotify_device={}\nvolume_keys={}\nclick_sound={}\nlow_power={}\nupload_sound={}\nscreenshot={}\npin_media={}\npin_fullscreen={}\npin_lyrics={}
-lyric_words={}\nmouse={}\ntray_battery={}\nauto_update={}\n\
+lyric_words={}\nmouse={}\ntray_battery={}\ndiscord={}\nauto_update={}\n\
              ; ntfy bildirimleri: topic bos birakilirsa kapali. ntfy_sound: mp3/wav yolu (bos = yerlesik cin sesi).\n\
              ntfy_server={}\nntfy_topic={}\nntfy_token={}\nntfy_sound={}\nntfy_volume={}\n\
              ; sozler sesten ne kadar once gosterilsin (ms; gecikiyorsa artir, erken geliyorsa eksi yap)\nlyric_ahead_ms={}\n\
@@ -156,6 +159,7 @@ lyric_words={}\nmouse={}\ntray_battery={}\nauto_update={}\n\
             b(self.lyric_words),
             b(self.mouse),
             b(self.tray_battery),
+            b(self.discord),
             b(self.auto_update),
             self.ntfy_server,
             self.ntfy_topic,

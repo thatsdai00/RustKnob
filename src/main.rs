@@ -17,6 +17,7 @@ mod json;
 mod lyrics;
 mod asus;
 mod atk;
+mod discord;
 mod g435;
 mod logitech;
 mod mouse;
@@ -65,6 +66,12 @@ fn main() {
             #[cfg(feature = "demo")]
             Some("--demo") => {
                 demo::run(&std::env::args().nth(2).unwrap_or_else(|| "docs/img".into()));
+                return;
+            }
+            #[cfg(feature = "demo")]
+            Some("--video") => {
+                let arg = |i: usize| std::env::args().nth(i).expect("--video <work dir> <ffmpeg> <out.mp4>");
+                demo::video(&arg(2), &arg(3), &arg(4));
                 return;
             }
             Some("--update") => {

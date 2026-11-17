@@ -131,6 +131,7 @@ pub struct Scene<'a> {
     pub bell: bool,                // song capsule shows a bell (push notification) instead of a note
     pub frame: bool,               // ... or a clipboard (a screenshot was copied)
     pub check: bool,               // ... or a check mark (it was pasted)
+    pub app_icon: Option<&'a crate::media::Art>, // ... or a program's own icon (Discord muted or deafened)
     pub drop_hint: Option<&'a TextBmp>,
     pub pin: Option<PinView<'a>>,
     pub sub: Option<&'a TextBmp>,  // line under the volume bar
@@ -980,9 +981,31 @@ fn pinned_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32, f: 
     }
 }
 
+/// A program's icon, `half` units from its center to each side, centered on (x, y) = 0.
+fn app_icon_at(p: &mut Px, art: &crate::media::Art, x: f32, y: f32, half: f32, ca: f32) {
+    if x.abs() >= half || y.abs() >= half {
+        return;
+    }
+    let n = crate::media::ART_PX as f32;
+    let (u, v) = (((x / half + 1.0) / 2.0 * n - 0.5).clamp(0.0, n - 1.001), ((y / half + 1.0) / 2.0 * n - 0.5).clamp(0.0, n - 1.001));
+    let (x0, y0) = (u as usize, v as usize);
+    let (fx, fy) = (u - x0 as f32, v - y0 as f32);
+    let at = |x: usize, y: usize, shift: u32| ((art.px[y * crate::media::ART_PX + x] >> shift) & 0xFF) as f32 / 255.0;
+    let mix = |shift: u32| (at(x0, y0, shift) * (1.0 - fx) + at(x0 + 1, y0, shift) * fx) * (1.0 - fy) + (at(x0, y0 + 1, shift) * (1.0 - fx) + at(x0 + 1, y0 + 1, shift) * fx) * fy;
+    let a = mix(24);
+    if a > 0.002 {
+        p.over([mix(16) / a, mix(8) / a, mix(0) / a], ca * a);
+    }
+}
+
 fn song_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) {
     let pal = &s.pal;
-    let glyph = if s.check {
+    if let Some(art) = s.app_icon {
+        app_icon_at(p, art, tx - 26.0, ty - 36.0, 13.0, ca);
+    }
+    let glyph = if s.app_icon.is_some() {
+        f32::MAX // the icon stands in for the glyph
+    } else if s.check {
         check_sdf(tx - 26.0, ty - 36.0)
     } else if s.frame {
         clipboard_sdf(tx - 26.0, ty - 36.0)

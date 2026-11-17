@@ -75,6 +75,7 @@ RustKnob checks this repository's [releases](https://github.com/thatsdai00/RustK
 | **Uploads** | Drag a file toward the top of the screen and drop it on the capsule. It uploads to fuckingfast.net with progress and speed, and the link is copied. `Ctrl+Alt+H` opens the history. |
 | **Screenshots** | `Win+Shift+S` freezes and dims the screen. Drag a rectangle: it is copied, shrinks into the island, and `Ctrl+V` later tells you where it was pasted. `Esc` or right click cancels. |
 | **Notifications** | Listens to a [ntfy](https://ntfy.sh) topic and shows messages with their own sound and volume. Device changes show the device name. |
+| **Discord** | Mute or deafen yourself in Discord and a card with Discord's icon says so. No bot, no plugin, nothing installed in Discord: RustKnob reads the two switches of Discord's user panel through Windows' UI Automation (what screen readers use), asking only them every 300 ms once found. Works with the stable, PTB and Canary builds; a switch in settings turns it off. |
 | **Settings** | `Ctrl+Alt+Shift+K` or the tray icon. English / Türkçe, dark / light / auto, a 30 FPS low-power mode, and a switch for every feature. |
 
 ### Shortcuts
@@ -137,6 +138,7 @@ Needs Rust and the Visual Studio C++ build tools. `package.ps1` writes `dist/Rus
 | **Yükleme** | Dosyayı sürükleyip kapsüle bırak: fuckingfast.net'e yüklenir, link kopyalanır (`Ctrl+Alt+H` geçmiş). |
 | **Ekran görüntüsü** | `Win+Shift+S`: seç, panoya kopyalansın, kapsüle uçsun; `Ctrl+V`'de nereye yapıştırıldığını söyler. |
 | **Bildirimler** | [ntfy](https://ntfy.sh) konusunu dinler. |
+| **Discord** | Discord'da mikrofonu kapatınca ya da sağırlaştırınca Discord ikonuyla bir kart çıkar. Bot yok, eklenti yok, Discord'a bir şey kurulmaz: RustKnob Discord'un kullanıcı panelindeki iki düğmeyi Windows UI Automation ile okur (ekran okuyucuların kullandığı yol), bulduktan sonra 300 ms'de bir yalnızca onlara bakar. Ayarlardan kapatılabilir. |
 | **Ayarlar** | `Ctrl+Alt+Shift+K` ya da tepsi simgesi. |
 
 Derleme: `cargo build --release`.
