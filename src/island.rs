@@ -12,6 +12,7 @@ use std::time::Instant;
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
+use windows::Win32::System::RemoteDesktop::{WTSRegisterSessionNotification, NOTIFY_FOR_THIS_SESSION};
 use windows::Win32::System::Threading::*;
 use windows::Win32::UI::HiDpi::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
@@ -35,6 +36,7 @@ use crate::{autostart, clipboard, device, history, install, ntfy, tray, ui, uplo
 
 const WM_APP_WARM: u32 = WM_APP + 25;
 const WM_APP_MOUSE: u32 = WM_APP + 41; // razer.rs: wparam mouse::EV_*
+const WM_APP_DISCORD: u32 = WM_APP + 42; // discord.rs: Discord's mute / deafen changed
 const MOUSE_DPI_MS: u32 = 1700; // the DPI capsule stays this long after the last change
 const MOUSE_LINK_MS: u32 = 4200; // "connected" (its intro takes LINK_INTRO_SECS of it)
 const LINK_INTRO_SECS: f32 = 1.0;
@@ -228,7 +230,7 @@ struct State {
     pin_suspended: bool,                 // a full-screen app is in front: the pinned capsule steps aside
     viz: [f32; 5],                       // bar heights 0..1
     steady_drawn: bool,                  // the last frame was a full draw of a settled capsule
-    notice_icon: u8,            // 0 bell (push), 1 clipboard (screenshot copied), 2 check (pasted)
+    notice_icon: u8,            // 0 bell (push), 1 clipboard (screenshot copied), 2 check (pasted), 3 Discord's icon
     drag_polls: u8,              // checks left after a drag started
     hist_empty: Option<TextBmp>,
     hist_status: Option<(TextBmp, f32)>, // "Copied" and its remaining seconds
@@ -256,6 +258,7 @@ struct State {
 static STATE: AtomicPtr<State> = AtomicPtr::new(std::ptr::null_mut());
 
 pub unsafe fn init(cfg: Config, hwnd: HWND) {
+    let _ = WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION); // unlock: see reseat
     VOLUME_KEYS.store(cfg.volume_keys, Relaxed);
     SNIP_KEY.store(cfg.screenshot, Relaxed);
     let state = State {
@@ -362,6 +365,7 @@ pub unsafe fn init(cfg: Config, hwnd: HWND) {
     media::set_lyrics(st().cfg.pin_lyrics);
     media::start(hwnd.0 as isize, WM_APP_SONG, WM_APP_PIN);
     mouse::set_enabled(st().cfg.mouse, hwnd.0 as isize, WM_APP_MOUSE);
+    crate::discord::set_enabled(st().cfg.discord, hwnd.0 as isize, WM_APP_DISCORD);
     ntfy::start(&st().cfg, hwnd.0 as isize, WM_APP_NTFY);
     if !tray::add(hwnd) {
         SetTimer(hwnd, T_TRAY, 2000, None);
@@ -542,7 +546,7 @@ impl State {
 
     fn toggle_targets(&self) -> [f32; ui::TOGGLES] {
         let c = &self.cfg;
-        [c.click_sound, c.notify_song, c.notify_device, c.volume_keys, c.low_power, c.upload_sound, c.screenshot, c.pin_media, c.pin_fullscreen, c.pin_lyrics, c.lyric_words, c.mouse, c.tray_battery, c.auto_update, self.autostart].map(|b| f32::from(u8::from(b)))
+        [c.click_sound, c.notify_song, c.notify_device, c.volume_keys, c.low_power, c.upload_sound, c.screenshot, c.pin_media, c.pin_fullscreen, c.pin_lyrics, c.lyric_words, c.mouse, c.tray_battery, c.auto_update, self.autostart, c.discord].map(|b| f32::from(u8::from(b)))
     }
 
     /// Screen-space rectangle of the shape at its target (for the mouse hook).
@@ -631,24 +635,7 @@ unsafe fn open(hwnd: HWND, kind: Kind, manual: bool, hide: Option<u32>) {
         // top center of the monitor under the cursor
         let mut cur = POINT::default();
         let _ = GetCursorPos(&mut cur);
-        let mon = MonitorFromPoint(cur, MONITOR_DEFAULTTONEAREST);
-        let mut mi = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
-        let _ = GetMonitorInfoW(mon, &mut mi);
-        let (mut dpi_x, mut dpi_y) = (96u32, 96u32);
-        let _ = GetDpiForMonitor(mon, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y);
-        s.base = dpi_x as f32 / 96.0;
-        // panels grow with the screen: 1.0 up to 1080 logical px tall, 1.33 at 1440, at most 1.6
-        let tall = (mi.rcMonitor.bottom - mi.rcMonitor.top) as f32 / s.base; // logical px
-        s.boost = (tall / 1080.0).clamp(1.0, 1.6);
-        // the capsules are drawn for a 1440 px tall screen: on a smaller one they keep their share of it
-        // (0.75 at 1080), never smaller than that, never larger than drawn
-        s.fit = (tall / 1440.0).clamp(0.75, 1.0);
-        s.unit_goal = s.base * kind_scale(s, kind);
-        s.unit = s.unit_goal;
-        let (pw, ph) = ((ui::WIN_W * s.base * s.boost).round() as usize, (ui::WIN_H * s.base * s.boost).round() as usize);
-        s.surf.ensure(pw, ph);
-        let r = mi.rcMonitor;
-        s.win = (r.left + ((r.right - r.left) - pw as i32) / 2, r.top);
+        place(s, MonitorFromPoint(cur, MONITOR_DEFAULTTONEAREST), kind);
 
         (s.w, s.h, s.vw, s.vh) = (ui::SMALL.0, ui::SMALL.1, 0.0, 0.0);
         (s.rad, s.vrad) = (ui::SMALL.1 / 2.0, 0.0);
@@ -682,11 +669,74 @@ unsafe fn open(hwnd: HWND, kind: Kind, manual: bool, hide: Option<u32>) {
         draw_and_present(hwnd);
         let _ = SetWindowPos(hwnd, HWND_TOPMOST, s.win.0, s.win.1, s.surf.pw as i32, s.surf.ph as i32, SWP_NOACTIVATE | SWP_SHOWWINDOW);
         s.visible = true;
+    } else {
+        raise(hwnd); // up for a while (pinned): an always-on-top window opened since may be over it
     }
     s.sync_hooks();
     s.last_tick = s.last_tick.or(Some(Instant::now()));
     frames(hwnd);
     hide_after(hwnd, hide);
+}
+
+/// Sizes the window for monitor `mon` (its DPI and height) and puts it at its top center.
+unsafe fn place(s: &mut State, mon: HMONITOR, kind: Kind) {
+    let mut mi = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+    let _ = GetMonitorInfoW(mon, &mut mi);
+    let (mut dpi_x, mut dpi_y) = (96u32, 96u32);
+    let _ = GetDpiForMonitor(mon, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y);
+    s.base = dpi_x as f32 / 96.0;
+    // panels grow with the screen: 1.0 up to 1080 logical px tall, 1.33 at 1440, at most 1.6
+    let tall = (mi.rcMonitor.bottom - mi.rcMonitor.top) as f32 / s.base; // logical px
+    s.boost = (tall / 1080.0).clamp(1.0, 1.6);
+    // the capsules are drawn for a 1440 px tall screen: on a smaller one they keep their share of it
+    // (0.75 at 1080), never smaller than that, never larger than drawn
+    s.fit = (tall / 1440.0).clamp(0.75, 1.0);
+    s.unit_goal = s.base * kind_scale(s, kind);
+    s.unit = s.unit_goal;
+    let (pw, ph) = ((ui::WIN_W * s.base * s.boost).round() as usize, (ui::WIN_H * s.base * s.boost).round() as usize);
+    s.surf.ensure(pw, ph);
+    let r = mi.rcMonitor;
+    s.win = (r.left + ((r.right - r.left) - pw as i32) / 2, r.top);
+}
+
+/// Back on top of the always-on-top windows, without moving, resizing or activating.
+unsafe fn raise(hwnd: HWND) {
+    let _ = SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+}
+
+/// Is a visible, uncloaked window above the capsule's window and over the shape? Walks the z-order from the
+/// top down to our window: a handful of always-on-top windows at most.
+unsafe fn covered(hwnd: HWND, area: RECT) -> bool {
+    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
+    let mut w = GetTopWindow(None).unwrap_or_default();
+    while !w.0.is_null() && w != hwnd {
+        let mut r = RECT::default();
+        let mut cloaked = 0u32;
+        let _ = DwmGetWindowAttribute(w, DWMWA_CLOAKED, &mut cloaked as *mut u32 as *mut _, 4);
+        if IsWindowVisible(w).as_bool() && cloaked == 0 && GetWindowRect(w, &mut r).is_ok() && r.left < area.right && r.right > area.left && r.top < area.bottom && r.bottom > area.top {
+            return true;
+        }
+        w = GetWindow(w, GW_HWNDNEXT).unwrap_or_default();
+    }
+    false
+}
+
+/// The screens changed (resolution, a monitor slept and woke, DPI) or the PC came back from sleep or the lock
+/// screen: the window is sized and placed again for its monitor, its whole picture handed to the compositor
+/// again (it may have dropped it) and it goes back on top. Hidden, it waits for its next open, which does this.
+unsafe fn reseat(hwnd: HWND) {
+    let s = st();
+    if !s.visible {
+        return;
+    }
+    place(s, MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), s.kind);
+    s.prev_rect = None; // the whole surface is drawn, not just where the shape moved
+    s.steady_drawn = false;
+    draw_and_present(hwnd);
+    let _ = ShowWindow(hwnd, SW_HIDE);
+    let _ = SetWindowPos(hwnd, HWND_TOPMOST, s.win.0, s.win.1, s.surf.pw as i32, s.surf.ph as i32, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    s.sync_hooks();
+    frames(hwnd);
 }
 
 unsafe fn begin_close(hwnd: HWND) {
@@ -1530,6 +1580,13 @@ unsafe fn pin_poll(hwnd: HWND) {
         s.pin_suspended = busy;
         pin_refresh(hwnd);
     }
+    // the pinned capsule stays up for hours: an always-on-top window opened since then must not keep it covered
+    if s.visible {
+        let (left, top, right, bottom) = s.area();
+        if covered(hwnd, RECT { left, top, right, bottom }) {
+            raise(hwnd);
+        }
+    }
 }
 
 impl State {
@@ -1635,6 +1692,30 @@ unsafe fn snip_taken(hwnd: HWND, w: i32, h: i32) {
     if !panel_open() {
         open(hwnd, Kind::Song, false, Some(HIDE_SNIP_MS));
     }
+}
+
+/// Discord's microphone or headphones switch changed (discord.rs; wparam: bit 0 muted, bit 1 deafened, bit 2
+/// the headphones switch is the one that changed): a card with Discord's icon saying so.
+unsafe fn discord_event(hwnd: HWND, w: usize) {
+    let s = st();
+    if !s.cfg.discord || panel_open() || s.upload_shown() {
+        return;
+    }
+    let t = s.strings();
+    let (muted, deafened, headphones) = (w & 1 != 0, w & 2 != 0, w & 4 != 0);
+    let what = match (headphones, deafened, muted) {
+        (true, true, _) => t.discord_deafened,
+        (true, false, _) => t.discord_undeafened,
+        (false, _, true) => t.discord_muted,
+        (false, _, false) => t.discord_unmuted,
+    };
+    let big = text::raster(what, -64, 700);
+    let small = text::raster("Discord", -48, 400);
+    let line = text::raster(&format!("Discord · {what}"), -44, 400);
+    s.notice = big.zip(line).map(|(big, line)| Arc::new(Song { big, small, line, art: None, key: String::new() }));
+    s.notice_icon = if crate::discord::icon().is_some() { 3 } else { 0 };
+    s.marq = 0.0;
+    open(hwnd, Kind::Song, false, Some(HIDE_SNIP_MS));
 }
 
 /// A push notification: chime, and the capsule stays up for five seconds.
@@ -1829,6 +1910,10 @@ unsafe fn settings_click(hwnd: HWND, screen: POINT) {
             s.cfg.lyric_words ^= true;
             lyric_reset(s);
             pin_refresh(hwnd);
+        }
+        ui::Hit::Toggle(ui::TOGGLE_DISCORD) => {
+            s.cfg.discord ^= true;
+            crate::discord::set_enabled(s.cfg.discord, hwnd.0 as isize, WM_APP_DISCORD);
         }
         ui::Hit::Toggle(ui::TOGGLE_AUTOSTART) => {
             s.autostart ^= true;
@@ -2517,6 +2602,7 @@ fn draw(rows: Option<(f32, f32)>, cols: Option<(f32, f32)>) {
         bell: s.notice.is_some() && s.notice_icon == 0,
         frame: s.notice.is_some() && s.notice_icon == 1,
         check: s.notice.is_some() && s.notice_icon == 2,
+        app_icon: if s.notice.is_some() && s.notice_icon == 3 { crate::discord::icon() } else { None },
         drop_hint: s.drop_hint.as_ref(),
         pin: shows(Kind::Pinned).then_some({
             render::PinView { song: s.song.as_deref(), prev: s.song_prev.as_deref(), swap: s.song_swap, bars: s.viz, lyric: s.lyric.as_deref(), lyric_old: s.lyric_old.as_deref(), lyric_swap: s.lyric_swap, lyric_fill: s.lyric_fill, tall: s.pin_tall || s.h > 50.0 }
@@ -2573,6 +2659,7 @@ pub unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPAR
         WM_APP_SONG => song_changed(hwnd),
         WM_APP_DEVICE => device_changed(hwnd),
         WM_APP_NTFY => push_notice(hwnd),
+        WM_APP_DISCORD => discord_event(hwnd, wp.0),
         WM_APP_MOUSE if wp.0 == mouse::EV_OTHER => {
             other_event(hwnd, (lp.0 & 0xff) as usize, lp.0 >> 8);
             tray_refresh(hwnd);
@@ -2665,6 +2752,9 @@ pub unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPAR
             tray_refresh(hwnd);
             let _ = KillTimer(hwnd, T_TRAY);
         }
+        WM_DISPLAYCHANGE | WM_DPICHANGED => reseat(hwnd),
+        WM_POWERBROADCAST if wp.0 as u32 == PBT_APMRESUMEAUTOMATIC => reseat(hwnd),
+        WM_WTSSESSION_CHANGE if wp.0 as u32 == WTS_SESSION_UNLOCK => reseat(hwnd),
         WM_APP_WARM => warm_up(hwnd),
         WM_APP_PIN => pin_refresh(hwnd),
         WM_APP_UPDATE => update_ready(hwnd, wp.0),
