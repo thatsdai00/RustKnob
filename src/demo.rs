@@ -772,7 +772,7 @@ pub fn run(dir: &str) {
 
     // ---------------------------------------------------------------- numbers
     let mut stats = Canvas::solid(2400, 640, [0.0, 0.0, 0.0]);
-    let facts = [("0.5 MB", "one file. No installer,\nno runtime."), ("~0%", "CPU when nothing is\nhappening."), ("100 FPS", "paced by your display's\nvertical blank."), ("0", "telemetry. Nothing phones\nhome unless you ask.")];
+    let facts = [("0.6 MB", "one file. No installer,\nno runtime."), ("~0%", "CPU when nothing is\nhappening."), ("100 FPS", "paced by your display's\nvertical blank."), ("0", "telemetry. Nothing phones\nhome unless you ask.")];
     for (i, (big, small_text)) in facts.iter().enumerate() {
         let cx = 300.0 + i as f32 * 600.0;
         let b = type_bmp(big, 130, 600);

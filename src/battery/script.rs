@@ -37,12 +37,15 @@ pub struct Emit {
     pub charging: bool,
     pub full: bool,
     pub state: u8, // 0 awake, 1 asleep, 2 offline
+    pub dpi: Option<u16>,
+    pub stage: Option<u8>, // the active DPI stage (from 0), of `stages`
+    pub stages: Option<u8>,
 }
 
 struct Run<'a> {
     port: &'a mut dyn Port,
     file: &'a Value,
-    vars: Vec<(String, i64)>,
+    vars: &'a mut Vec<(String, i64)>,
     r: Vec<u8>,
     out: Vec<Emit>,
     budget: u32, // steps left: a broken file must not spin the thread
@@ -55,8 +58,9 @@ enum Flow {
     Stop,
 }
 
-/// Runs `steps` of a protocol from `file` with the device's variables; returns what it emitted.
-pub fn run(port: &mut dyn Port, file: &Value, steps: &Value, vars: Vec<(String, i64)>) -> Vec<Emit> {
+/// Runs `steps` of a protocol from `file` with the device's variables (kept from one run to the next: a
+/// protocol can remember what it saw); returns what it emitted.
+pub fn run(port: &mut dyn Port, file: &Value, steps: &Value, vars: &mut Vec<(String, i64)>) -> Vec<Emit> {
     let mut run = Run { port, file, vars, r: Vec::new(), out: Vec::new(), budget: 4000 };
     run.block(steps);
     run.out
@@ -135,6 +139,20 @@ impl Run<'_> {
                         return Flow::Next;
                     }
                 }
+            }
+            // the block again while the condition holds (64 rounds at most)
+            "while" => {
+                let body = s.get("do").unwrap_or(&Value::Null);
+                for _ in 0..64 {
+                    if !self.cond(arg) {
+                        return Flow::Next;
+                    }
+                    match self.block(body) {
+                        Flow::Next => {}
+                        f => return f,
+                    }
+                }
+                Flow::Fail
             }
             "flush" => {
                 self.port.flush();
@@ -242,6 +260,9 @@ impl Run<'_> {
             charging: e.get("charging").is_some_and(|c| self.cond(c)),
             full: e.get("full").is_some_and(|c| self.cond(c)),
             state,
+            dpi: e.get("dpi").and_then(|v| self.num(v)).and_then(|v| u16::try_from(v).ok()),
+            stage: e.get("stage").and_then(|v| self.num(v)).and_then(|v| u8::try_from(v).ok()),
+            stages: e.get("stages").and_then(|v| self.num(v)).and_then(|v| u8::try_from(v).ok()),
         };
         self.out.push(emit);
     }
@@ -257,7 +278,7 @@ impl Run<'_> {
         if let Some(ck) = ck {
             let (at, v) = self.checksum(ck, &f)?;
             *f.get_mut(at)? = v as u8;
-            if ck.get("t").and_then(Value::str) == Some("sum16le") {
+            if wide(ck) {
                 *f.get_mut(at + 1)? = (v >> 8) as u8;
             }
         }
@@ -274,8 +295,9 @@ impl Run<'_> {
             .collect()
     }
 
-    /// A checksum over `f`: {"t": "xor" | "sum" | "sum16le", "from": a, "to": b (inclusive), "at": c, "sub": k}
-    /// ("sub": the result is k - sum). Returns (where it goes, value).
+    /// A checksum over `f`: {"t": "xor" | "sum" | "sum16le" | "crc16x", "from": a, "to": b (inclusive), "at": c,
+    /// "sub": k} ("sub": the result is k - sum; "crc16x": CRC-16/XMODEM, its own two bytes counted as zero).
+    /// Returns (where it goes, value).
     fn checksum(&self, ck: &Value, f: &[u8]) -> Option<(usize, u32)> {
         let n = |k: &str| ck.get(k).and_then(|v| self.num(v));
         let (from, to, at) = (n("from")? as usize, n("to")? as usize, n("at")? as usize);
@@ -283,6 +305,10 @@ impl Run<'_> {
         let v = match ck.get("t").and_then(Value::str)? {
             "xor" => bytes.iter().fold(0u32, |a, &b| a ^ b as u32),
             "sum16le" => bytes.iter().map(|&b| b as u32).sum::<u32>() & 0xffff,
+            "crc16x" => bytes.iter().enumerate().fold(0u32, |c, (i, &b)| {
+                let b = if from + i == at || from + i == at + 1 { 0 } else { b };
+                (0..8).fold(c ^ (b as u32) << 8, |c, _| if c & 0x8000 != 0 { (c << 1 ^ 0x1021) & 0xffff } else { (c << 1) & 0xffff })
+            }),
             _ => {
                 let sum = bytes.iter().map(|&b| b as u32).sum::<u32>();
                 match n("sub") {
@@ -297,6 +323,11 @@ impl Run<'_> {
     // ---- values ------------------------------------------------------------------
 
     fn var(&self, name: &str) -> Option<i64> {
+        if name == "ms" {
+            // milliseconds on a clock that only runs forward (for "a while ago" kept in variables)
+            static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+            return Some(START.get_or_init(std::time::Instant::now).elapsed().as_millis() as i64 + 1_000_000);
+        }
         self.vars.iter().rev().find(|(k, _)| k == name).map(|(_, v)| *v)
     }
 
@@ -408,7 +439,7 @@ impl Run<'_> {
                     // the reply's own checksum is right
                     "ck" => self.checksum(a, &self.r).is_some_and(|(at, v)| {
                         let low = self.r.get(at).copied();
-                        if a.get("t").and_then(Value::str) == Some("sum16le") {
+                        if wide(a) {
                             low == Some(v as u8) && self.r.get(at + 1).copied() == Some((v >> 8) as u8)
                         } else {
                             low == Some(v as u8)
@@ -429,6 +460,11 @@ impl Run<'_> {
     }
 }
 
+/// A checksum written as two bytes, low first.
+fn wide(ck: &Value) -> bool {
+    matches!(ck.get("t").and_then(Value::str), Some("sum16le" | "crc16x"))
+}
+
 // ---- the tests in each JSON file -------------------------------------------------
 
 /// Plays back what a device would answer: each "fget"/"iget"/"read" takes the next recorded reply.
@@ -437,6 +473,20 @@ pub struct Playback {
     pub replies: std::collections::VecDeque<Vec<u8>>,
     pub sent: Vec<Vec<u8>>,
     pub lens: (usize, usize),
+}
+
+#[cfg(test)]
+#[test]
+fn crc16_xmodem() {
+    // the standard check value: "123456789" -> 0x31C3
+    let file = Value::Null;
+    let mut vars = Vec::new();
+    let mut port = Playback { replies: Default::default(), sent: Vec::new(), lens: (0, 0) };
+    let run = Run { port: &mut port, file: &file, vars: &mut vars, r: Vec::new(), out: Vec::new(), budget: 10 };
+    let mut f = b"123456789".to_vec();
+    f.extend([0, 0]);
+    let ck = Value::parse(r#"{"t": "crc16x", "from": 0, "to": 8, "at": 9}"#).unwrap();
+    assert_eq!(run.checksum(&ck, &f), Some((9, 0x31c3)));
 }
 
 #[cfg(test)]

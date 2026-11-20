@@ -2,7 +2,7 @@
 // is not there must never hang the thread that asks). Shared by the mouse cards (mouse.rs and its brands) and
 // the battery of every other device (battery/).
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use windows::core::PCWSTR;
 use windows::Win32::Devices::DeviceAndDriverInstallation::*;
@@ -58,13 +58,6 @@ pub fn product(path: &[u16]) -> Option<String> {
         let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
         ok.then(|| String::from_utf16_lossy(&buf[..len]).trim().to_string()).filter(|s| !s.is_empty())
     }
-}
-
-/// The path of the first present collection of vendor `vid` that is `ours`: one whose product id is in `cable`
-/// (on its cable) before any other.
-pub fn hid_find(vid: u16, cable: &[u16], ours: &dyn Fn(&HidInfo) -> bool) -> Option<Vec<u16>> {
-    let all = unsafe { hid_list(&format!("vid_{vid:04x}")) };
-    all.into_iter().filter(|d| d.vid == vid && ours(d)).min_by_key(|d| !cable.contains(&d.pid)).map(|d| d.path)
 }
 
 /// Every present HID collection whose path carries `vid_tag` ("vid_1532"): only those are opened.
@@ -145,10 +138,10 @@ pub unsafe fn probe(path: Vec<u16>) -> Option<HidInfo> {
 pub struct HidIo {
     handle: HANDLE,
     event: HANDLE,
-    pub pid: u16,
     out_len: usize, // report sizes of the collection, report id included
     in_len: usize,
     feat_len: usize,
+    pub gone: std::cell::Cell<bool>, // a transfer failed the way an unplugged device fails
 }
 
 /// A report as most vendor protocols count its bytes: an unnumbered report's leading 0 left out.
@@ -194,7 +187,7 @@ impl HidIo {
                 let _ = CloseHandle(handle);
                 return None;
             };
-            Some(HidIo { handle, event, pid: info.pid, out_len: info.output_len as usize, in_len: info.input_len as usize, feat_len: info.feature_len as usize })
+            Some(HidIo { handle, event, out_len: info.output_len as usize, in_len: info.input_len as usize, feat_len: info.feature_len as usize, gone: Default::default() })
         }
     }
 
@@ -220,14 +213,18 @@ impl HidIo {
     pub fn get_feature(&mut self, id: u8) -> Option<Vec<u8>> {
         let mut buf = vec![0u8; self.feat_len.max(2)];
         buf[0] = id;
-        unsafe { HidD_GetFeature(self.handle, buf.as_mut_ptr() as *mut _, buf.len() as u32) }.as_bool().then_some(buf)
+        let ok = unsafe { HidD_GetFeature(self.handle, buf.as_mut_ptr() as *mut _, buf.len() as u32) }.as_bool();
+        self.gone.set(!ok);
+        ok.then_some(buf)
     }
 
     /// Sends `report` (its id first) as a feature report, padded to the collection's length.
     pub fn set_feature(&mut self, report: &[u8]) -> bool {
         let mut buf = report.to_vec();
         buf.resize(self.feat_len.max(report.len()), 0);
-        unsafe { HidD_SetFeature(self.handle, buf.as_ptr() as *const _, buf.len() as u32) }.as_bool()
+        let ok = unsafe { HidD_SetFeature(self.handle, buf.as_ptr() as *const _, buf.len() as u32) }.as_bool();
+        self.gone.set(!ok);
+        ok
     }
 
     /// Input report `id` asked for over the control pipe (GET_REPORT), the collection's whole length.
@@ -235,30 +232,6 @@ impl HidIo {
         let mut buf = self.input_buffer();
         buf[0] = id;
         unsafe { HidD_GetInputReport(self.handle, buf.as_mut_ptr() as *mut _, buf.len() as u32) }.as_bool().then_some(buf)
-    }
-
-    /// Sends `report` (its id first) and returns the first input report within `within` that `answer` takes
-    /// (it returns None for reports that are something else: notifications, other requests' answers).
-    pub fn ask<R>(&mut self, report: &[u8], within: Duration, mut answer: impl FnMut(&[u8]) -> Option<Result<R, Error>>) -> Result<R, Error> {
-        let out = self.padded(report);
-        unsafe {
-            // some devices only take it as a plain write
-            if !HidD_SetOutputReport(self.handle, out.as_ptr() as *const _, out.len() as u32).as_bool() && self.send(&out, 200)?.is_none() {
-                return Err(Error::Asleep);
-            }
-            let until = Instant::now() + within;
-            let mut buf = self.input_buffer();
-            loop {
-                let left = until.saturating_duration_since(Instant::now());
-                if left.is_zero() {
-                    return Err(Error::Asleep);
-                }
-                let Some(n) = self.receive(&mut buf, left.as_millis() as u32)? else { return Err(Error::Asleep) };
-                if let Some(r) = answer(&buf[..n]) {
-                    return r;
-                }
-            }
-        }
     }
 
     /// Sends `report` (its id first) as a plain write.
@@ -274,12 +247,6 @@ impl HidIo {
             buf.truncate(n);
             buf
         }))
-    }
-
-    /// Input report 0, asked for over the control pipe.
-    pub fn input_report(&mut self) -> Option<Vec<u8>> {
-        let mut buf = self.input_buffer();
-        unsafe { HidD_GetInputReport(self.handle, buf.as_mut_ptr() as *mut _, buf.len() as u32) }.as_bool().then_some(buf)
     }
 
     /// `report` filled up to the collection's output report size.
@@ -313,6 +280,7 @@ impl HidIo {
         if let Err(e) = start(self.handle, &mut ov) {
             // the error carries the code: GetLastError afterwards may already say something else
             if e.code() != ERROR_IO_PENDING.to_hresult() {
+                self.gone.set(true);
                 return Err(Error::Io);
             }
         }

@@ -5,5 +5,6 @@ fn main() {
     println!("cargo:rerun-if-changed=src");
     println!("cargo:rerun-if-changed=assets/app.rc");
     println!("cargo:rerun-if-changed=assets/rustknob.ico");
+    println!("cargo:rerun-if-changed=assets/app.manifest");
     let _ = embed_resource::compile("assets/app.rc", embed_resource::NONE);
 }

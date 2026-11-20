@@ -1682,12 +1682,12 @@ unsafe fn foreground_app_name() -> String {
         }
         let _ = windows::Win32::Foundation::CloseHandle(process);
     }
-    match name.to_lowercase().as_str() {
+    match name.to_ascii_lowercase().as_str() {
         "msedge" => "Edge".into(),
         "chrome" => "Chrome".into(),
         "whatsapp" | "whatsapp.root" => "WhatsApp".into(),
         "applicationframehost" | "" => "…".into(),
-        other => other.chars().next().map(|c| c.to_uppercase().collect::<String>() + &other[c.len_utf8()..]).unwrap_or_default(),
+        other => other.chars().next().map(|c| c.to_ascii_uppercase().to_string() + &other[c.len_utf8()..]).unwrap_or_default(),
     }
 }
 

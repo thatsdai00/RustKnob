@@ -1,0 +1,451 @@
+{
+  "v": 1,
+  "devices": [
+    ["1532:00C0", "razer", "Viper V3 Pro", "mouse", {"model": 0, "cable": 1}],
+    ["1532:00C1", "razer", "Viper V3 Pro", "mouse", {"model": 0}],
+    ["046D:C09B", "hidpp", "Superlight 2", "mouse", {"model": 1, "cable": 1, "dev": 255}],
+    ["046D:C54D", "hidpp", "Superlight 2", "mouse", {"model": 1, "dev": 1}],
+    ["373B:1115", "atk-compx", "ATK A9 Plus", "mouse", {"model": 2, "cable": 1, "rx": 0}],
+    ["373B:1067", "atk-compx", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:1068", "atk-compx", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:1069", "atk-compx", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:106A", "atk-compx", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:10C9", "atk-compx", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:10CA", "atk-compx", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:10CB", "atk-compx", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:10CC", "atk-compx", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:1224", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "cable": 1, "rx": 0}],
+    ["373B:1263", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "cable": 1, "rx": 0}],
+    ["373B:1300", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "cable": 1, "rx": 0}],
+    ["373B:1337", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "cable": 1, "rx": 0}],
+    ["373B:134F", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "cable": 1, "rx": 0}],
+    ["373B:1155", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:11DC", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:1216", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:124F", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:1290", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:1291", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:12AF", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:12CD", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:12D1", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:12EA", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:12F5", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:1302", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:1315", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:1332", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:133E", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:133F", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:1340", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:1341", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:1342", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:1343", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:1344", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:1345", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:1346", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:1347", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:1348", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:134B", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["373B:1375", "atk-bit", "ATK A9 Plus", "mouse", {"model": 2, "rx": 1}],
+    ["046D:0ADF", "g435", "G435", "headset", {"model": 3}],
+    ["0B05:197D", "asus", "ROG Gladius III", "mouse", {"model": 4, "cable": 1, "xy": 0}],
+    ["0B05:1A70", "asus", "ROG Gladius III", "mouse", {"model": 4, "cable": 1, "xy": 1}],
+    ["0B05:1B0A", "asus", "ROG Gladius III", "mouse", {"model": 4, "cable": 1, "xy": 1}],
+    ["0B05:197F", "asus", "ROG Gladius III", "mouse", {"model": 4, "xy": 0}],
+    ["0B05:1A72", "asus", "ROG Gladius III", "mouse", {"model": 4, "xy": 1}],
+    ["0B05:1B0C", "asus", "ROG Gladius III", "mouse", {"model": 4, "xy": 1}]
+  ],
+  "curves": {
+    "li": [[4186, 100], [4067, 90], [3989, 80], [3922, 70], [3859, 60], [3811, 50], [3778, 40], [3751, 30], [3717, 20], [3671, 10], [3500, 0]],
+    "g435": [[4200, 100], [4100, 90], [4000, 80], [3900, 65], [3800, 50], [3750, 40], [3700, 30], [3650, 20], [3600, 10], [3500, 5], [3300, 0]]
+  },
+  "subs": {
+    "rz": [
+      {"retry": 3, "do": [
+        {"fset": "00 00 1F 00 00 00 $size $cls $cid $a0", "ck": {"t": "xor", "from": 3, "to": 88, "at": 89}},
+        {"retry": 40, "gap": 4, "do": [
+          {"fget": 0},
+          {"need": {"at": [7, "$cls $cid"]}},
+          {"need": {"not": {"in": [{"b": 1}, [0, 1]]}}}
+        ]},
+        {"need": {"ne": [{"b": 1}, 3]}}
+      ]},
+      {"need": {"eq": [{"b": 1}, 2]}}
+    ],
+    "rz-bat": [
+      {"set": {"size": 2, "cls": 7, "cid": 128, "a0": 0}},
+      {"call": "rz"},
+      {"set": {"pct": {"div": [{"add": [{"mul": [{"b": 10}, 100]}, 127]}, 255]}, "c": 0, "cid": 132}},
+      {"first": [[{"call": "rz"}, {"set": {"c": {"b": 10}}}], []]},
+      {"emit": {"percent": "$pct", "charging": {"eq": ["$c", 1]}}}
+    ],
+
+    "hpp": [
+      {"first": [[{"oset": "11 $dev $feat $fnsw $p0 $p1 $p2"}], [{"out": "11 $dev $feat $fnsw $p0 $p1 $p2"}]]},
+      {"read": 250, "if": {"all": [{"len": 20}, {"eq": [{"b": 0}, 17]}, {"eq": [{"b": 1}, "$dev"]}, {"any": [{"at": [2, "$feat $fnsw"]}, {"at": [2, "FF $feat $fnsw"]}]}]}},
+      {"need": {"ne": [{"b": 2}, 255]}}
+    ],
+    "hpp-feature": [
+      {"set": {"feat": 0, "fnsw": 10, "p2": 0}},
+      {"call": "hpp"},
+      {"set": {"fx": {"b": 4}}}
+    ],
+    "hpp-features": [
+      {"first": [
+        [{"need": {"known": "$fdpi"}}],
+        [
+          {"set": {"p0": 16, "p1": 4}}, {"call": "hpp-feature"}, {"set": {"f4": "$fx"}},
+          {"set": {"p0": 16, "p1": 0}}, {"call": "hpp-feature"}, {"set": {"f0": "$fx"}},
+          {"set": {"p0": 16, "p1": 1}}, {"call": "hpp-feature"}, {"set": {"f1": "$fx"}},
+          {"set": {"bi": {"if": [{"ne": ["$f4", 0]}, "$f4", {"if": [{"ne": ["$f0", 0]}, "$f0", "$f1"]}]},
+                   "bid": {"if": [{"ne": ["$f4", 0]}, 4100, {"if": [{"ne": ["$f0", 0]}, 4096, {"if": [{"ne": ["$f1", 0]}, 4097, 0]}]}]}}},
+          {"set": {"p0": 34, "p1": 1}}, {"call": "hpp-feature"}, {"set": {"fdpi": "$fx"}}
+        ]
+      ]}
+    ],
+    "hpp-bat": [
+      {"call": "hpp-features"},
+      {"set": {"p0": 0, "p1": 0, "p2": 0, "feat": "$bi"}},
+      {"first": [
+        [{"need": {"eq": ["$bid", 0]}}, {"emit": {"percent": null}}],
+        [{"need": {"eq": ["$bid", 4100]}}, {"set": {"fnsw": 26}}, {"call": "hpp"},
+         {"emit": {"percent": {"min": [{"b": 4}, 100]}, "charging": {"in": [{"b": 6}, [1, 2, 3]]}}}],
+        [{"need": {"eq": ["$bid", 4096]}}, {"set": {"fnsw": 10}}, {"call": "hpp"},
+         {"emit": {"percent": {"min": [{"b": 4}, 100]}, "charging": {"in": [{"b": 6}, [1, 2, 3, 4]]}}}],
+        [{"set": {"fnsw": 10}}, {"call": "hpp"},
+         {"emit": {"percent": {"curve": ["li", {"u16be": 4}]}, "charging": {"ne": [{"and": [{"b": 6}, 128]}, 0]}}}]
+      ]}
+    ],
+
+    "as": [
+      {"first": [[{"oset": "00 $c0 $c1 $c2"}], [{"out": "00 $c0 $c1 $c2"}]]},
+      {"read": 300, "if": {"all": [{"len": 12}, {"any": [{"at": [0, "FF AA"]}, {"all": [{"at": [0, "$c0 $c1"]}, {"any": [{"eq": ["$n", 2]}, {"eq": [{"b": 2}, "$c2"]}]}]}]}]}},
+      {"need": {"not": {"at": [0, "FF AA"]}}}
+    ],
+    "as-bat": [
+      {"set": {"c0": 18, "c1": 7, "c2": 0, "n": 2}},
+      {"call": "as"},
+      {"emit": {"percent": {"b": 4}, "charging": {"ne": [{"b": 9}, 0]}}}
+    ],
+
+    "cx": [
+      {"first": [[{"oset": "08 $cmd 00 $ah $al $ln", "ck": {"t": "sum", "from": 0, "to": 15, "at": 16, "sub": 85}}],
+                 [{"out": "08 $cmd 00 $ah $al $ln", "ck": {"t": "sum", "from": 0, "to": 15, "at": 16, "sub": 85}}]]},
+      {"read": 250, "if": {"all": [{"len": 17}, {"eq": [{"b": 1}, "$cmd"]}, {"at": [3, "$ah $al"]}]}},
+      {"need": {"eq": [{"b": 2}, 0]}}
+    ],
+    "bm": [
+      {"first": [[{"oset": "08 00 72 $plen 00 $tg $bcmd $clen $d0 $d1 $d2", "ck": {"t": "sum", "from": 2, "to": 63, "at": 1}}],
+                 [{"out": "08 00 72 $plen 00 $tg $bcmd $clen $d0 $d1 $d2", "ck": {"t": "sum", "from": 2, "to": 63, "at": 1}}]]},
+      {"read": 250, "if": {"all": [{"len": 16}, {"eq": [{"b": 5}, "$bcmd"]}]}},
+      {"need": {"ne": [{"b": 2}, 255]}}
+    ],
+    "bm-short": [
+      {"set": {"plen": 2, "clen": 1, "d0": 0, "d1": 0, "d2": 0}},
+      {"call": "bm"}
+    ],
+    "cx-online": [
+      {"first": [
+        [{"need": {"eq": ["$rx", 0]}}],
+        [{"set": {"cmd": 3, "ah": 0, "al": 0, "ln": 0}}, {"call": "cx"}, {"need": {"eq": [{"b": 6}, 1]}}]
+      ]}
+    ],
+    "bm-online": [
+      {"first": [
+        [{"need": {"eq": ["$rx", 0]}}],
+        [{"set": {"tg": 0, "bcmd": 129}}, {"call": "bm-short"}, {"need": {"ne": [{"b": 7}, 0]}},
+         {"set": {"tg": 1, "bcmd": 35}}, {"call": "bm-short"}, {"need": {"eq": [{"b": 7}, 0]}}]
+      ]}
+    ],
+    "atk-stages": [
+      {"first": [
+        [{"need": {"all": [{"ge": ["$cnt", 1]}, {"le": ["$cnt", 8]}]}},
+         {"set": {"lc": "$cnt", "la": {"if": [{"ge": ["$act", "$cnt"]}, {"min": [{"max": [{"sub": ["$act", 1]}, 0]}, {"sub": ["$cnt", 1]}]}, "$act"]}}}],
+        []
+      ]}
+    ],
+    "atk-dpi-out": [
+      {"first": [[{"need": {"all": [{"ge": ["$v", 50]}, {"le": ["$v", 42000]}]}}, {"set": {"ld": "$v"}}], []]}
+    ],
+    "atk-emit-dpi": [
+      {"emit": {"dpi": {"or_else": ["$ld", 0]}, "stage": {"or_else": ["$la", 0]}, "stages": {"or_else": ["$lc", 0]}}}
+    ],
+    "atk-shown": [
+      {"first": [
+        [{"need": {"gt": ["$p", 100]}}, {"emit": {"percent": null, "charging": {"eq": ["$ch", 1]}}}, {"stop": 1}],
+        []
+      ]},
+      {"set": {"offok": {"if": [{"all": [{"known": "$offat"}, {"lt": [{"sub": ["$ms", {"or_else": ["$offat", 0]}]}, 600000]}]}, 1, 0]}}},
+      {"first": [
+        [{"need": {"ne": ["$ch", 1]}},
+         {"first": [[{"need": {"eq": [{"or_else": ["$plg", 0]}, 1]}}, {"set": {"plg": 0, "offok": 0}}], []]},
+         {"set": {"s": {"if": [{"eq": ["$offok", 1]}, {"min": ["$offp", "$p"]}, "$p"]}}},
+         {"set": {"offp": "$s", "offat": "$ms"}}],
+        [{"first": [[{"need": {"eq": [{"or_else": ["$plg", 0]}, 1]}}],
+                    [{"set": {"plg": 1, "plgat": "$ms", "from": {"if": [{"eq": ["$offok", 1]}, "$offp", "$p"]}}}]]},
+         {"set": {"most": {"add": ["$from", {"div": [{"mul": [{"sub": ["$ms", "$plgat"]}, 11]}, 600000]}]}}},
+         {"set": {"s": {"min": [{"max": [{"min": ["$p", "$most"]}, "$from"]}, 100]}}}]
+      ]},
+      {"emit": {"percent": "$s", "charging": {"eq": ["$ch", 1]}}}
+    ],
+    "cx-bat": [
+      {"set": {"cmd": 4, "ah": 0, "al": 0, "ln": 0}},
+      {"call": "cx"},
+      {"set": {"p": {"b": 6}, "ch": {"if": [{"eq": [{"b": 7}, 1]}, 1, 0]}}},
+      {"call": "atk-shown"}
+    ],
+    "bm-bat": [
+      {"set": {"tg": "$rx", "bcmd": 7}},
+      {"call": "bm-short"},
+      {"set": {"p": {"b": 7}, "ch": 0, "bcmd": 15}},
+      {"first": [[{"call": "bm-short"}, {"set": {"ch": {"if": [{"eq": [{"b": 7}, 1]}, 1, 0]}}}], []]},
+      {"call": "atk-shown"}
+    ],
+
+    "gcmd": [
+      {"out": "00 $gc $gl 00 00 $x0 $x1 $x2 $x3 $x4 $x5 $x6", "ck": {"t": "crc16x", "from": 1, "to": 64, "at": 3}},
+      {"sleep": 10},
+      {"iget": 0},
+      {"first": [[{"need": {"eq": ["$gk", 0]}}], [{"need": {"eq": [{"b": 1}, 79]}}]]}
+    ],
+    "radio": [
+      {"set": {"tr": {"add": [{"sub": [{"or_else": ["$tr", 0]}, {"mul": [{"div": [{"or_else": ["$tr", 0]}, 127]}, 127]}]}, 1]}}},
+      {"set": {"gc": 128, "gl": "$rl", "gk": 1, "x0": 80, "x1": 65, "x3": "$tr"}},
+      {"call": "gcmd"}
+    ],
+    "frames": [
+      {"retry": 15, "do": [
+        {"read": 100},
+        {"set": {"i": 1, "hit": 0}},
+        {"while": {"all": [{"eq": ["$hit", 0]}, {"le": [{"add": ["$i", 9]}, {"b": 0}]}, {"at": ["$i", "50 49"]}]}, "do": [
+          {"set": {"ln": {"u16le": {"add": ["$i", 8]}}, "q": {"add": ["$i", 10]}}},
+          {"first": [
+            [{"need": {"eq": ["$want", 0]}}, {"need": {"ge": ["$ln", 2]}}, {"need": {"eq": [{"b": "$q"}, "$lid"]}},
+             {"set": {"hit": 1, "val": {"b": {"add": ["$q", 1]}}}}],
+            [{"need": {"eq": ["$want", 1]}}, {"need": {"ge": ["$ln", 5]}}, {"need": {"eq": [{"b": "$q"}, 6]}},
+             {"need": {"eq": [{"and": [{"b": {"add": ["$q", 1]}}, 127]}, "$tr"]}}, {"need": {"eq": [{"b": {"add": ["$q", 2]}}, 0]}},
+             {"set": {"hit": 1, "val": {"u16le": {"add": ["$q", 3]}}}}],
+            []
+          ]},
+          {"set": {"i": {"add": ["$i", {"add": [10, "$ln"]}]}}}
+        ]},
+        {"need": {"eq": ["$hit", 1]}}
+      ]}
+    ],
+    "link": [
+      {"set": {"rl": {"add": [6, "$lp"]}, "x2": 14, "x4": {"add": [1, "$lp"]}, "x5": "$lid", "x6": "$lv"}},
+      {"call": "radio"},
+      {"set": {"want": 0}},
+      {"call": "frames"}
+    ],
+    "remote": [
+      {"set": {"rl": 7, "x2": 14, "x4": 2, "x5": 225, "x6": "$on"}},
+      {"call": "radio"},
+      {"set": {"lid": 224, "lp": 0, "lv": 0}},
+      {"call": "link"},
+      {"need": {"eq": ["$val", "$on"]}}
+    ],
+    "g-bat": [
+      {"set": {"lid": 224, "lp": 0, "lv": 0}},
+      {"call": "link"},
+      {"set": {"rem": {"if": [{"eq": ["$val", 1]}, 1, 0]}}},
+      {"first": [[{"need": {"eq": ["$rem", 1]}}], [{"set": {"on": 1}}, {"call": "remote"}]]},
+      {"set": {"mvok": 0, "rl": 7, "x2": 6, "x4": 1, "x5": 0, "x6": 49}},
+      {"first": [[{"call": "radio"}, {"set": {"want": 1}}, {"call": "frames"}, {"set": {"mv": "$val", "mvok": 1}}], []]},
+      {"first": [[{"need": {"eq": ["$rem", 1]}}], [{"set": {"on": 0}}, {"first": [[{"call": "remote"}], []]}]]},
+      {"need": {"eq": ["$mvok", 1]}},
+      {"first": [
+        [{"need": {"any": [{"lt": ["$mv", 2500]}, {"gt": ["$mv", 4600]}]}}, {"emit": {"percent": null, "charging": {"eq": ["$chg", 1]}}}, {"stop": 1}],
+        []
+      ]},
+      {"first": [
+        [{"need": {"known": "$mvb"}}, {"need": {"ge": ["$mv", {"add": ["$mvb", 100]}]}}, {"need": {"eq": ["$chg", 0]}},
+         {"set": {"chg": 1, "plg": 1, "plgat": "$ms", "plgfrom": {"curve": ["g435", "$mvb"]}}}],
+        [{"need": {"known": "$mvb"}}, {"need": {"le": [{"add": ["$mv", 100]}, "$mvb"]}}, {"need": {"eq": ["$chg", 1]}},
+         {"set": {"chg": 0, "plg": 0, "unat": "$ms"}}],
+        []
+      ]},
+      {"first": [
+        [{"need": {"eq": ["$chg", 1]}}, {"set": {"clk": 0}}],
+        [{"need": {"known": "$unat"}}, {"need": {"lt": [{"sub": ["$ms", "$unat"]}, 600000]}}, {"set": {"clk": 1, "clat": "$ms", "clmv": "$mv"}}],
+        [{"need": {"eq": ["$clk", 1]}}, {"need": {"ge": [{"sub": ["$ms", "$clat"]}, 180000]}},
+         {"first": [[{"need": {"ge": ["$mv", {"add": ["$clmv", 30]}]}},
+                     {"set": {"chg": 1, "plg": 1, "plgat": "$ms", "plgfrom": {"curve": ["g435", {"max": [{"sub": ["$mv", 250]}, 0]}]}}}], []]},
+         {"set": {"clat": "$ms", "clmv": "$mv"}}],
+        [{"need": {"eq": ["$clk", 1]}}, {"need": {"lt": ["$mv", "$clmv"]}}, {"set": {"clat": "$ms", "clmv": "$mv"}}],
+        [{"need": {"eq": ["$clk", 0]}}, {"set": {"clk": 1, "clat": "$ms", "clmv": "$mv"}}],
+        []
+      ]},
+      {"set": {"mvb": "$mv", "mvat": "$ms"}},
+      {"set": {"s": {"if": [{"all": [{"eq": ["$chg", 1]}, {"eq": ["$plg", 1]}]},
+                            {"min": [{"add": ["$plgfrom", {"div": [{"mul": [{"sub": ["$ms", "$plgat"]}, 8]}, 600000]}]}, 100]},
+                            {"curve": ["g435", "$mv"]}]}}},
+      {"emit": {"percent": "$s", "charging": {"eq": ["$chg", 1]}}}
+    ]
+  },
+  "protocols": {
+    "razer": {
+      "pick": [{"feat": 91}],
+      "open": "feature",
+      "grace": 120,
+      "dpi": [
+        {"set": {"size": 7, "cls": 4, "cid": 133, "a0": 1}},
+        {"call": "rz"},
+        {"set": {"dpi": {"u16be": 10}}},
+        {"first": [
+          [{"need": {"eq": ["$dpi", {"or_else": ["$ldpi", -1]}]}}, {"emit": {"dpi": "$dpi", "stage": "$st", "stages": "$n"}}],
+          [{"set": {"size": 38, "cls": 4, "cid": 134, "a0": 1}},
+           {"call": "rz"},
+           {"set": {"n": {"min": [{"b": 11}, 5]}, "act": {"b": 10}, "st": 0}},
+           {"first": [[{"any": "i", "in": [0, 1, 2, 3, 4], "do": [{"need": {"lt": ["$i", "$n"]}}, {"need": {"eq": [{"b": {"add": [12, {"mul": ["$i", 7]}]}}, "$act"]}}]}, {"set": {"st": "$i"}}], []]},
+           {"set": {"ldpi": "$dpi"}},
+           {"emit": {"dpi": "$dpi", "stage": "$st", "stages": "$n"}}],
+          [{"emit": {"dpi": "$dpi"}}]
+        ]}
+      ],
+      "battery": [{"call": "rz-bat"}],
+      "charging": [
+        {"set": {"size": 2, "cls": 7, "cid": 132, "a0": 0}},
+        {"call": "rz"},
+        {"emit": {"charging": {"eq": [{"b": 10}, 1]}}}
+      ],
+      "run": [{"call": "rz-bat"}]
+    },
+    "hidpp": {
+      "pick": [{"page": "FF00", "usage": "0002", "in": 20}],
+      "grace": 600,
+      "dpi": [
+        {"call": "hpp-features"},
+        {"first": [
+          [{"need": {"ne": ["$fdpi", 0]}}, {"set": {"feat": "$fdpi", "fnsw": 42, "p0": 0, "p1": 0, "p2": 0}}, {"call": "hpp"}, {"emit": {"dpi": {"u16be": 5}}}],
+          [{"set": {"feat": 0, "fnsw": 26, "p0": 0, "p1": 0, "p2": 90}}, {"call": "hpp"}, {"emit": {"dpi": 0}}]
+        ]}
+      ],
+      "battery": [{"call": "hpp-bat"}],
+      "run": [{"call": "hpp-bat"}]
+    },
+    "asus": {
+      "pick": [{"mi": 0, "out": 65}],
+      "dpi": [
+        {"set": {"c0": 18, "c1": 0, "c2": 0, "n": 3}},
+        {"call": "as"},
+        {"set": {"s": {"b": 11}}},
+        {"first": [
+          [{"need": {"any": [{"lt": ["$s", 1]}, {"gt": ["$s", 4]}]}}, {"emit": {"dpi": {"or_else": ["$last", 0]}, "stage": 0, "stages": 0}}],
+          [{"set": {"c0": 18, "c1": 4, "c2": {"if": [{"eq": ["$xy", 1]}, 2, 0]}, "n": 3}},
+           {"call": "as"},
+           {"set": {"v": {"add": [{"mul": [{"u16le": {"add": [4, {"mul": [{"sub": ["$s", 1]}, {"if": [{"eq": ["$xy", 1]}, 4, 2]}]}]}}, 50]}, 50]}}},
+           {"first": [[{"need": {"all": [{"ge": ["$v", 100]}, {"le": ["$v", 36000]}]}}, {"set": {"last": "$v"}}], []]},
+           {"emit": {"dpi": {"or_else": ["$last", 0]}, "stage": {"sub": ["$s", 1]}, "stages": 4}}]
+        ]}
+      ],
+      "battery": [{"call": "as-bat"}],
+      "run": [{"call": "as-bat"}]
+    },
+    "atk-compx": {
+      "pick": [{"page": "FF02", "usage": "0002", "out": 17}],
+      "grace": 1800,
+      "dpi": [
+        {"call": "cx-online"},
+        {"first": [
+          [{"set": {"cmd": 8, "ah": 0, "al": 0, "ln": 10}}, {"call": "cx"},
+           {"first": [
+             [{"need": {"eq": [{"and": [{"add": [{"b": 8}, {"b": 9}]}, 255]}, 85]}}, {"need": {"eq": [{"and": [{"add": [{"b": 10}, {"b": 11}]}, 255]}, 85]}},
+              {"set": {"act": {"b": 10}, "cnt": {"b": 8}}}, {"call": "atk-stages"}],
+             []
+           ]},
+           {"need": {"ge": [{"or_else": ["$lc", 0]}, 1]}},
+           {"set": {"cmd": 8, "ah": 0, "al": {"add": [12, {"mul": [{"div": ["$la", 2]}, 8]}]}, "ln": 8}}, {"call": "cx"},
+           {"set": {"o": {"mul": [{"sub": ["$la", {"mul": [{"div": ["$la", 2]}, 2]}]}, 4]}}},
+           {"set": {"lo": {"b": {"add": [6, "$o"]}}, "ex": {"b": {"add": [8, "$o"]}}}},
+           {"set": {"v": {"mul": [{"add": [{"or": ["$lo", {"shl": [{"and": [{"shr": ["$ex", 2]}, 3]}, 8]}]}, 1]}, 50]}}},
+           {"set": {"v": {"if": [{"ne": [{"and": ["$ex", 1]}, 0]}, {"mul": ["$v", 2]}, "$v"]}}},
+           {"call": "atk-dpi-out"}],
+          []
+        ]},
+        {"call": "atk-emit-dpi"}
+      ],
+      "battery": [{"call": "cx-bat"}],
+      "run": [{"call": "cx-bat"}]
+    },
+    "atk-bit": {
+      "pick": [{"page": "FF05", "usage": "0001"}],
+      "grace": 1800,
+      "dpi": [
+        {"call": "bm-online"},
+        {"first": [
+          [{"set": {"tg": "$rx", "bcmd": 23, "plen": 10, "clen": 13, "d0": 1, "d1": 0, "d2": 2}}, {"call": "bm"},
+           {"set": {"act": {"b": 10}, "cnt": {"b": 11}}}, {"call": "atk-stages"},
+           {"need": {"ge": [{"or_else": ["$lc", 0]}, 1]}},
+           {"set": {"tg": "$rx", "bcmd": 23, "plen": 10, "clen": 13, "d0": {"add": [3, {"mul": ["$la", 8]}]}, "d1": 0, "d2": 2}}, {"call": "bm"},
+           {"set": {"v": {"u16le": 10}}},
+           {"call": "atk-dpi-out"}],
+          []
+        ]},
+        {"call": "atk-emit-dpi"}
+      ],
+      "battery": [{"call": "bm-bat"}],
+      "run": [{"call": "bm-bat"}]
+    },
+    "g435": {
+      "pick": [{"page": "FF00"}],
+      "grace": 1800,
+      "start": [
+        {"set": {"tr": 0, "chg": 0, "plg": 0, "clk": 0, "gc": 133, "gl": 1, "gk": 0, "x0": 1, "x1": 0, "x2": 0, "x3": 0, "x4": 0, "x5": 0, "x6": 0}},
+        {"call": "gcmd"}
+      ],
+      "dpi": [
+        {"first": [
+          [{"need": {"known": "$lkat"}}, {"need": {"lt": [{"sub": ["$ms", "$lkat"]}, 2000]}}, {"need": {"eq": ["$lkok", 1]}}, {"emit": {"dpi": 0}}],
+          [{"need": {"known": "$lkat"}}, {"need": {"lt": [{"sub": ["$ms", "$lkat"]}, 2000]}}, {"fail": 1}],
+          [{"set": {"lkat": "$ms", "lkok": 0, "lid": 230, "lp": 0, "lv": 0}},
+           {"call": "link"},
+           {"need": {"ne": [{"and": ["$val", 8]}, 0]}},
+           {"set": {"lkok": 1}},
+           {"emit": {"dpi": 0}}]
+        ]}
+      ],
+      "battery": [{"call": "g-bat"}],
+      "charging": [
+        {"first": [
+          [{"need": {"known": "$mvat"}}, {"need": {"lt": [{"sub": ["$ms", "$mvat"]}, 10000]}}, {"emit": {"charging": {"eq": ["$chg", 1]}}}],
+          [{"call": "g-bat"}]
+        ]}
+      ],
+      "run": [{"call": "g-bat"}]
+    }
+  },
+  "tests": [
+    {"protocol": "razer", "program": "battery", "feat": 91,
+     "replies": [
+       "00 02 1F 00 00 00 02 07 80 00 C0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+       "00 02 1F 00 00 00 02 07 84 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"],
+     "sent": ["00 00 1F 00 00 00 02 07 80"],
+     "expect": [{"percent": 75}]},
+    {"protocol": "razer", "program": "dpi", "feat": 91,
+     "replies": [
+       "00 02 1F 00 00 00 07 04 85 01 06 40 06 40 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+       "00 02 1F 00 00 00 26 04 86 01 02 03 01 01 90 01 90 00 00 02 03 20 03 20 00 00 03 06 40 06 40 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"],
+     "expect": [{"dpi": 1600, "stage": 1, "stages": 3}]},
+    {"protocol": "razer", "program": "dpi", "feat": 91,
+     "replies": ["00 04 1F 00 00 00 07 04 85 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"],
+     "expect": []},
+    {"protocol": "asus", "program": "battery", "out": 65, "replies": ["00 12 07 00 00 4B 00 00 00 00 01 00 00 00"], "sent": ["00 12 07"],
+     "expect": [{"percent": 75, "charging": true}]},
+    {"protocol": "asus", "program": "battery", "out": 65, "replies": ["00 FF AA 00 00 00 00 00 00 00 00 00 00 00"], "expect": []},
+    {"protocol": "atk-compx", "program": "battery", "out": 17, "vars": {"rx": 1},
+     "replies": ["08 04 00 00 00 00 37 00 00 00 00 00 00 00 00 00 00"], "sent": ["08 04 00 00 00 00 00 00 00 00 00 00 00 00 00 00 49"],
+     "expect": [{"percent": 55}]},
+    {"protocol": "hidpp", "program": "battery", "out": 20, "vars": {"dev": 1},
+     "replies": [
+       "11 01 00 0A 05 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+       "11 01 00 0A 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+       "11 01 00 0A 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+       "11 01 00 0A 07 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+       "11 01 05 1A 2A 00 02 00 00 00 00 00 00 00 00 00 00 00 00 00"],
+     "sent": ["11 01 00 0A 10 04 00"],
+     "expect": [{"percent": 42, "charging": true}]},
+    {"protocol": "g435", "program": "dpi", "out": 65, "vars": {"tr": 0},
+     "replies": ["00 4F", "00 0C 50 49 00 00 00 00 00 00 02 00 E6 08"],
+     "expect": [{"dpi": 0}]}
+  ]
+}

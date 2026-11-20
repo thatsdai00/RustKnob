@@ -1,16 +1,13 @@
-// Gaming mice, straight over HID (no Synapse, no G HUB, no second program): the DPI they are set to, their
-// battery, and when they wake up. Reads only. Everything here is shared; only the way of talking to the mouse
-// differs per brand:
+// Gaming mice and a headset, straight over HID (no Synapse, no G HUB, no second program): the DPI they are set
+// to, their battery, and when they wake up. Reads only. How each one is talked to is not here: it is a JSON
+// protocol (devices/cards.json, fetched once like every device file, see battery/catalog.rs) with a "dpi",
+// "battery" and "charging" program, run by battery/script.rs:
 //
-//   Razer Viper V3 Pro           (here)         a 90-byte packet as feature report 0, ported from rustdriver/razer
-//   Logitech PRO X SUPERLIGHT 2  (logitech.rs)  HID++ 2.0 reports on the receiver's vendor collection
-//   ATK A9 Plus                  (atk.rs)       ATK V HUB reports (two families: Compx, BitMouse)
-//   ASUS ROG Gladius III         (asus.rs)      Armoury Crate's 64-byte reports on interface 0
-//   Logitech G435 headset        (g435.rs)      its LIGHTSPEED dongle's own reports (battery only, no DPI)
-//
-// Razer packet (report id first): [1] status 0 new, 1 busy, 2 ok, 3 failed, 4 no answer (asleep / out of
-// range), 5 not supported; [2] transaction id 0x1F; [6] argument size; [7] class; [8] id (bit 7: get);
-// [9..89] arguments; [89] XOR of [3..89]. It is sent, then read back until the status stops saying "busy".
+//   Razer Viper V3 Pro            a 90-byte packet as feature report 0
+//   Logitech PRO X SUPERLIGHT 2   HID++ 2.0 reports on the receiver's vendor collection
+//   ATK A9 Plus                   ATK V HUB reports (two families: Compx, BitMouse)
+//   ASUS ROG Gladius III          Armoury Crate's 64-byte reports on interface 0
+//   Logitech G435 headset         its LIGHTSPEED dongle's own reports (battery only, no DPI)
 //
 // A thread of its own owns the handle. With no receiver or cable present it sleeps until Windows reports a
 // device change; while the mouse sleeps it asks once every 1.5 s; while it is awake it reads the DPI every
@@ -26,24 +23,13 @@ use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::{Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use windows::Win32::Devices::HumanInterfaceDevice::*;
 use windows::Win32::Foundation::*;
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
+use crate::battery::Card;
 use crate::gfx::FClamp;
-pub use crate::hid::{hid_find, percent_on, Error, HidInfo, HidIo};
-use crate::hid::open;
-use crate::asus::Asus;
-use crate::atk::Atk;
-use crate::g435::G435;
-use crate::logitech::Logi;
+pub use crate::hid::Error;
 
-const VID: u16 = 0x1532;
-const PID_WIRED: u16 = 0x00c0;
-const PID_WIRELESS: u16 = 0x00c1;
-const REPORT_LEN: usize = 91; // report id 0 + the 90-byte packet
-const VARSTORE: u8 = 0x01;
-const STAGES_MAX: usize = 5;
 
 const AWAKE_EVERY: Duration = Duration::from_millis(400);
 const ASLEEP_EVERY: Duration = Duration::from_millis(1500);
@@ -65,6 +51,11 @@ pub enum Model {
 }
 
 impl Model {
+    /// From its number in the device files ("model" in devices/cards.json).
+    fn from(n: u8) -> Option<Model> {
+        [Model::ViperV3Pro, Model::Superlight2, Model::AtkA9Plus, Model::G435, Model::GladiusIII].get(n as usize).copied()
+    }
+
     pub fn name(self) -> &'static str {
         match self {
             Model::ViperV3Pro => "Viper V3 Pro",
@@ -159,8 +150,8 @@ fn set_others(o: Vec<Other>) {
 pub fn products() -> Vec<(u16, u16)> {
     Device::present()
         .iter()
-        .filter_map(|(_, path)| {
-            let p = String::from_utf16_lossy(path).to_ascii_lowercase();
+        .filter_map(|c| {
+            let p = String::from_utf16_lossy(&c.path).to_ascii_lowercase();
             let hex = |tag: &str| p.find(tag).and_then(|i| p.get(i + 4..i + 8)).and_then(|h| u16::from_str_radix(h, 16).ok());
             Some((hex("vid_")?, hex("pid_")?))
         })
@@ -343,7 +334,7 @@ fn watch(m: &mut Device) {
         // a device came or went: is this still the way to the mouse (the cable wins when it is plugged in)?
         if take_rescan() {
             settle_rescans();
-            if Device::preferred().map(|p| p.1).as_ref() != Some(&m.path) {
+            if Device::preferred().map(|c| c.path).as_ref() != Some(&m.path) {
                 if now.is_some() {
                     post(EV_GONE);
                 }
@@ -367,10 +358,10 @@ struct Watched {
 /// After a device change (and at first): drops the others that are gone, opens the new ones, keeps the rest as
 /// they are.
 fn refresh_others(devices: &mut Vec<Watched>, followed: Model) {
-    let present: Vec<(Model, Vec<u16>)> = Device::present().into_iter().filter(|(model, _)| *model != followed).collect();
-    devices.retain(|w| present.iter().any(|(_, p)| *p == w.device.path));
+    let present: Vec<Card> = Device::present().into_iter().filter(|c| Model::from(c.model) != Some(followed)).collect();
+    devices.retain(|w| present.iter().any(|c| c.path == w.device.path));
     for p in present {
-        if !devices.iter().any(|w| w.device.path == p.1) {
+        if !devices.iter().any(|w| w.device.path == p.path) {
             if let Some(device) = Device::open(p) {
                 devices.push(Watched { device, last: None });
             }
@@ -444,76 +435,63 @@ fn read_others(devices: &mut Vec<Watched>, full: bool) {
     set_others(devices.iter().filter_map(|w| w.last).collect());
 }
 
-/// What the thread asks a device, whichever brand: each brand's file speaks its own protocol.
-pub trait Brand {
-    /// The DPI (0 when it is not told); answering at all means it is awake.
-    fn dpi(&mut self) -> Result<u16, Error>;
-
-    /// (active stage, how many); one that does not tell its stages has 0 of them (no markers are drawn).
-    fn stages(&mut self) -> Result<(usize, usize), Error> {
-        Ok((0, 0))
-    }
-
-    /// (percent, on the charger).
-    fn battery(&mut self) -> Result<(Option<u8>, bool), Error>;
-
-    fn charging(&mut self) -> Result<bool, Error> {
-        self.battery().map(|b| b.1)
-    }
-}
-
-/// The mouse, whichever brand: all the thread needs from it.
+/// The mouse (or headset) the thread follows: its protocol is a JSON file run by battery/script.rs (its "dpi",
+/// "battery" and "charging" programs, see devices/cards.json); `card` holds the open collection.
 struct Device {
     model: Model,
     path: Vec<u16>,
-    brand: Box<dyn Brand>,
+    card: Card,
+    staged: (usize, usize), // the stages the last "dpi" run told
 }
-
-impl std::ops::Deref for Device {
-    type Target = dyn Brand;
-    fn deref(&self) -> &Self::Target {
-        &*self.brand
-    }
-}
-
-impl std::ops::DerefMut for Device {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut *self.brand
-    }
-}
-
-/// How a brand finds the path to talk to (each prefers its cable to its receiver).
-type Find = fn() -> Option<Vec<u16>>;
-
-/// Every brand, in the order they are looked for.
-const BRANDS: [(Model, Find); 5] = [
-    (Model::ViperV3Pro, Razer::preferred),
-    (Model::Superlight2, Logi::preferred),
-    (Model::AtkA9Plus, Atk::preferred),
-    (Model::GladiusIII, Asus::preferred),
-    (Model::G435, G435::preferred),
-];
 
 impl Device {
-    /// The model and path to talk to: a Razer first, else a Logitech, and so on down BRANDS.
-    fn preferred() -> Option<(Model, Vec<u16>)> {
-        BRANDS.iter().find_map(|&(model, find)| find().map(|p| (model, p)))
+    /// Every plugged-in device the cards follow, a mouse on its cable before its receiver, in Model order.
+    fn present() -> Vec<Card> {
+        let mut all = crate::battery::cards();
+        let mut out = Vec::new();
+        // one per model, the G435 last; of a model, its cable before its receiver
+        for model in [0, 1, 2, 4, 3] {
+            let pick = all.iter().position(|c| c.model == model && c.cable).or_else(|| all.iter().position(|c| c.model == model));
+            if let Some(i) = pick {
+                out.push(all.swap_remove(i));
+            }
+        }
+        out
     }
 
-    /// Every brand's mouse that is plugged in, in the same order.
-    fn present() -> Vec<(Model, Vec<u16>)> {
-        BRANDS.iter().filter_map(|&(model, find)| find().map(|p| (model, p))).collect()
+    /// The one to follow: the first of `present`.
+    fn preferred() -> Option<Card> {
+        Self::present().into_iter().next()
     }
 
-    fn open((model, path): (Model, Vec<u16>)) -> Option<Device> {
-        let brand: Box<dyn Brand> = match model {
-            Model::ViperV3Pro => Box::new(Razer::open(&path)?),
-            Model::Superlight2 => Box::new(Logi::open(&path)?),
-            Model::AtkA9Plus => Box::new(Atk::open(&path)?),
-            Model::GladiusIII => Box::new(Asus::open(&path)?),
-            Model::G435 => Box::new(G435::open(&path)?),
-        };
-        Some(Device { model, path, brand })
+    fn open(card: Card) -> Option<Device> {
+        let model = Model::from(card.model)?;
+        let path = card.path.clone();
+        Some(Device { model, path, card: card.open()?, staged: (0, 0) })
+    }
+
+    /// The DPI (0 when it is not told); answering at all means it is awake.
+    fn dpi(&mut self) -> Result<u16, Error> {
+        let e = self.card.call("dpi")?;
+        if let (Some(stage), Some(stages)) = (e.stage, e.stages) {
+            self.staged = (stage as usize, stages as usize);
+        }
+        Ok(e.dpi.unwrap_or(0))
+    }
+
+    /// (active stage, how many), as the last DPI read told; 0 stages: no markers are drawn.
+    fn stages(&mut self) -> Result<(usize, usize), Error> {
+        Ok(self.staged)
+    }
+
+    /// (percent, on the charger).
+    fn battery(&mut self) -> Result<(Option<u8>, bool), Error> {
+        let e = self.card.call("battery")?;
+        Ok((e.percent, e.charging))
+    }
+
+    fn charging(&mut self) -> Result<bool, Error> {
+        Ok(self.card.call("charging")?.charging)
     }
 
     /// Awake (then with its battery: Some), asleep (None) or gone (Err).
@@ -531,91 +509,6 @@ impl Device {
     /// The percent now, or `last` when it does not tell.
     fn percent_or(&mut self, last: Option<u8>) -> Option<u8> {
         self.battery().ok().and_then(|b| b.0).or(last)
-    }
-}
-
-struct Razer {
-    handle: HANDLE,
-}
-
-impl Drop for Razer {
-    fn drop(&mut self) {
-        unsafe {
-            let _ = CloseHandle(self.handle);
-        }
-    }
-}
-
-impl Razer {
-    fn open(path: &[u16]) -> Option<Razer> {
-        Some(Razer { handle: unsafe { open(path)? } })
-    }
-
-    /// The configuration collection (a 91-byte feature report): the cable's when it is plugged in, else the
-    /// receiver's.
-    fn preferred() -> Option<Vec<u16>> {
-        hid_find(VID, &[PID_WIRED], &|d| (d.pid == PID_WIRED || d.pid == PID_WIRELESS) && d.feature_len as usize == REPORT_LEN)
-    }
-
-    fn cmd(&mut self, class: u8, id: u8, size: u8, args: &[u8]) -> Result<[u8; 80], Error> {
-        let mut pkt = [0u8; REPORT_LEN];
-        pkt[2] = 0x1f;
-        pkt[6] = size;
-        pkt[7] = class;
-        pkt[8] = id;
-        pkt[9..9 + args.len().min(80)].copy_from_slice(&args[..args.len().min(80)]);
-        pkt[89] = pkt[3..89].iter().fold(0, |c, &x| c ^ x);
-        for _attempt in 0..3 {
-            if !unsafe { HidD_SetFeature(self.handle, pkt.as_ptr() as *const _, REPORT_LEN as u32) }.as_bool() {
-                return Err(Error::Io);
-            }
-            for i in 0..60 {
-                // the first read waits a moment too: straight away it can still hold the previous answer
-                std::thread::sleep(Duration::from_millis(if i < 10 { 1 } else { 4 }));
-                let mut r = [0u8; REPORT_LEN];
-                if !unsafe { HidD_GetFeature(self.handle, r.as_mut_ptr() as *mut _, REPORT_LEN as u32) }.as_bool() {
-                    return Err(Error::Io);
-                }
-                if r[7] != class || r[8] != id {
-                    continue; // not the answer to this request yet
-                }
-                match r[1] {
-                    2 => {
-                        let mut a = [0u8; 80];
-                        a.copy_from_slice(&r[9..89]);
-                        return Ok(a);
-                    }
-                    3 => break,                         // failed: send again
-                    4 | 5 => return Err(Error::Asleep), // no answer; 5, not supported: treated as no answer
-                    _ => continue,                      // new / busy
-                }
-            }
-        }
-        Err(Error::Asleep)
-    }
-}
-
-impl Brand for Razer {
-    fn dpi(&mut self) -> Result<u16, Error> {
-        let a = self.cmd(0x04, 0x85, 0x07, &[VARSTORE])?;
-        Ok(u16::from_be_bytes([a[1], a[2]]))
-    }
-
-    fn stages(&mut self) -> Result<(usize, usize), Error> {
-        let a = self.cmd(0x04, 0x86, 0x26, &[VARSTORE])?;
-        let n = (a[2] as usize).min(STAGES_MAX);
-        let active = (0..n).find(|i| a[3 + i * 7] == a[1]).unwrap_or(0);
-        Ok((active, n))
-    }
-
-    /// The percent from the mouse's 0..255 scale, then the charger.
-    fn battery(&mut self) -> Result<(Option<u8>, bool), Error> {
-        let a = self.cmd(0x07, 0x80, 0x02, &[])?;
-        Ok((Some(((a[1] as u32 * 100 + 127) / 255) as u8), self.charging().unwrap_or(false)))
-    }
-
-    fn charging(&mut self) -> Result<bool, Error> {
-        Ok(self.cmd(0x07, 0x84, 0x02, &[])?[1] == 1)
     }
 }
 

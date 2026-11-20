@@ -6,13 +6,13 @@
 
 <a href="https://github.com/thatsdai00/RustKnob/releases/latest"><img src="docs/img/download.png" alt="Download Releases" width="380"></a>
 
-<sub>Windows 10 and 11 · one 0.5 MB file · no installer, no admin rights</sub>
+<sub>Windows 10 and 11 · one 0.6 MB file · no installer, no admin rights</sub>
 
 </div>
 
 <br>
 
-<img src="docs/img/stats.png" alt="0.5 MB, about 0% CPU idle, 100 FPS, no telemetry" width="100%">
+<img src="docs/img/stats.png" alt="0.6 MB, about 0% CPU idle, 100 FPS, no telemetry" width="100%">
 
 <br>
 
@@ -76,6 +76,7 @@ RustKnob checks this repository's [releases](https://github.com/thatsdai00/RustK
 | **Media** | Song changes show title and artist. Mouse back/forward, left click and right click over the capsule control playback; the side buttons work in a wider area around it. |
 | **Pin media** | The capsule stays while music plays, like a Live Activity: cover, title, artist, and a **real spectrum visualizer** that takes the cover's color. Song changes animate. Optional **synced lyrics** ([LiriQo](https://github.com/AlFarrizi-Studio/LiriQo), with [LRCLIB](https://lrclib.net) as backup) appear under the title, line by line. The **word-by-word** mode (*beta*, its own switch in settings) lights each word as it is sung, like Apple Music, when the song has word timing. It fades when the pointer comes near, and steps aside for full-screen apps unless you say otherwise. |
 | **Mouse and headset** (Razer Viper V3 Pro, Logitech PRO X Superlight 2, ATK A9 Plus, ASUS ROG Gladius III Wireless and AimPoint, Logitech G435 on its 046D:0ADF receiver) | Built in, no Synapse, no G HUB, no ATK Hub, no Armoury Crate and no second program: RustKnob talks to the mouse over HID itself (the Superlight 2 through HID++, the A9 Plus through ATK's protocol, the Gladius III through Armoury Crate's; the Superlight 2 and the Gladius III not yet tried on a real one). When a device connects, its picture comes up large in the middle, then moves to the left and the rest comes in. With "Battery icons in the tray" on, every connected device gets its own icon in the notification area showing its percent (green while charging, yellow when low, red when critical); hover it for the name, click it for the device's card. When it wakes, a card says hello with its picture and battery. Switch DPI and the number rolls while a marker slides to the new stage. Below 25 % a yellow warning shows once; at 5 % a red one stays until you charge it (it fades when the pointer comes near). The G435 shows its battery the same way (from the cell's voltage; the original 046D:0ACB receiver is not supported). Another device plugged in at the same time gets its battery in a row under every mouse card. Pictures are fetched from this repository the first time a mouse shows up (they are not in the exe). Reads only, a few milliseconds every 400 ms while the mouse is awake, nothing while it sleeps or is not there. |
+| **Every wireless device's battery** | One strip on the taskbar, just left of the notification area: an icon and a percent per device (a bolt while charging, a check when full, red below 15 %). "Battery on the taskbar" switches it; tray icons stay available. Over 800 mice, keyboards, headsets and controllers in 75 families ([list](devices/SUPPORTED.md)), plus any Bluetooth device Windows shows a battery for and any HID device with the standard battery usage. The protocols are not in the exe: only the file for a plugged-in device is fetched, once. One small read every 10 s while a device is awake, no CPU in between. |
 | **Uploads** | Drag a file toward the top of the screen and drop it on the capsule. It uploads to fuckingfast.net with progress and speed, and the link is copied. `Ctrl+Alt+H` opens the history. |
 | **Screenshots** | `Win+Shift+S` freezes and dims the screen. Drag a rectangle: it is copied, shrinks into the island, and `Ctrl+V` later tells you where it was pasted. `Esc` or right click cancels. |
 | **Notifications** | Listens to a [ntfy](https://ntfy.sh) topic and shows messages with their own sound and volume. Device changes show the device name. |
@@ -127,7 +128,7 @@ Needs Rust and the Visual Studio C++ build tools. `package.ps1` writes `dist/Rus
 
 # Türkçe
 
-**RustKnob**, Windows için Dynamic Island tarzı bir kapsül: ses çubuğu, yuvarlak ses düğmesi, çalan şarkı, yükleme, ekran görüntüsü, bildirim ve ayarlar arasında şekil değiştirir. Odak çalmaz, borderless oyunların üstünde çalışır, boştayken neredeyse hiç CPU kullanmaz. Tek bir ~0,5 MB Rust exe.
+**RustKnob**, Windows için Dynamic Island tarzı bir kapsül: ses çubuğu, yuvarlak ses düğmesi, çalan şarkı, yükleme, ekran görüntüsü, bildirim ve ayarlar arasında şekil değiştirir. Odak çalmaz, borderless oyunların üstünde çalışır, boştayken neredeyse hiç CPU kullanmaz. Tek bir ~0,6 MB Rust exe.
 
 **Kurulum:** [Son sürümden](https://github.com/thatsdai00/RustKnob/releases/latest) `RustKnob.exe` indir, çift tıkla, kurulum kapsülünde seçimlerini yapıp **Kur**'a bas. Yönetici izni gerekmez. SmartScreen uyarırsa *Ek bilgi → Yine de çalıştır* (exe imzalı değil).
 
@@ -139,6 +140,7 @@ Needs Rust and the Visual Studio C++ build tools. `package.ps1` writes `dist/Rus
 | **Medya** | Yeni şarkıda başlık ve sanatçı; fare tuşlarıyla şarkı yönetimi. |
 | **Medyayı sabitle** | Kapak, şarkı, sanatçı ve gerçek spektrum görselleştirici; renkler kapaktan gelir. İsteğe bağlı senkron şarkı sözleri ([LiriQo](https://github.com/AlFarrizi-Studio/LiriQo), yedek olarak [LRCLIB](https://lrclib.net)) başlığın altında satır satır akar. Ayarlardaki ayrı **kelime kelime** anahtarı (*beta*), kelime zamanlaması olan şarkılarda her kelimeyi Apple Music gibi söylendikçe yakar. |
 | **Fare ve kulaklık** (Razer Viper V3 Pro, Logitech PRO X Superlight 2, ATK A9 Plus, ASUS ROG Gladius III Wireless ve AimPoint, 046D:0ADF alıcılı Logitech G435) | Synapse yok, G HUB yok, ATK Hub yok, Armoury Crate yok, ikinci program yok: RustKnob fareyle HID üzerinden kendisi konuşur (Superlight 2 HID++ ile, A9 Plus ATK protokolüyle, Gladius III Armoury Crate'in protokolüyle; Superlight 2 ve Gladius III henüz gerçek farede denenmedi). Bir cihaz bağlanınca önce görseli ortada büyük olarak gelir, sonra sola kayar ve diğer öğeler yüklenir. "Tepside pil ikonları" açıksa bağlı her cihaz bildirim alanında yüzdesini gösteren kendi ikonunu alır (şarjda yeşil, düşükken sarı, kritikte kırmızı); üzerine gelince adı görünür, tıklayınca cihazın kartı açılır. Fare uyanınca görseli ve piliyle bir kart çıkar. DPI değişince sayı yuvarlanır, işaret yeni kademeye kayar. %25'in altında bir kez sarı uyarı, %5'te şarja takana kadar kalan kırmızı uyarı. G435'in pili de aynı şekilde görünür (hücre voltajından; ilk 046D:0ACB alıcı desteklenmez). Aynı anda takılı başka bir cihazın pili de her fare kartının altında bir satırda görünür. Görseller fare ilk görüldüğünde bu depodan indirilir (exe'de değiller). Sadece okur; fare uyanıkken 400 ms'de bir birkaç milisaniye, uyurken ya da yokken hiç. |
+| **Her kablosuz cihazın pili** | Görev çubuğunda, bildirim alanının hemen solunda tek bir şerit: her cihaz için ikon ve yüzde (şarjda şimşek, dolunca tik, %15 altında kırmızı). "Görev çubuğunda pil" ile açılıp kapanır; isteyen tepside ikonları da açabilir. 75 aileden 800'ü aşkın fare, klavye, kulaklık ve kumanda ([liste](devices/SUPPORTED.md)), artı Windows'un pilini gösterdiği her Bluetooth cihazı ve standart HID pil bilgisi veren her cihaz. Protokoller exe'de değil: yalnızca takılı cihazın dosyası bir kez indirilir. Uyanık cihaza 10 saniyede bir küçük bir okuma, arada hiç işlemci yok. |
 | **Yükleme** | Dosyayı sürükleyip kapsüle bırak: fuckingfast.net'e yüklenir, link kopyalanır (`Ctrl+Alt+H` geçmiş). |
 | **Ekran görüntüsü** | `Win+Shift+S`: seç, panoya kopyalansın, kapsüle uçsun; `Ctrl+V`'de nereye yapıştırıldığını söyler. |
 | **Bildirimler** | [ntfy](https://ntfy.sh) konusunu dinler. |

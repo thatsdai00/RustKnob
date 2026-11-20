@@ -27,6 +27,7 @@ mod catalog;
 mod generic;
 mod pnp;
 mod script;
+pub use catalog::{cards, Card};
 
 /// What a device is, for its icon.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]

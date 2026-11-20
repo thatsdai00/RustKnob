@@ -37,7 +37,7 @@ pub fn exe_dir() -> PathBuf {
 }
 
 fn lower(p: &Path) -> String {
-    p.to_string_lossy().to_lowercase()
+    p.to_string_lossy().to_ascii_lowercase()
 }
 
 /// What an exe that is not the installed copy finds on this PC.

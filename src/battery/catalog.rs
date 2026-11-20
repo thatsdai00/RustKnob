@@ -23,18 +23,105 @@ pub fn driver(scan: &mut Scan, sources: &mut Vec<Box<dyn Source>>) {
             present.push((c.vid, c.pid));
         }
     }
+    for (name, file) in loaded(&present) {
+        family(scan, sources, &name, &file);
+    }
+}
+
+/// The family files the products `present` need, in the index's claiming order.
+fn loaded(present: &[(u16, u16)]) -> Vec<(String, Arc<Value>)> {
+    let mut out = Vec::new();
     if present.is_empty() {
-        return;
+        return out;
     }
     let store = Store::new();
-    let Some(index) = store.index(&present) else { return };
+    let Some(index) = store.index(present) else { return out };
     let needed: Vec<&str> = present.iter().flat_map(|&(v, p)| families_of(&index, v, p)).collect();
-    // the families needed, in the index's claiming order
     for name in index.get("order").map(Value::arr).unwrap_or_default().iter().filter_map(Value::str).filter(|f| needed.contains(f)) {
         let version = index.get("families").and_then(|f| f.get(name)).and_then(Value::num).unwrap_or(0.0) as i64;
         if let Some(file) = store.family(name, version) {
-            family(scan, sources, name, &Arc::new(file));
+            out.push((name.to_string(), Arc::new(file)));
         }
+    }
+    out
+}
+
+// ---- the devices the mouse cards follow ------------------------------------------
+
+/// A device the cards follow (its DPI, its wake-ups; mouse.rs): a product whose family entry gives a card
+/// "model" and whose protocol has a "dpi" program (and "battery", optionally "charging").
+pub struct Card {
+    pub model: u8,
+    pub cable: bool,
+    pub path: Vec<u16>,
+    device: Device,
+    io: Option<HidIo>,
+    vars: Vec<(String, i64)>,
+}
+
+/// Every present product the cards can follow, each on the first collection its protocol picks.
+pub fn cards() -> Vec<Card> {
+    let cols = unsafe { crate::hid::hid_list("") };
+    let mut present: Vec<(u16, u16)> = Vec::new();
+    for c in &cols {
+        if !present.contains(&(c.vid, c.pid)) {
+            present.push((c.vid, c.pid));
+        }
+    }
+    let scan = Scan { cols, claimed: Vec::new(), bt_containers: Vec::new() };
+    let mut out: Vec<Card> = Vec::new();
+    for (name, file) in loaded(&present) {
+        for entry in file.get("devices").map(Value::arr).unwrap_or_default() {
+            let e = entry.arr();
+            let (Some((vid, pid)), Some(proto)) = (e.first().and_then(Value::str).and_then(id), e.get(1).and_then(Value::str)) else { continue };
+            let Some(Value::Obj(vars)) = e.get(4) else { continue };
+            let num = |k: &str| vars.iter().find(|(n, _)| n == k).and_then(|(_, v)| v.num());
+            let Some(model) = num("model") else { continue };
+            if !present.contains(&(vid, pid)) || out.iter().any(|c| c.device.vid == vid && c.device.pid == pid) {
+                continue;
+            }
+            let mut v: Vec<(String, i64)> = vec![("vid".into(), vid as i64), ("pid".into(), pid as i64)];
+            v.extend(vars.iter().filter_map(|(k, x)| Some((k.clone(), x.num()? as i64))));
+            let device = Device { family: name.clone(), vid, pid, names: Vec::new(), kind: None, file: file.clone(), proto: proto.to_string(), vars: v };
+            if device.proto().get("dpi").is_none() {
+                continue;
+            }
+            if let Some(c) = candidates(&scan, &device).first() {
+                let path = c.path.clone();
+                out.push(Card { model: model as u8, cable: num("cable").is_some_and(|c| c != 0.0), path, vars: device.vars.clone(), device, io: None });
+            }
+        }
+    }
+    out
+}
+
+impl Card {
+    /// Opens its collection (and runs its "open" program, if it has one).
+    pub fn open(mut self) -> Option<Card> {
+        let info = unsafe { crate::hid::probe(self.path.clone()) }?;
+        self.io = Some(match self.device.proto().get("open").and_then(Value::str).unwrap_or("rw") {
+            "feature" => HidIo::open_feature(&info),
+            "read" => HidIo::open_read(&info),
+            _ => HidIo::open(&self.path),
+        }?);
+        if self.device.proto().get("start").is_some() {
+            let _ = self.call("start");
+        }
+        Some(self)
+    }
+
+    /// Runs one of its programs ("dpi", "battery", "charging": the last falls back to "battery"); what it
+    /// emitted while the device answered, else asleep, or gone when a transfer failed as if unplugged.
+    pub fn call(&mut self, program: &str) -> Result<script::Emit, crate::hid::Error> {
+        let proto = self.device.proto();
+        let steps = proto.get(program).or_else(|| (program == "charging").then(|| proto.get("battery")).flatten()).unwrap_or(&Value::Null);
+        let io = self.io.as_mut().ok_or(crate::hid::Error::Io)?;
+        io.gone.set(false);
+        let emits = script::run(io, &self.device.file, steps, &mut self.vars);
+        if io.gone.get() {
+            return Err(crate::hid::Error::Io);
+        }
+        emits.into_iter().find(|e| e.state == 0).ok_or(crate::hid::Error::Asleep)
     }
 }
 
@@ -169,11 +256,12 @@ fn open(scan: &Scan, d: Device, answer_only: bool) -> Option<Scripted> {
             _ => HidIo::open(&c.path),
         };
         let Some(mut io) = io else { continue };
-        let emits = script::run(&mut io, &d.file, d.proto().get("run").unwrap_or(&Value::Null), d.vars.clone());
+        let mut vars = d.vars.clone();
+        let emits = script::run(&mut io, &d.file, d.proto().get("run").unwrap_or(&Value::Null), &mut vars);
         if !emits.is_empty() {
             let product = crate::hid::product(&c.path);
             let kind = kind_of(scan, &d);
-            let mut s = Scripted { device: d, io, product, kind, first: Some(emits), keys: Vec::new() };
+            let mut s = Scripted { device: d, io, product, kind, first: Some(emits), keys: Vec::new(), vars };
             s.product = s.product.take().map(|p| strip(&p, s.device.proto()));
             return Some(s);
         }
@@ -184,7 +272,8 @@ fn open(scan: &Scan, d: Device, answer_only: bool) -> Option<Scripted> {
     let (io, c) = fallback.filter(|_| !answer_only)?;
     let product = crate::hid::product(&c.path).map(|p| strip(&p, d.proto()));
     let kind = kind_of(scan, &d);
-    Some(Scripted { device: d, io, product, kind, first: None, keys: Vec::new() })
+    let vars = d.vars.clone();
+    Some(Scripted { device: d, io, product, kind, first: None, keys: Vec::new(), vars })
 }
 
 /// What the product's own collections say it is (a mouse collection: a mouse).
@@ -210,12 +299,13 @@ struct Scripted {
     kind: Option<Kind>, // from its collections, when neither the file nor the run says
     first: Option<Vec<Emit>>, // the run that found it, used as the first poll
     keys: Vec<(String, String, Kind)>, // what it reported before: kept (asleep) when a run gives nothing
+    vars: Vec<(String, i64)>,          // the protocol's variables, kept from one run to the next
 }
 
 impl Source for Scripted {
     fn poll(&mut self, out: &mut Vec<Reading>) -> Duration {
         let d = &self.device;
-        let emits = self.first.take().unwrap_or_else(|| script::run(&mut self.io, &d.file, d.proto().get("run").unwrap_or(&Value::Null), d.vars.clone()));
+        let emits = self.first.take().unwrap_or_else(|| script::run(&mut self.io, &d.file, d.proto().get("run").unwrap_or(&Value::Null), &mut self.vars));
         if emits.is_empty() {
             out.extend(self.keys.iter().map(|(k, n, kind)| Reading::new(k, n, *kind).asleep()));
             return d.secs("asleep", ASLEEP_EVERY);
@@ -405,7 +495,7 @@ mod tests {
                 if let Some(Value::Obj(v)) = t.get("vars") {
                     vars.extend(v.iter().map(|(k, x)| (k.clone(), x.num().unwrap() as i64)));
                 }
-                let got = run(&mut port, &file, proto.get("run").unwrap(), vars);
+                let got = run(&mut port, &file, proto.get(t.get("program").and_then(Value::str).unwrap_or("run")).unwrap(), &mut vars);
                 let expect = t.get("expect").map(Value::arr).unwrap_or_default();
                 assert_eq!(got.len(), expect.len(), "{name} test {i}: emitted {got:?}");
                 for (g, e) in got.iter().zip(expect) {
@@ -418,6 +508,11 @@ mod tests {
                         _ => 0,
                     };
                     assert_eq!(g.state, want_state, "{name} test {i}: state, got {g:?}");
+                    for (k, got) in [("dpi", g.dpi.map(|v| v as i64)), ("stage", g.stage.map(|v| v as i64)), ("stages", g.stages.map(|v| v as i64))] {
+                        if let Some(want) = e.get(k).and_then(Value::num) {
+                            assert_eq!(got, Some(want as i64), "{name} test {i}: {k}, got {g:?}");
+                        }
+                    }
                     if let Some(slot) = e.get("slot").and_then(Value::str) {
                         assert_eq!(g.slot, slot, "{name} test {i}: slot");
                     }
