@@ -1,0 +1,184 @@
+{
+  "v": 1,
+  "devices": [
+    ["1038:12B3", "a1", "SteelSeries Arctis 1 Wireless", "headset"], ["1038:12B6", "a1", "SteelSeries Arctis 1 Wireless", "headset"],
+    ["1038:12D7", "a1", "SteelSeries Arctis 7X", "headset"],
+    ["1038:1260", "a7", "SteelSeries Arctis 7", "headset"], ["1038:12AD", "a7", "SteelSeries Arctis 7", "headset"],
+    ["1038:1252", "a7", "SteelSeries Arctis Pro", "headset"],
+    ["1038:12C2", "a9", "SteelSeries Arctis 9", "headset"],
+    ["1038:1290", "apw", "SteelSeries Arctis Pro Wireless", "headset"],
+    ["1038:12E0", "npw", "SteelSeries Arctis Nova Pro Wireless", "headset"], ["1038:225D", "npw", "SteelSeries Arctis Nova Pro Wireless", "headset"],
+    ["1038:220E", "nova", "SteelSeries Arctis 7+", "headset", {"lay": 1}], ["1038:2212", "nova", "SteelSeries Arctis 7+", "headset", {"lay": 1}],
+    ["1038:2216", "nova", "SteelSeries Arctis 7+", "headset", {"lay": 1}], ["1038:2236", "nova", "SteelSeries Arctis 7+", "headset", {"lay": 1}],
+    ["1038:2269", "nova", "SteelSeries Arctis Nova 3P Wireless", "headset", {"lay": 2}], ["1038:226D", "nova", "SteelSeries Arctis Nova 3P Wireless", "headset", {"lay": 2}],
+    ["1038:2232", "nova", "SteelSeries Arctis Nova 5", "headset", {"lay": 2}], ["1038:2253", "nova", "SteelSeries Arctis Nova 5", "headset", {"lay": 2}],
+    ["1038:230A", "nova", "SteelSeries Arctis GameBuds", "headset", {"lay": 3}],
+    ["1038:2202", "nova", "SteelSeries Arctis Nova 7", "headset", {"lay": 4}], ["1038:2206", "nova", "SteelSeries Arctis Nova 7", "headset", {"lay": 4}],
+    ["1038:220A", "nova", "SteelSeries Arctis Nova 7", "headset", {"lay": 4}], ["1038:223A", "nova", "SteelSeries Arctis Nova 7", "headset", {"lay": 4}],
+    ["1038:227A", "nova", "SteelSeries Arctis Nova 7", "headset", {"lay": 4}], ["1038:22A4", "nova", "SteelSeries Arctis Nova 7", "headset", {"lay": 4}],
+    ["1038:22A1", "nova", "SteelSeries Arctis Nova 7", "headset", {"lay": 5}], ["1038:227E", "nova", "SteelSeries Arctis Nova 7", "headset", {"lay": 5}],
+    ["1038:2258", "nova", "SteelSeries Arctis Nova 7", "headset", {"lay": 5}], ["1038:229E", "nova", "SteelSeries Arctis Nova 7", "headset", {"lay": 5}],
+    ["1038:22AD", "nova", "SteelSeries Arctis Nova 7", "headset", {"lay": 5}], ["1038:22A9", "nova", "SteelSeries Arctis Nova 7", "headset", {"lay": 5}],
+    ["1038:22A5", "nova", "SteelSeries Arctis Nova 7", "headset", {"lay": 5}], ["1038:22A7", "nova", "SteelSeries Arctis Nova 7", "headset", {"lay": 5}],
+    ["1038:1838", "aerox", "SteelSeries Aerox 3 Wireless", "mouse", {"cmd": 210, "lay": 1, "ident": 1838}],
+    ["1038:183A", "aerox", "SteelSeries Aerox 3 Wireless", "mouse", {"cmd": 146, "lay": 1, "ident": 1838}],
+    ["1038:1878", "aerox", "SteelSeries Aerox 3 Wireless CS2 Dragon Lore Edition", "mouse", {"cmd": 210, "lay": 1, "ident": 1878}],
+    ["1038:187A", "aerox", "SteelSeries Aerox 3 Wireless CS2 Dragon Lore Edition", "mouse", {"cmd": 146, "lay": 1, "ident": 1878}],
+    ["1038:1890", "aerox", "SteelSeries Aerox 3 Wireless Gen 2", "mouse", {"cmd": 210, "lay": 2, "ident": 1890}],
+    ["1038:1892", "aerox", "SteelSeries Aerox 3 Wireless Gen 2", "mouse", {"cmd": 146, "lay": 2, "ident": 1890}],
+    ["1038:1852", "aerox", "SteelSeries Aerox 5 Wireless", "mouse", {"cmd": 210, "lay": 1, "ident": 1852}],
+    ["1038:1854", "aerox", "SteelSeries Aerox 5 Wireless", "mouse", {"cmd": 146, "lay": 1, "ident": 1852}],
+    ["1038:1858", "aerox", "SteelSeries Aerox 9 Wireless", "mouse", {"cmd": 210, "lay": 1, "ident": 1858}],
+    ["1038:185A", "aerox", "SteelSeries Aerox 9 Wireless", "mouse", {"cmd": 146, "lay": 1, "ident": 1858}],
+    ["1038:1840", "aerox", "SteelSeries Prime Wireless", "mouse", {"cmd": 210, "lay": 1, "ident": 1840}],
+    ["1038:1842", "aerox", "SteelSeries Prime Wireless", "mouse", {"cmd": 146, "lay": 1, "ident": 1840}],
+    ["1038:1860", "aerox", "SteelSeries Aerox 5 Wireless Diablo IV Edition", "mouse", {"cmd": 210, "lay": 1, "ident": 1860}],
+    ["1038:1830", "rival3", "SteelSeries Rival 3 Wireless", "mouse"],
+    ["1038:1872", "rival3", "SteelSeries Rival 3 Wireless Gen 2", "mouse"],
+    ["1038:172B", "rival650", "SteelSeries Rival 650 Wireless", "mouse"],
+    ["1038:1726", "rival650", "SteelSeries Rival 650 Wireless", "mouse"],
+    ["1038:1880", "rivalpro", "SteelSeries Rival Pro", "mouse"]
+  ],
+  "subs": {
+    "reply": [
+      {"retry": 2, "do": [{"read": 500, "if": {"len": "$min"}}]}
+    ],
+    "apwq": [
+      {"first": [
+        [{"need": {"ne": ["$fr", 0]}}, {"flush": 1}, {"out": "00 $cmd AA"}, {"read": 500}, {"set": {"fr": 1}}],
+        [{"need": {"ne": ["$fr", 1]}}, {"flush": 1}, {"out": "$cmd AA"}, {"read": 500}, {"set": {"fr": 0}}]
+      ]}
+    ],
+    "rival": [
+      {"flush": 1}, {"out": "00 AA 01"},
+      {"read": 300, "if": {"len": 3}}
+    ]
+  },
+  "protocols": {
+    "a1": {
+      "pick": [{"page": "FF43", "usage": "0202"}],
+      "kind": "headset",
+      "run": [
+        {"flush": 1}, {"out": "06 12"}, {"set": {"min": 4}}, {"call": "reply"},
+        {"emit": {"percent": {"if": [{"eq": [{"b": 2}, 1]}, null, {"min": [{"b": 3}, 100]}]}, "offline": {"eq": [{"b": 2}, 1]}}}
+      ]
+    },
+    "a7": {
+      "pick": [{"page": "FF43", "usage": "0202"}],
+      "kind": "headset",
+      "run": [
+        {"flush": 1}, {"out": "06 18"}, {"set": {"min": 3}}, {"call": "reply"},
+        {"emit": {"percent": {"if": [{"eq": [{"b": 2}, 0]}, null, {"min": [{"b": 2}, 100]}]}, "offline": {"eq": [{"b": 2}, 0]}}}
+      ]
+    },
+    "a9": {
+      "pick": [{"mi": 0, "out": [1]}],
+      "kind": "headset",
+      "run": [
+        {"flush": 1}, {"out": "00 20"}, {"set": {"min": 5}}, {"call": "reply"},
+        {"emit": {"percent": {"scale": [{"b": 3}, 100, 154]}, "charging": {"eq": [{"b": 4}, 1]}}}
+      ]
+    },
+    "apw": {
+      "pick": [{"mi": 0, "out": [1]}],
+      "kind": "headset",
+      "run": [
+        {"set": {"fr": -1, "cmd": 65}}, {"call": "apwq"},
+        {"first": [[{"need": {"eq": [{"b": 0}, 2]}}, {"emit": {"state": "offline"}}, {"stop": 1}], []]},
+        {"set": {"cmd": 64}}, {"call": "apwq"},
+        {"need": {"le": [{"b": 0}, 4]}},
+        {"emit": {"percent": {"scale": [{"b": 0}, 0, 4]}}}
+      ]
+    },
+    "npw": {
+      "pick": [{"mi": 4, "out": [1]}],
+      "kind": "headset",
+      "run": [
+        {"flush": 1}, {"out": "06 B0"}, {"set": {"min": 16}}, {"call": "reply"},
+        {"emit": {"percent": {"if": [{"eq": [{"b": 15}, 1]}, null, {"scale": [{"b": 6}, 0, 8]}]}, "charging": {"eq": [{"b": 15}, 2]}, "offline": {"eq": [{"b": 15}, 1]}}}
+      ]
+    },
+    "nova": {
+      "pick": [{"page": "FFC0", "usage": "0001"}],
+      "kind": "headset",
+      "run": [
+        {"flush": 1}, {"out": "00 B0"}, {"set": {"min": 7}}, {"call": "reply"},
+        {"first": [
+          [{"need": {"eq": ["$lay", 1]}},
+           {"emit": {"percent": {"if": [{"eq": [{"b": 1}, 1]}, null, {"scale": [{"b": 2}, 0, 4]}]}, "charging": {"eq": [{"b": 3}, 1]}, "offline": {"eq": [{"b": 1}, 1]}}}],
+          [{"need": {"eq": ["$lay", 2]}},
+           {"emit": {"percent": {"if": [{"eq": [{"b": 1}, 2]}, null, {"min": [{"b": 3}, 100]}]}, "charging": {"eq": [{"b": 4}, 1]}, "offline": {"eq": [{"b": 1}, 2]}}}],
+          [{"need": {"eq": ["$lay", 3]}},
+           {"set": {"pct": {"min": [{"if": [{"eq": [{"b": 3}, 3]}, {"b": 5}, 999]}, {"if": [{"eq": [{"b": 4}, 3]}, {"b": 6}, 999]}]}}},
+           {"emit": {"percent": "$pct", "offline": {"eq": ["$pct", 999]}}}],
+          [{"need": {"eq": ["$lay", 4]}},
+           {"emit": {"percent": {"if": [{"eq": [{"b": 3}, 0]}, null, {"scale": [{"b": 2}, 0, 4]}]}, "charging": {"in": [{"b": 3}, [1, 2]]}, "offline": {"eq": [{"b": 3}, 0]}}}],
+          [{"emit": {"percent": {"if": [{"eq": [{"b": 3}, 0]}, null, {"min": [{"b": 2}, 100]}]}, "charging": {"in": [{"b": 3}, [1, 2]]}, "offline": {"eq": [{"b": 3}, 0]}}}]
+        ]}
+      ]
+    },
+    "aerox": {
+      "pick": [{"mi": 3, "out": [1]}],
+      "kind": "mouse",
+      "grace": 1800,
+      "run": [
+        {"set": {"min": {"if": [{"eq": ["$lay", 2]}, 3, 2]}}},
+        {"flush": 1},
+        {"retry": 10, "do": [
+          {"out": "00 $cmd"},
+          {"read": 100, "if": {"any": [{"all": [{"eq": [{"b": 0}, "$cmd"]}, {"len": "$min"}]}, {"at": [0, "40 FF"]}]}}
+        ]},
+        {"need": {"eq": [{"b": 0}, "$cmd"]}},
+        {"first": [
+          [{"need": {"eq": ["$lay", 1]}},
+           {"set": {"lvl": {"and": [{"b": 1}, 127]}}},
+           {"need": {"ne": ["$lvl", 0]}},
+           {"emit": {"id": {"add": ["$ident", 0]}, "percent": {"if": [{"le": ["$lvl", 21]}, {"mul": [{"sub": ["$lvl", 1]}, 5]}, null]},
+                     "charging": {"ne": [{"and": [{"b": 1}, 128]}, 0]}}}],
+          [{"need": {"le": [{"b": 1}, 2]}},
+           {"need": {"not": {"all": [{"eq": ["$cmd", 210]}, {"eq": [{"b": 1}, 0]}, {"eq": [{"b": 2}, 0]}]}}},
+           {"emit": {"id": {"add": ["$ident", 0]}, "percent": {"if": [{"le": [{"b": 2}, 100]}, {"b": 2}, null]}, "charging": {"ne": [{"b": 1}, 0]},
+                     "full": {"eq": [{"b": 1}, 2]}}}]
+        ]}
+      ]
+    },
+    "rival3": {
+      "pick": [{"mi": 3, "out": [1]}],
+      "kind": "mouse",
+      "run": [{"call": "rival"}, {"emit": {"percent": {"min": [{"b": 0}, 100]}, "charging": {"ne": [{"b": 2}, 0]}}}]
+    },
+    "rival650": {
+      "pick": [{"mi": 0, "out": [1]}],
+      "kind": "mouse",
+      "run": [{"call": "rival"}, {"emit": {"id": "172B", "percent": {"min": [{"b": 0}, 100]}, "charging": {"ne": [{"b": 2}, 0]}}}]
+    },
+    "rivalpro": {
+      "pick": [{"mi": 2, "out": [1]}],
+      "kind": "mouse",
+      "run": [
+        {"flush": 1}, {"out": "00 92"},
+        {"read": 500, "if": {"all": [{"len": 3}, {"at": [0, "92 00"]}]}},
+        {"emit": {"percent": {"b": 2}}}
+      ]
+    }
+  },
+  "tests": [
+    {"protocol": "a1", "out": 31, "replies": ["06 12 00 40"], "sent": ["06 12"], "expect": [{"percent": 64}]},
+    {"protocol": "a1", "out": 31, "replies": ["06 12 01 00"], "expect": [{"state": "offline"}]},
+    {"protocol": "a7", "out": 31, "replies": ["06 18 32"], "expect": [{"percent": 50}]},
+    {"protocol": "a9", "out": 31, "replies": ["00 20 00 00 7F 01"], "expect": [{"percent": 50, "charging": true}]},
+    {"protocol": "apw", "out": 33, "replies": ["04 00", "03 00"], "sent": ["00 41 AA", "00 40 AA"], "expect": [{"percent": 75}]},
+    {"protocol": "npw", "out": 64, "replies": ["06 B0 00 00 00 00 06 00 00 00 00 00 00 00 00 02"], "expect": [{"percent": 75, "charging": true}]},
+    {"protocol": "nova", "out": 64, "vars": {"lay": 1}, "replies": ["B0 03 02 01 00 00 00"], "sent": ["00 B0"], "expect": [{"percent": 50, "charging": true}]},
+    {"protocol": "nova", "out": 64, "vars": {"lay": 2}, "replies": ["B0 02 00 00 00 00 00"], "expect": [{"state": "offline"}]},
+    {"protocol": "nova", "out": 64, "vars": {"lay": 3}, "replies": ["B0 00 00 03 03 50 3C"], "expect": [{"percent": 60}]},
+    {"protocol": "nova", "out": 64, "vars": {"lay": 4}, "replies": ["B0 00 03 02 00 00 00"], "expect": [{"percent": 75, "charging": true}]},
+    {"protocol": "nova", "out": 64, "vars": {"lay": 5}, "replies": ["B0 00 58 03 00 00 00"], "expect": [{"percent": 88}]},
+    {"protocol": "aerox", "out": 65, "vars": {"cmd": 210, "lay": 1, "ident": 1838}, "replies": ["41 00", "D2 0A"], "sent": ["00 D2"], "expect": [{"percent": 45}]},
+    {"protocol": "aerox", "out": 65, "vars": {"cmd": 146, "lay": 1, "ident": 1838}, "replies": ["92 8B"], "expect": [{"percent": 50, "charging": true}]},
+    {"protocol": "aerox", "out": 65, "vars": {"cmd": 210, "lay": 1, "ident": 1838}, "replies": ["40 FF"], "expect": []},
+    {"protocol": "aerox", "out": 65, "vars": {"cmd": 210, "lay": 2, "ident": 1890}, "replies": ["D2 01 FF"], "expect": [{"charging": true}]},
+    {"protocol": "rival3", "out": 65, "replies": ["4B 00 01"], "sent": ["00 AA 01"], "expect": [{"percent": 75, "charging": true}]},
+    {"protocol": "rivalpro", "out": 65, "replies": ["92 00 5A 01 50"], "expect": [{"percent": 90}]}
+  ]
+}

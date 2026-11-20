@@ -36,6 +36,7 @@ mod spectrum;
 mod surface;
 mod text;
 mod theme;
+mod taskbar;
 mod tray;
 mod ui;
 mod update;

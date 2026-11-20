@@ -1,0 +1,58 @@
+{
+  "v": 1,
+  "devices": [
+    ["0ECB:206B", "v1-350", "JBL Quantum 350 Wireless"],
+    ["0ECB:205C", "v1-610", "JBL Quantum 610 Wireless"],
+    ["0ECB:2115", "v1-360", "JBL Quantum 360 Wireless"],
+    ["0ECB:2125", "v3", "JBL Quantum 650 Wireless"],
+    ["0ECB:2126", "v3", "JBL Quantum 650 Wireless"],
+    ["0ECB:213B", "v3", "JBL Quantum 650X Wireless"],
+    ["0ECB:213D", "v3", "JBL Quantum 650X Wireless"],
+    ["0ECB:2127", "v3", "JBL Quantum 950 Wireless"],
+    ["0ECB:2128", "v3", "JBL Quantum 950 Wireless"],
+    ["0ECB:213E", "v3", "JBL Quantum 950X Wireless"],
+    ["0ECB:2140", "v3", "JBL Quantum 950X Wireless"],
+    ["0ECB:218D", "v3", "JBL Quantum 520 Wireless"],
+    ["0ECB:218E", "v3", "JBL Quantum 520 Wireless"],
+    ["0ECB:21A7", "v3", "JBL Quantum 520X Wireless"],
+    ["0ECB:21A9", "v3", "JBL Quantum 520X Wireless"],
+    ["0ECB:219A", "v3", "JBL Quantum 850 Wireless"],
+    ["0ECB:219B", "v3", "JBL Quantum 850 Wireless"]
+  ],
+  "subs": {
+    "v1": [
+      {"fget": "68"},
+      {"need": {"all": [{"len": 2}, {"eq": [{"b": 0}, "68"]}, {"eq": [{"b": 1}, 1]}]}},
+      {"fget": "49"},
+      {"need": {"all": [{"len": 2}, {"eq": [{"b": 0}, "49"]}, {"le": [{"b": 1}, 100]}]}},
+      {"emit": {"percent": {"b": 1}}}
+    ]
+  },
+  "protocols": {
+    "v1-350": {"pick": [{"mi": 3, "page": "0001", "usage": "0000", "feat": [2]}], "open": "read", "kind": "headset",
+      "run": [
+        {"call": "v1"}
+      ]},
+    "v1-610": {"pick": [{"mi": 5, "feat": [2]}], "open": "read", "kind": "headset",
+      "run": [
+        {"call": "v1"}
+      ]},
+    "v1-360": {"pick": [{"mi": 5, "page": "0001", "usage": "0000", "feat": [2]}], "open": "read", "kind": "headset",
+      "run": [
+        {"call": "v1"}
+      ]},
+    "v3": {"pick": [{"page": "FF12", "feat": [11], "in": [16]}], "kind": "headset",
+      "run": [
+        {"flush": 1},
+        {"fset": "88 00 DD 01 00 01 00 02 00 0D 00"},
+        {"read": 800, "if": {"all": [{"len": 16}, {"at": [0, "86 00 DD 01 00 01"]}, {"not": {"all": [{"eq": [{"b": 13}, 0]}, {"eq": [{"b": 14}, 0]}]}}]}},
+        {"need": {"all": [{"eq": [{"and": [{"b": 10}, "80"]}, 0]}, {"at": [11, "0D 00"]}, {"le": [{"and": [{"b": 15}, "7F"]}, 100]}]}},
+        {"emit": {"percent": {"and": [{"b": 15}, "7F"]}, "charging": {"eq": [{"and": [{"b": 15}, "80"]}, "80"]}}}
+      ]}
+  },
+  "tests": [
+    {"protocol": "v1-610", "feat": 2, "replies": ["68 01", "49 4B"], "expect": [{"percent": 75}]},
+    {"protocol": "v1-610", "feat": 2, "replies": ["68 00"], "expect": []},
+    {"protocol": "v3", "feat": 64, "replies": ["86 00 DD 01 00 01 00 00 00 00 00 0D 00 01 00 D0"], "sent": ["88 00 DD 01 00 01 00 02 00 0D 00"], "expect": [{"percent": 80, "charging": true}]}
+  ]
+}

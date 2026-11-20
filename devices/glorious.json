@@ -1,0 +1,126 @@
+{
+  "v": 1,
+  "devices": [
+    ["258A:2022", "xvi", "Glorious Model O Wireless", "mouse", {"dl": 50, "cable": 0, "u": 1}],
+    ["258A:2011", "xvi", "Glorious Model O Wireless", "mouse", {"dl": 50, "cable": 1, "u": 1}],
+    ["258A:2023", "xvi", "Glorious Model D Wireless", "mouse", {"dl": 50, "cable": 0, "u": 2}],
+    ["258A:2012", "xvi", "Glorious Model D Wireless", "mouse", {"dl": 50, "cable": 1, "u": 2}],
+    ["258A:2024", "xvi", "Glorious Model O- Wireless", "mouse", {"dl": 50, "cable": 0, "u": 3}],
+    ["258A:2013", "xvi", "Glorious Model O- Wireless", "mouse", {"dl": 50, "cable": 1, "u": 3}],
+    ["258A:2025", "xvi", "Glorious Model D- Wireless", "mouse", {"dl": 50, "cable": 0, "u": 4}],
+    ["258A:2014", "xvi", "Glorious Model D- Wireless", "mouse", {"dl": 50, "cable": 1, "u": 4}],
+    ["258A:2033", "xvi", "Glorious Model O 2 Wireless", "mouse", {"dl": 50, "cable": 0, "u": 5}],
+    ["258A:2034", "xvi", "Glorious Model D 2 PRO", "mouse", {"dl": 50, "cable": 0, "u": 6}],
+    ["258A:2036", "xvi", "Glorious Model D 2 PRO", "mouse", {"dl": 50, "cable": 0, "u": 6}],
+    ["258A:201A", "xvi", "Glorious Model D 2 PRO", "mouse", {"dl": 50, "cable": 1, "u": 6}],
+    ["3770:0136", "xvi", "Hitscan Hyperlight X", "mouse", {"dl": 200, "cable": 1, "u": 7}],
+    ["3770:0194", "xvi", "Hitscan Hyperlight N", "mouse", {"dl": 200, "cable": 1, "u": 8}],
+    ["33E4:3808", "xvi", "G-Wolves HTM Plus", "mouse", {"dl": 100, "cable": 1, "u": 9}],
+    ["33E4:3817", "xvi", "G-Wolves HTM Plus", "mouse", {"dl": 100, "cable": 0, "u": 9}],
+    ["33E4:6808", "xvi", "G-Wolves HSK Pro 2.0", "mouse", {"dl": 100, "cable": 1, "u": 10}],
+    ["33E4:6817", "xvi", "G-Wolves HSK Pro 2.0", "mouse", {"dl": 100, "cable": 0, "u": 10}],
+    ["33E4:5608", "xvi", "G-Wolves HTXU", "mouse", {"dl": 100, "cable": 1, "u": 11}],
+    ["33E4:5617", "xvi", "G-Wolves HTXU", "mouse", {"dl": 100, "cable": 0, "u": 11}],
+    ["33E4:5618", "xvi", "G-Wolves HTXU", "mouse", {"dl": 100, "cable": 1, "u": 11}],
+    ["33E4:5619", "xvi", "G-Wolves HTXU", "mouse", {"dl": 100, "cable": 1, "u": 11}],
+    ["33E4:3608", "xvi", "G-Wolves Fenrir Pro", "mouse", {"dl": 100, "cable": 1, "u": 12}],
+    ["33E4:3617", "xvi", "G-Wolves Fenrir Pro", "mouse", {"dl": 100, "cable": 0, "u": 12}],
+    ["33E4:3619", "xvi", "G-Wolves Fenrir Pro", "mouse", {"dl": 100, "cable": 1, "u": 12}],
+    ["33E4:3908", "xvi", "G-Wolves VUK", "mouse", {"dl": 100, "cable": 1, "u": 13}],
+    ["33E4:3917", "xvi", "G-Wolves VUK", "mouse", {"dl": 100, "cable": 0, "u": 13}],
+    ["33E4:7904", "xvi", "G-Wolves HT-S2", "mouse", {"dl": 100, "cable": 1, "u": 14}],
+    ["33E4:7913", "xvi", "G-Wolves HT-S2", "mouse", {"dl": 100, "cable": 0, "u": 14}],
+    ["33E4:3708", "xvi", "G-Wolves Fenrir Max", "mouse", {"dl": 100, "cable": 1, "u": 15}],
+    ["33E4:3717", "xvi", "G-Wolves Fenrir Max", "mouse", {"dl": 100, "cable": 0, "u": 15}],
+    ["33E4:5308", "xvi", "G-Wolves HTS Ultra", "mouse", {"dl": 100, "cable": 1, "u": 16}],
+    ["33E4:5317", "xvi", "G-Wolves HTS Ultra", "mouse", {"dl": 100, "cable": 0, "u": 16}],
+    ["33E4:7704", "xvi", "G-Wolves HTR", "mouse", {"dl": 100, "cable": 1, "u": 17}],
+    ["33E4:7713", "xvi", "G-Wolves HTR", "mouse", {"dl": 100, "cable": 0, "u": 17}],
+    ["33E4:3508", "xvi", "G-Wolves Fenrir", "mouse", {"dl": 100, "cable": 1, "u": 18}],
+    ["33E4:3517", "xvi", "G-Wolves Fenrir", "mouse", {"dl": 100, "cable": 0, "u": 18}],
+    ["33E4:7908", "xvi", "G-Wolves HT-S2 Pro", "mouse", {"dl": 100, "cable": 1, "u": 19}],
+    ["33E4:7917", "xvi", "G-Wolves HT-S2 Pro", "mouse", {"dl": 100, "cable": 0, "u": 19}],
+    ["33E4:5808", "xvi", "G-Wolves HSK Pro", "mouse", {"dl": 100, "cable": 1, "u": 20}],
+    ["33E4:5817", "xvi", "G-Wolves HSK Pro", "mouse", {"dl": 100, "cable": 0, "u": 20}],
+    ["33E4:2708", "xvi", "G-Wolves HTX Mini", "mouse", {"dl": 100, "cable": 1, "u": 21}],
+    ["33E4:2717", "xvi", "G-Wolves HTX Mini", "mouse", {"dl": 100, "cable": 0, "u": 21}],
+    ["33E4:2719", "xvi", "G-Wolves HTX Mini", "mouse", {"dl": 100, "cable": 1, "u": 21}],
+    ["33E4:5408", "xvi", "G-Wolves HTS Plus", "mouse", {"dl": 100, "cable": 1, "u": 22}],
+    ["33E4:5417", "xvi", "G-Wolves HTS Plus", "mouse", {"dl": 100, "cable": 0, "u": 22}],
+    ["33E4:5418", "xvi", "G-Wolves HTS Plus", "mouse", {"dl": 100, "cable": 1, "u": 22}],
+    ["33E4:5419", "xvi", "G-Wolves HTS Plus", "mouse", {"dl": 100, "cable": 1, "u": 22}],
+    ["33E4:5708", "xvi", "G-Wolves HTX", "mouse", {"dl": 100, "cable": 1, "u": 23}],
+    ["33E4:5717", "xvi", "G-Wolves HTX", "mouse", {"dl": 100, "cable": 0, "u": 23}],
+    ["33E4:5908", "xvi", "G-Wolves HSK Plus", "mouse", {"dl": 100, "cable": 1, "u": 24}],
+    ["33E4:5917", "xvi", "G-Wolves HSK Plus", "mouse", {"dl": 100, "cable": 0, "u": 24}],
+    ["33E4:7204", "xvi", "G-Wolves HSK Lite", "mouse", {"dl": 100, "cable": 1, "u": 25}],
+    ["33E4:7203", "xvi", "G-Wolves HSK Lite", "mouse", {"dl": 100, "cable": 0, "u": 25}],
+    ["33E4:7708", "xvi", "G-Wolves HTR Pro", "mouse", {"dl": 100, "cable": 1, "u": 26}],
+    ["33E4:7717", "xvi", "G-Wolves HTR Pro", "mouse", {"dl": 100, "cable": 0, "u": 26}],
+    ["33E4:5804", "xvi", "G-Wolves HSK Pro ACE", "mouse", {"dl": 100, "cable": 1, "u": 27}],
+    ["33E4:5803", "xvi", "G-Wolves HSK Pro ACE", "mouse", {"dl": 100, "cable": 0, "u": 27}],
+    ["33E4:5404", "xvi", "G-Wolves HTS Plus ACE", "mouse", {"dl": 100, "cable": 1, "u": 28}],
+    ["33E4:5403", "xvi", "G-Wolves HTS Plus ACE", "mouse", {"dl": 100, "cable": 0, "u": 28}],
+    ["33E4:5704", "xvi", "G-Wolves HTX ACE", "mouse", {"dl": 100, "cable": 1, "u": 29}],
+    ["33E4:5703", "xvi", "G-Wolves HTX ACE", "mouse", {"dl": 100, "cable": 0, "u": 29}],
+    ["33E4:5904", "xvi", "G-Wolves HSK Plus ACE", "mouse", {"dl": 100, "cable": 1, "u": 30}],
+    ["33E4:5903", "xvi", "G-Wolves HSK Plus ACE", "mouse", {"dl": 100, "cable": 0, "u": 30}],
+    ["33E4:4718", "xvi", "G-Wolves Lycan", "mouse", {"dl": 100, "cable": 1, "u": 31}],
+    ["33E4:4719", "xvi", "G-Wolves Lycan", "mouse", {"dl": 100, "cable": 1, "u": 31}],
+    ["33E4:4219", "xvi", "G-Wolves WARG", "mouse", {"dl": 100, "cable": 1, "u": 32}],
+    ["33E4:5219", "xvi", "G-Wolves HTS Plus Pro", "mouse", {"dl": 100, "cable": 1, "u": 33}],
+    ["33E4:3519", "xvi", "G-Wolves Fenrir Asym", "mouse", {"dl": 100, "cable": 1, "u": 34}],
+    ["33E4:2619", "xvi", "G-Wolves HTX Mini Asym", "mouse", {"dl": 100, "cable": 1, "u": 35}],
+    ["33E4:1619", "xvi", "G-Wolves Fenrir Max Asym", "mouse", {"dl": 100, "cable": 1, "u": 36}],
+    ["33E4:2119", "xvi", "G-Wolves VUK Mini", "mouse", {"dl": 100, "cable": 1, "u": 37}],
+    ["36A7:A874", "ying", "WLMouse YING", "mouse", {"dl": 100, "cable": 0, "u": 999}],
+    ["258A:*", "xvi", "", "", {"dl": 50, "cable": 0}],
+    ["3770:*", "xvi", "Hitscan Hyperlight", "mouse", {"dl": 200, "cable": 0}],
+    ["33E4:*", "xvi", "G-Wolves wireless mouse", "mouse", {"dl": 100, "cable": 0}]
+  ],
+  "subs": {
+    "xvi": [
+      {"fset": "00 00 00 02 02 00 83"},
+      {"sleep": "$dl"},
+      {"fget": 0},
+      {"need": {"all": [{"len": 9}, {"eq": [{"b": 6}, 131]}, {"eq": [{"and": [{"b": 1}, 240]}, 160]}]}}
+    ]
+  },
+  "protocols": {
+    "xvi": {"pick": [{"feat": 65}], "open": "feature", "strip": [" Receiver", " Dongle"],
+      "run": [
+        {"call": "xvi"},
+        {"first": [[{"need": {"eq": [{"b": 1}, 160]}}, {"sleep": 400}, {"call": "xvi"}], []]},
+        {"first": [
+            [{"need": {"all": [{"eq": [{"b": 1}, 161]}, {"le": [{"b": 8}, 100]}]}}],
+            [{"emit": {"id": {"add": ["$u", 0]}, "state": "asleep"}}, {"stop": 1}]
+          ]},
+        {"emit": {
+            "id": {"add": ["$u", 0]},
+            "percent": {"max": [{"b": 8}, 1]},
+            "charging": {"any": [{"eq": ["$cable", 1]}, {"eq": [{"b": 7}, 1]}]}
+          }}
+      ]},
+    "ying": {"pick": [{"page": "FFFF", "usage": "0000", "feat": 65}], "open": "feature", "grace": 1800,
+      "run": [
+        {"call": "xvi"},
+        {"first": [[{"need": {"eq": [{"b": 1}, 160]}}, {"sleep": 400}, {"call": "xvi"}], []]},
+        {"first": [
+            [{"need": {"all": [{"eq": [{"b": 1}, 161]}, {"le": [{"b": 8}, 100]}]}}],
+            [{"emit": {"id": {"add": ["$u", 0]}, "state": "asleep"}}, {"stop": 1}]
+          ]},
+        {"emit": {
+            "id": {"add": ["$u", 0]},
+            "percent": {"max": [{"b": 8}, 1]},
+            "charging": {"any": [{"eq": ["$cable", 1]}, {"eq": [{"b": 7}, 1]}]}
+          }}
+      ]}
+  },
+  "tests": [
+    {"protocol": "xvi", "feat": 65, "vars": {"dl": 50, "cable": 0, "u": 1}, "replies": ["00 A1 00 00 00 00 83 00 55"], "sent": ["00 00 00 02 02 00 83"], "expect": [{"percent": 85}]},
+    {"protocol": "xvi", "feat": 65, "vars": {"dl": 50, "cable": 0}, "replies": ["00 A0 00 00 00 00 83 00 00", "00 A1 00 00 00 00 83 01 00"], "expect": [{"percent": 1, "charging": true}]},
+    {"protocol": "xvi", "feat": 65, "vars": {"dl": 50, "cable": 0, "u": 1}, "replies": ["00 A4 00 00 00 00 83 00 55"], "expect": [{"state": "asleep"}]},
+    {"protocol": "xvi", "feat": 65, "vars": {"dl": 50, "cable": 0}, "replies": ["00 00 00 00 00 00 00 00 00"], "expect": []},
+    {"protocol": "ying", "feat": 65, "vars": {"dl": 100, "cable": 0, "u": 999}, "replies": ["00 A1 00 00 00 00 83 00 40"], "expect": [{"percent": 64}]}
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "v": 1,
+  "devices": [
+    ["258A:002F", "fo8", "Sinowealth wireless mouse", "mouse"]
+  ],
+  "subs": {
+    "q": [
+      {"fset": "05 $c"},
+      {"sleep": 100},
+      {"fget": 5},
+      {"need": {"len": 8}},
+      {"need": {"at": [0, "05 $c"]}}
+    ]
+  },
+  "protocols": {
+    "fo8": {
+      "pick": [{"mi": 1, "page": "FF00", "usage": "0001", "feat": 8, "in": 0, "out": 0}],
+      "open": "feature",
+      "run": [
+        {"set": {"c": "80"}},
+        {"call": "q"},
+        {"need": {"eq": [{"b": 2}, 1]}},
+        {"set": {"c": "90"}},
+        {"call": "q"},
+        {"need": {"eq": [{"b": 2}, "11"]}},
+        {"need": {"le": [{"b": 3}, 100]}},
+        {"emit": {"percent": {"b": 3}}}
+      ]
+    }
+  },
+  "tests": [
+    {"protocol": "fo8", "out": 0, "feat": 8, "replies": ["05 80 01 00 00 00 00 00", "05 90 11 43 00 00 00 00"], "sent": ["05 80 00", "05 90 00"], "expect": [{"percent": 67}]}
+  ]
+}

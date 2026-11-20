@@ -1,0 +1,21 @@
+{
+  "v": 1,
+  "devices": [
+    ["38EE:000C", "ff1c", "Akko V9 Dash Pro", "mouse"],
+    ["38EE:000F", "ff1c", "Akko Dash V9 Ultra", "mouse"]
+  ],
+  "protocols": {
+    "ff1c": {
+      "pick": [{"page": "FF1C", "usage": "0092", "in": 64, "out": 64}],
+      "grace": 1800,
+      "run": [
+        {"flush": 1},
+        {"retry": 2, "do": [{"out": "04 00 00 1A 03 00 00 55", "ck": {"t": "sum16le", "from": 3, "to": 63, "at": 1}}, {"read": 400, "if": {"all": [{"len": 10}, {"eq": [{"b": 0}, 4]}, {"eq": [{"b": 3}, "1A"]}, {"le": [{"b": 8}, 100]}]}}]},
+        {"emit": {"percent": {"b": 8}, "charging": {"ne": [{"b": 9}, 0]}}}
+      ]
+    }
+  },
+  "tests": [
+    {"protocol": "ff1c", "out": 64, "replies": ["04 72 00 1A 03 00 00 55 4D 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"], "sent": ["04 72 00 1A 03 00 00 55 00"], "expect": [{"percent": 77, "charging": true}]}
+  ]
+}

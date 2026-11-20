@@ -1,0 +1,78 @@
+{
+  "v": 1,
+  "devices": [
+    ["24AE:1410", "nordic", "Rapoo VT0", "mouse"],
+    ["24AE:4610", "nordic", "Rapoo VT0", "mouse"],
+    ["24AE:1420", "nordic", "Rapoo VT0 Max", "mouse"],
+    ["24AE:4620", "nordic", "Rapoo VT0 Max", "mouse"],
+    ["24AE:1415", "nordic", "Rapoo VT1", "mouse"],
+    ["24AE:4615", "nordic", "Rapoo VT1", "mouse"],
+    ["24AE:1444", "nordic", "Rapoo VT1 Max", "mouse"],
+    ["24AE:4644", "nordic", "Rapoo VT1 Max", "mouse"],
+    ["24AE:1422", "nordic", "Rapoo VT2", "mouse"],
+    ["24AE:4622", "nordic", "Rapoo VT2", "mouse"],
+    ["24AE:1423", "nordic", "Rapoo VT2 Max", "mouse"],
+    ["24AE:4623", "nordic", "Rapoo VT2 Max", "mouse"],
+    ["24AE:1412", "nordic", "Rapoo VT3", "mouse"],
+    ["24AE:4612", "nordic", "Rapoo VT3", "mouse"],
+    ["24AE:1417", "n13", "Rapoo VT3 Max", "mouse"],
+    ["24AE:4617", "nordic", "Rapoo VT3 Max", "mouse"],
+    ["24AE:1B06", "nordic", "Rapoo VT3 Max V2", "mouse"],
+    ["24AE:4B06", "nordic", "Rapoo VT3 Max V2", "mouse"],
+    ["24AE:1411", "nordic", "Rapoo VT3S", "mouse"],
+    ["24AE:4611", "nordic", "Rapoo VT3S", "mouse"],
+    ["24AE:1421", "nordic", "Rapoo VT3S Max", "mouse"],
+    ["24AE:4621", "nordic", "Rapoo VT3S Max", "mouse"],
+    ["24AE:1413", "nordic", "Rapoo VT7", "mouse"],
+    ["24AE:4613", "nordic", "Rapoo VT7", "mouse"],
+    ["24AE:1416", "nordic", "Rapoo VT7 Max", "mouse"],
+    ["24AE:4616", "nordic", "Rapoo VT7 Max", "mouse"],
+    ["24AE:1414", "nordic", "Rapoo VT9", "mouse"],
+    ["24AE:4614", "nordic", "Rapoo VT9", "mouse"],
+    ["24AE:1418", "nordic", "Rapoo VT9 Max", "mouse"],
+    ["24AE:4618", "nordic", "Rapoo VT9 Max", "mouse"],
+    ["24AE:1215", "legacy", "Rapoo VT3 Pro", "mouse"],
+    ["24AE:4415", "legacy", "Rapoo VT3 Pro", "mouse"],
+    ["24AE:1233", "legacy", "Rapoo VT1 Pro Max", "mouse"],
+    ["24AE:4433", "legacy", "Rapoo VT1 Pro Max", "mouse"],
+    ["24AE:1244", "legacy", "Rapoo VT3 Pro Max", "mouse"],
+    ["24AE:*", "nordic", "", "mouse"]
+  ],
+  "protocols": {
+    "nordic": {
+      "pick": [{"page": "FF00", "usage": "0002", "in": 16}, {"page": "FF00", "usage": "0002", "in": 19}],
+      "grace": 1800,
+      "run": [
+        {"read": 5000, "if": {"all": [{"len": 9}, {"eq": [{"b": 0}, 7]}, {"le": [{"and": [{"b": 1}, "0F"]}, 2]}, {"in": [{"b": 7}, [1, 2]]}, {"le": [{"b": 8}, 100]}]}},
+        {"set": {"st": {"b": 7}, "pct": {"b": 8}, "mp": {"if": [{"len": 15}, {"u16le": 13}, "$pid"]}}},
+        {"each": "i", "in": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], "do": [{"read": 30, "if": {"all": [{"len": 9}, {"eq": [{"b": 0}, 7]}, {"le": [{"and": [{"b": 1}, "0F"]}, 2]}, {"in": [{"b": 7}, [1, 2]]}, {"le": [{"b": 8}, 100]}]}}, {"set": {"st": {"b": 7}, "pct": {"b": 8}, "mp": {"if": [{"len": 15}, {"u16le": 13}, "$pid"]}}}]},
+        {"emit": {"id": {"add": [{"if": [{"lt": ["$mp", "4000"]}, {"add": ["$mp", "3200"]}, "$mp"]}, 0]}, "percent": "$pct", "charging": {"eq": ["$st", 2]}}}
+      ]
+    },
+    "n13": {
+      "pick": [{"page": "FF00", "usage": "0002", "in": 16}, {"page": "FF00", "usage": "0002", "in": 19}, {"page": "FF00", "usage": "0002", "in": 13}],
+      "grace": 1800,
+      "run": [
+        {"read": 5000, "if": {"all": [{"len": 9}, {"eq": [{"b": 0}, 7]}, {"le": [{"and": [{"b": 1}, "0F"]}, 2]}, {"in": [{"b": 7}, [1, 2]]}, {"le": [{"b": 8}, 100]}]}},
+        {"set": {"st": {"b": 7}, "pct": {"b": 8}, "mp": {"if": [{"len": 15}, {"u16le": 13}, "$pid"]}}},
+        {"each": "i", "in": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], "do": [{"read": 30, "if": {"all": [{"len": 9}, {"eq": [{"b": 0}, 7]}, {"le": [{"and": [{"b": 1}, "0F"]}, 2]}, {"in": [{"b": 7}, [1, 2]]}, {"le": [{"b": 8}, 100]}]}}, {"set": {"st": {"b": 7}, "pct": {"b": 8}, "mp": {"if": [{"len": 15}, {"u16le": 13}, "$pid"]}}}]},
+        {"emit": {"id": {"add": [{"if": [{"lt": ["$mp", "4000"]}, {"add": ["$mp", "3200"]}, "$mp"]}, 0]}, "percent": "$pct", "charging": {"eq": ["$st", 2]}}}
+      ]
+    },
+    "legacy": {
+      "pick": [{"page": "FF00", "usage": "0002", "in": 7}],
+      "grace": 1800,
+      "run": [
+        {"read": 5000, "if": {"all": [{"len": 7}, {"at": [0, "BB B0"]}, {"in": [{"b": 5}, [1, 2]]}, {"any": [{"le": [{"b": 6}, 100]}, {"all": [{"eq": [{"b": 5}, 2]}, {"eq": [{"b": 6}, "7F"]}]}]}]}},
+        {"set": {"st": {"b": 5}, "pct": {"b": 6}, "mp": "$pid"}},
+        {"each": "i", "in": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], "do": [{"read": 30, "if": {"all": [{"len": 7}, {"at": [0, "BB B0"]}, {"in": [{"b": 5}, [1, 2]]}, {"any": [{"le": [{"b": 6}, 100]}, {"all": [{"eq": [{"b": 5}, 2]}, {"eq": [{"b": 6}, "7F"]}]}]}]}}, {"set": {"st": {"b": 5}, "pct": {"b": 6}, "mp": "$pid"}}]},
+        {"emit": {"id": {"add": [{"if": [{"lt": ["$mp", "4000"]}, {"add": ["$mp", "3200"]}, "$mp"]}, 0]}, "percent": "$pct", "charging": {"eq": ["$st", 2]}}}
+      ]
+    }
+  },
+  "tests": [
+    {"protocol": "nordic", "vars": {"pid": 5143}, "replies": ["07 20 03 20 03 20 03 01 19 00 04 84 00 17 46 00 02 03 BC"], "expect": [{"percent": 25}]},
+    {"protocol": "nordic", "vars": {"pid": 5140}, "replies": ["07 10 03 40 06 40 06 01 50 00 03 01 00 14 46 01", "07 22 03 20 03 20 03 02 19 00 00 00 00 14 46 00", "07 10 03 40 06 40 06 00 64 00"], "expect": [{"percent": 25, "charging": true}]},
+    {"protocol": "legacy", "vars": {"pid": 4659}, "replies": ["BB B0 01 20 03 02 7F"], "expect": [{"charging": true}]}
+  ]
+}

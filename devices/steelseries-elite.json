@@ -1,0 +1,35 @@
+{
+  "v": 1,
+  "devices": [["1038:2244", "elite", "SteelSeries Arctis Nova Elite", "headset"]],
+  "protocols": {
+    "elite": {
+      "pick": [{"mi": 3, "page": "FFC0", "out": [1]}, {"mi": 3, "out": [1]}],
+      "kind": "headset",
+      "run": [
+        {"set": {"lvl": -1, "pw": -1, "chg": 0}},
+        {"flush": 1},
+        {"out": "01 B0"},
+        {"first": [[{"retry": 4, "do": [
+          {"read": 250, "if": {"any": [{"all": [{"at": [0, "01 B0"]}, {"len": 16}]}, {"all": [{"at": [0, "07 B7"]}, {"len": 5}]}, {"all": [{"at": [0, "07 B5"]}, {"len": 5}]}]}},
+          {"first": [
+            [{"need": {"at": [0, "01 B0"]}},
+             {"set": {"lvl": {"if": [{"le": [{"b": 6}, 100]}, {"b": 6}, "$lvl"]}, "pw": {"b": 14}, "chg": {"if": [{"eq": [{"b": 15}, 2]}, 1, "$chg"]}}}],
+            [{"need": {"at": [0, "07 B7"]}},
+             {"set": {"lvl": {"if": [{"le": [{"b": 2}, 100]}, {"b": 2}, "$lvl"]}, "chg": {"if": [{"eq": [{"b": 4}, 2]}, 1, 0]}}}],
+            [{"set": {"pw": {"b": 4}}}]
+          ]},
+          {"need": {"any": [{"eq": ["$pw", 1]}, {"all": [{"ge": ["$lvl", 0]}, {"ge": ["$pw", 0]}]}]}}
+        ]}], []]},
+        {"need": {"all": [{"ne": ["$pw", 1]}, {"ge": ["$lvl", 0]}]}},
+        {"emit": {"percent": "$lvl", "charging": {"any": [{"eq": ["$chg", 1]}, {"eq": ["$pw", 2]}]}}}
+      ]
+    }
+  },
+  "tests": [
+    {"protocol": "elite", "out": 64,
+     "replies": ["07 B5 00 00 02", "01 B0 00 00 00 00 50 00 00 00 00 00 00 00 02 01"],
+     "sent": ["01 B0"],
+     "expect": [{"percent": 80, "charging": true}]},
+    {"protocol": "elite", "out": 64, "replies": ["07 B5 00 00 01"], "expect": []}
+  ]
+}

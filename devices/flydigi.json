@@ -1,0 +1,57 @@
+{
+  "v": 1,
+  "devices": [
+    ["37D7:2401", "fd", "Flydigi Vader 5 Pro", "gamepad", {"rid": 0, "apex": 0}],
+    ["37D7:2501", "fd", "Flydigi Apex 5", "gamepad", {"rid": 3, "apex": 1}]
+  ],
+  "subs": {
+    "reply": [
+      {"retry": 2, "do": [{"read": 400, "if": {"any": [
+        {"all": [{"at": [0, "5A A5 $cmd"]}, {"len": 5}]},
+        {"all": [{"at": [0, "04 5A A5 $cmd"]}, {"len": 6}]}
+      ]}}]},
+      {"set": {"o": {"if": [{"eq": [{"b": 0}, 4]}, 1, 0]}}}
+    ]
+  },
+  "protocols": {
+    "fd": {
+      "pick": [{"page": "FFA0", "usage": "0001", "in": [12], "out": [6]}],
+      "run": [
+        {"flush": 1},
+        {"out": "$rid 5A A5 07 00 00"},
+        {"set": {"modern": 0, "cmd": 7}},
+        {"first": [[{"call": "reply"},
+                    {"set": {"modern": {"if": [{"all": [{"eq": [{"b": {"add": [3, "$o"]}}, 1]}, {"eq": [{"b": {"add": [4, "$o"]}}, 0]}]}, 1, 0]}}}], []]},
+        {"out": "$rid 5A A5 01 02 00"},
+        {"set": {"cmd": 1}},
+        {"call": "reply"},
+        {"need": {"len": {"add": [12, "$o"]}}},
+        {"set": {"model": {"b": {"add": [5, "$o"]}}, "v": {"b": {"add": [11, "$o"]}}, "cn": {"b": {"add": [6, "$o"]}}}},
+        {"need": {"any": [
+          {"all": [{"eq": ["$apex", 0]}, {"eq": ["$model", 130]}]},
+          {"all": [{"eq": ["$apex", 1]}, {"in": ["$model", [128, 129, 133, 134, 135]]}]}
+        ]}},
+        {"set": {"lvl": {"and": ["$v", 15]}, "st": {"shr": ["$v", 4]}}},
+        {"need": {"all": [{"le": ["$st", 2]}, {"le": ["$lvl", 5]}]}},
+        {"need": {"any": [
+          {"all": [{"eq": ["$modern", 1]}, {"in": ["$cn", [0, 1]]}]},
+          {"all": [{"eq": ["$modern", 0]}, {"in": ["$cn", [1, 2]]}]}
+        ]}},
+        {"emit": {"percent": {"if": [{"eq": ["$st", 2]}, 100, {"mul": ["$lvl", 20]}]}, "charging": {"eq": ["$st", 1]}, "full": {"eq": ["$st", 2]}}}
+      ]
+    }
+  },
+  "tests": [
+    {"protocol": "fd", "vars": {"rid": 0, "apex": 0},
+     "replies": ["00 5A A5 07 01 00 00 00 00 00 00 00 00", "00 5A A5 01 02 00 82 01 00 00 00 00 14"],
+     "sent": ["00 5A A5 07 00 00", "00 5A A5 01 02 00"],
+     "expect": [{"percent": 80, "charging": true}]},
+    {"protocol": "fd", "vars": {"rid": 3, "apex": 1},
+     "replies": ["04 5A A5 07 00 00 00 00 00 00 00 00 00", "04 5A A5 01 02 00 87 02 00 00 00 00 25"],
+     "sent": ["03 5A A5 07 00 00", "03 5A A5 01 02 00"],
+     "expect": [{"percent": 100}]},
+    {"protocol": "fd", "vars": {"rid": 3, "apex": 1},
+     "replies": ["04 5A A5 07 00 00 00 00 00 00 00 00 00", "04 5A A5 01 02 00 82 02 00 00 00 00 25"],
+     "expect": []}
+  ]
+}

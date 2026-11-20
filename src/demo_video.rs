@@ -227,7 +227,7 @@ fn backdrop() -> Vec<[f32; 4]> {
 /// A tray battery icon as the program draws it (tray.rs), at `n` px.
 fn tray_icon(percent: u8, charging: bool, n: usize) -> Vec<u32> {
     let mut px = vec![0u32; n * n];
-    crate::tray::battery_pixels(&mut px, n, &crate::tray::Battery { model: 0, percent: Some(percent), charging, name: "" });
+    crate::tray::battery_pixels(&mut px, n, &crate::tray::Battery { id: 0, percent: Some(percent), charging, name: String::new() });
     px
 }
 

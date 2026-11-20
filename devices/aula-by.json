@@ -1,0 +1,109 @@
+{
+  "v": 1,
+  "devices": [
+    ["3554:FA09", "by", "AULA wireless keyboard", "keyboard"],
+    ["3554:FB40", "by", "AULA wireless keyboard", "keyboard"],
+    ["41E4:2001", "by", "MCHOSE wireless keyboard", "keyboard"],
+    ["05AC:024F", "by-mi1", "MCHOSE wireless keyboard", "keyboard"]
+  ],
+  "subs": {
+    "send": [
+      {"out": "13 $cmd $pk", "ck": {"t": "sum", "from": 0, "to": 18, "at": 19}},
+      {"retry": 3, "do": [
+        {"read": 433, "if": {"all": [
+          {"len": 20}, {"eq": [{"b": 0}, "13"]}, {"eq": [{"and": [{"b": 1}, "7F"]}, "$cmd"]},
+          {"any": [{"ne": [{"b": 4}, 0]}, {"ne": [{"b": 5}, 0]}, {"ne": [{"b": 6}, 0]}, {"ne": [{"b": 7}, 0]}, {"ne": [{"b": 8}, 0]},
+                   {"ne": [{"b": 9}, 0]}, {"ne": [{"b": 10}, 0]}, {"ne": [{"b": 11}, 0]}, {"ne": [{"b": 12}, 0]}, {"ne": [{"b": 13}, 0]},
+                   {"ne": [{"b": 14}, 0]}, {"ne": [{"b": 15}, 0]}, {"ne": [{"b": 16}, 0]}, {"ne": [{"b": 17}, 0]}, {"ne": [{"b": 18}, 0]}]},
+          {"any": [{"ck": {"t": "sum", "from": 0, "to": 18, "at": 19}},
+                   {"all": [{"eq": [{"b": 19}, 0]}, {"eq": [{"b": 2}, 1]}, {"eq": [{"b": 3}, 0]}]}]}
+        ]}}
+      ]}
+    ],
+    "read": [
+      {"set": {"cmd": "4A"}},
+      {"flush": 1},
+      {"any": "pk", "in": [0, 1, 0], "do": [{"call": "send"}]},
+      {"set": {"lvl": {"b": 5}, "chg": {"if": [{"eq": [{"shr": [{"b": 6}, 4]}, 1]}, 1, 0]}}},
+      {"need": {"all": [{"ge": ["$lvl", 1]}, {"le": ["$lvl", 100]}]}},
+      {"set": {"m": 0, "cmd": 5, "pk": 0}},
+      {"flush": 1},
+      {"first": [
+        [{"call": "send"}, {"any": "o", "in": [5, 4], "do": [{"first": [
+          [{"need": {"at": ["$o", "03 00 00 00 02 1C"]}}, {"set": {"m": 1}}],
+          [{"need": {"at": ["$o", "03 00 00 00 00 77"]}}, {"set": {"m": 2}}],
+          [{"need": {"at": ["$o", "03 00 00 00 01 DF"]}}, {"set": {"m": 3}}],
+          [{"need": {"at": ["$o", "03 00 00 00 01 32"]}}, {"set": {"m": 4}}],
+          [{"need": {"at": ["$o", "03 00 00 00 00 D6"]}}, {"set": {"m": 5}}],
+          [{"need": {"at": ["$o", "0A 00 00 00 00 03"]}}, {"set": {"m": 6}}],
+          [{"need": {"at": ["$o", "03 00 00 00 01 C6"]}}, {"set": {"m": 7}}],
+          [{"need": {"at": ["$o", "03 00 00 00 01 15"]}}, {"set": {"m": 8}}],
+          [{"need": {"at": ["$o", "0A 00 00 00 00 18"]}}, {"set": {"m": 9}}],
+          [{"need": {"at": ["$o", "0A 00 00 00 00 2B"]}}, {"set": {"m": 10}}],
+          [{"need": {"at": ["$o", "0A 00 00 00 00 01"]}}, {"set": {"m": 11}}],
+          [{"need": {"at": ["$o", "0A 00 00 00 00 09"]}}, {"set": {"m": 12}}],
+          [{"need": {"at": ["$o", "03 00 00 00 01 C7"]}}, {"set": {"m": 13}}],
+          [{"need": {"at": ["$o", "03 00 00 00 01 74"]}}, {"set": {"m": 14}}],
+          [{"need": {"at": ["$o", "03 00 00 00 01 ED"]}}, {"set": {"m": 15}}],
+          [{"need": {"at": ["$o", "03 00 00 00 01 35"]}}, {"set": {"m": 16}}],
+          [{"need": {"at": ["$o", "03 00 00 00 03 35"]}}, {"set": {"m": 17}}],
+          [{"need": {"at": ["$o", "0A 00 00 00 00 34"]}}, {"set": {"m": 18}}],
+          [{"need": {"at": ["$o", "03 00 00 00 00 6A"]}}, {"set": {"m": 19}}],
+          [{"need": {"at": ["$o", "03 00 00 00 03 DA"]}}, {"set": {"m": 20}}]
+        ]}]}],
+        []
+      ]},
+      {"first": [
+        [{"need": {"eq": ["$m", 1]}}, {"emit": {"name": "MCHOSE G87", "percent": "$lvl", "charging": {"eq": ["$chg", 1]}}}],
+        [{"need": {"eq": ["$m", 2]}}, {"emit": {"name": "MCHOSE K99", "percent": "$lvl", "charging": {"eq": ["$chg", 1]}}}],
+        [{"need": {"eq": ["$m", 3]}}, {"emit": {"name": "MCHOSE K99 V2", "percent": "$lvl", "charging": {"eq": ["$chg", 1]}}}],
+        [{"need": {"eq": ["$m", 4]}}, {"emit": {"name": "MCHOSE G98", "percent": "$lvl", "charging": {"eq": ["$chg", 1]}}}],
+        [{"need": {"eq": ["$m", 5]}}, {"emit": {"name": "MCHOSE X75", "percent": "$lvl", "charging": {"eq": ["$chg", 1]}}}],
+        [{"need": {"eq": ["$m", 6]}}, {"emit": {"name": "MCHOSE G98 Pro", "percent": "$lvl", "charging": {"eq": ["$chg", 1]}}}],
+        [{"need": {"eq": ["$m", 7]}}, {"emit": {"name": "MCHOSE X75 V2", "percent": "$lvl", "charging": {"eq": ["$chg", 1]}}}],
+        [{"need": {"eq": ["$m", 8]}}, {"emit": {"name": "MCHOSE G75 Pro", "percent": "$lvl", "charging": {"eq": ["$chg", 1]}}}],
+        [{"need": {"eq": ["$m", 9]}}, {"emit": {"name": "MCHOSE G98 V2", "percent": "$lvl", "charging": {"eq": ["$chg", 1]}}}],
+        [{"need": {"eq": ["$m", 10]}}, {"emit": {"name": "MCHOSE UT98", "percent": "$lvl", "charging": {"eq": ["$chg", 1]}}}],
+        [{"need": {"eq": ["$m", 11]}}, {"emit": {"name": "MCHOSE Z75", "percent": "$lvl", "charging": {"eq": ["$chg", 1]}}}],
+        [{"need": {"eq": ["$m", 12]}}, {"emit": {"name": "MCHOSE Z75S", "percent": "$lvl", "charging": {"eq": ["$chg", 1]}}}],
+        [{"need": {"eq": ["$m", 13]}}, {"emit": {"name": "MCHOSE KX75", "percent": "$lvl", "charging": {"eq": ["$chg", 1]}}}],
+        [{"need": {"eq": ["$m", 14]}}, {"emit": {"name": "MCHOSE GX87", "percent": "$lvl", "charging": {"eq": ["$chg", 1]}}}],
+        [{"need": {"eq": ["$m", 15]}}, {"emit": {"name": "MCHOSE GX87 V2", "percent": "$lvl", "charging": {"eq": ["$chg", 1]}}}],
+        [{"need": {"eq": ["$m", 16]}}, {"emit": {"name": "MCHOSE K87", "percent": "$lvl", "charging": {"eq": ["$chg", 1]}}}],
+        [{"need": {"eq": ["$m", 17]}}, {"emit": {"name": "MCHOSE G75 V2", "percent": "$lvl", "charging": {"eq": ["$chg", 1]}}}],
+        [{"need": {"eq": ["$m", 18]}}, {"emit": {"name": "MCHOSE G87 V2", "percent": "$lvl", "charging": {"eq": ["$chg", 1]}}}],
+        [{"need": {"eq": ["$m", 19]}}, {"emit": {"name": "Redragon Horus Pro", "percent": "$lvl", "charging": {"eq": ["$chg", 1]}}}],
+        [{"need": {"eq": ["$m", 20]}}, {"emit": {"name": "Redragon Horus Pro V2", "percent": "$lvl", "charging": {"eq": ["$chg", 1]}}}],
+        [{"emit": {"percent": "$lvl", "charging": {"eq": ["$chg", 1]}}}]
+      ]}
+    ]
+  },
+  "protocols": {
+    "by": {
+      "pick": [{"page": "FF02", "usage": "0002", "out": [20], "in": [20]}, {"page": "FF04", "usage": "0002", "out": [20], "in": [20]}],
+      "kind": "keyboard",
+      "asleep": 300,
+      "grace": 1800,
+      "run": [{"call": "read"}]
+    },
+    "by-mi1": {
+      "pick": [{"mi": 1, "page": "FF02", "usage": "0002", "out": 20, "in": 20}],
+      "kind": "keyboard",
+      "asleep": 300,
+      "grace": 1800,
+      "run": [{"call": "read"}]
+    }
+  },
+  "tests": [
+    {"protocol": "by", "out": 20,
+     "replies": ["13 4A 00 00 00 50 01 00 00 00 00 00 00 00 00 00 00 00 00 AE",
+                 "13 05 00 00 00 03 00 00 00 01 35 00 00 00 00 00 00 00 00 51"],
+     "sent": ["13 4A 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 5D", "13 05 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 18"],
+     "expect": [{"percent": 80}]},
+    {"protocol": "by", "out": 20,
+     "replies": ["13 4A 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 5D",
+                 "13 CA 01 00 00 64 10 00 00 00 00 00 00 00 00 00 00 00 00 00"],
+     "expect": [{"percent": 100, "charging": true}]},
+    {"protocol": "by-mi1", "out": 20, "replies": ["13 0A 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 1E"], "expect": []}
+  ]
+}

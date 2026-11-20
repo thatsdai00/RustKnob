@@ -1,0 +1,84 @@
+{
+  "v": 1,
+  "devices": [
+    ["3434:D026", "nape", "Keychron Nape Pro", "mouse"],
+    ["3434:0440", "nape", "Keychron Nape Pro", "mouse"],
+    ["3434:D030", "link1k", ""],
+    ["3434:D031", "link1k", ""],
+    ["3434:D028", "ul8k", "Keychron mouse", "mouse"],
+    ["3434:*", "launcher", "", "mouse"],
+    ["3434:*", "linkkb", "", "keyboard"]
+  ],
+  "subs": {
+    "lq": [
+      {"flush": 1},
+      {"out": "00 $c 00 81 $s", "ck": {"t": "sum", "from": 1, "to": 63, "at": 64, "sub": "A1"}},
+      {"read": 600, "if": {"all": [{"len": 13}, {"eq": [{"b": 0}, "$c"]}, {"eq": [{"b": 3}, "$s"]}]}}
+    ],
+    "kb": [
+      {"first": [[{"flush": 1}, {"out": "00 B2"}, {"read": 300, "if": {"all": [{"len": 8}, {"eq": [{"b": 0}, "B2"]}]}}, {"set": {"n": {"min": [{"b": 1}, 5]}, "via": 1}}, {"first": [[{"any": "i", "in": [0, 1, 2, 3, 4], "do": [{"need": {"lt": ["$i", "$n"]}}, {"set": {"o": {"add": [2, {"mul": ["$i", 5]}]}}}, {"need": {"eq": [{"u16le": "$o"}, "3434"]}}, {"need": {"ne": [{"b": {"add": ["$o", 4]}}, 0]}}, {"set": {"kp": {"u16le": {"add": ["$o", 2]}}}}]}], [{"stop": 1}]]}, {"first": [[{"retry": 2, "do": [{"flush": 1}, {"out": "00 A4"}, {"read": 400, "if": {"all": [{"len": 8}, {"eq": [{"b": 0}, "A4"]}]}}]}], [{"stop": 1}]]}], [{"set": {"kp": "$pid", "via": 0}}, {"flush": 1}, {"out": "00 A4"}, {"read": 400, "if": {"all": [{"len": 8}, {"eq": [{"b": 0}, "A4"]}]}}]]},
+      {"need": {"le": [{"b": 1}, 100]}},
+      {"first": [[{"need": {"all": [{"ge": ["$kp", "0A50"]}, {"le": ["$kp", "0A58"]}]}}, {"emit": {"slot": "kb", "kind": "keyboard", "id": {"add": ["$kp", 0]}, "name": "Keychron K5 Max", "percent": {"b": 1}, "charging": {"eq": [{"b": 4}, 1]}, "full": {"eq": [{"b": 4}, 2]}}}], [{"emit": {"slot": "kb", "kind": "keyboard", "id": {"add": ["$kp", 0]}, "name": "Keychron keyboard", "percent": {"b": 1}, "charging": {"eq": [{"b": 4}, 1]}, "full": {"eq": [{"b": 4}, 2]}}}]]}
+    ]
+  },
+  "protocols": {
+    "nape": {
+      "pick": [{"page": "FF60", "usage": "0061", "out": 33}],
+      "run": [
+        {"first": [[{"need": {"ne": ["$pid", "D026"]}}], [{"flush": 1}, {"out": "00 B2"}, {"read": 600, "if": {"all": [{"len": 17}, {"eq": [{"b": 0}, "B2"]}]}}, {"any": "s", "in": [2, 7, 12], "do": [{"need": {"eq": [{"u16be": {"add": ["$s", 2]}}, "4004"]}}, {"need": {"eq": [{"b": {"add": ["$s", 4]}}, 1]}}]}]]},
+        {"flush": 1},
+        {"out": "00 A7 31"},
+        {"read": 600, "if": {"all": [{"len": 4}, {"at": [0, "A7 31"]}]}},
+        {"need": {"le": [{"b": 2}, 100]}},
+        {"emit": {"id": "nape", "percent": {"b": 2}, "charging": {"ne": [{"b": 3}, 0]}}}
+      ]
+    },
+    "link1k": {
+      "pick": [{"page": "008C", "feat": [16]}, {"page": "FF60", "usage": "0061", "out": 33}],
+      "run": [
+        {"first": [[{"fset": "51 06"}, {"retry": 5, "do": [{"sleep": 40}, {"fget": "51"}, {"need": {"len": 13}}, {"need": {"at": [0, "51 06"]}}]}, {"need": {"eq": [{"b": 2}, 1]}}, {"need": {"eq": [{"u16le": 4}, "3434"]}}, {"need": {"le": [{"b": 11}, 100]}}, {"set": {"mp": {"u16le": 6}}}, {"first": [[{"need": {"in": ["$mp", ["D032", "D033"]]}}, {"emit": {"slot": "ms", "kind": "mouse", "id": {"add": ["$mp", 0]}, "name": "Keychron M3", "percent": {"b": 11}, "charging": {"eq": [{"b": 12}, 1]}}}], [{"need": {"in": ["$mp", ["D035"]]}}, {"emit": {"slot": "ms", "kind": "mouse", "id": {"add": ["$mp", 0]}, "name": "Keychron M1", "percent": {"b": 11}, "charging": {"eq": [{"b": 12}, 1]}}}], [{"need": {"in": ["$mp", ["D036", "D03E"]]}}, {"emit": {"slot": "ms", "kind": "mouse", "id": {"add": ["$mp", 0]}, "name": "Keychron M3 mini", "percent": {"b": 11}, "charging": {"eq": [{"b": 12}, 1]}}}], [{"need": {"in": ["$mp", ["D03B"]]}}, {"emit": {"slot": "ms", "kind": "mouse", "id": {"add": ["$mp", 0]}, "name": "Keychron M2", "percent": {"b": 11}, "charging": {"eq": [{"b": 12}, 1]}}}], [{"need": {"in": ["$mp", ["D03D"]]}}, {"emit": {"slot": "ms", "kind": "mouse", "id": {"add": ["$mp", 0]}, "name": "Keychron M2 mini", "percent": {"b": 11}, "charging": {"eq": [{"b": 12}, 1]}}}], [{"need": {"in": ["$mp", ["D03F"]]}}, {"emit": {"slot": "ms", "kind": "mouse", "id": {"add": ["$mp", 0]}, "name": "Keychron M6", "percent": {"b": 11}, "charging": {"eq": [{"b": 12}, 1]}}}], [{"need": {"in": ["$mp", ["D044"]]}}, {"emit": {"slot": "ms", "kind": "mouse", "id": {"add": ["$mp", 0]}, "name": "Keychron M7", "percent": {"b": 11}, "charging": {"eq": [{"b": 12}, 1]}}}], [{"emit": {"slot": "ms", "kind": "mouse", "id": {"add": ["$mp", 0]}, "name": "Keychron mouse", "percent": {"b": 11}, "charging": {"eq": [{"b": 12}, 1]}}}]]}], [{"call": "kb"}]]}
+      ]
+    },
+    "ul8k": {
+      "pick": [{"page": "FFC1", "usage": "0001", "out": [21], "in": [21]}],
+      "run": [
+        {"flush": 1},
+        {"out": "B5 03"},
+        {"read": 600, "if": {"all": [{"len": 21}, {"eq": [{"b": 1}, 3]}]}},
+        {"any": "s", "in": [3, 8, 13], "do": [{"need": {"ne": [{"or": [{"b": "$s"}, {"b": {"add": ["$s", 1]}}]}, 0]}}, {"need": {"ne": [{"b": {"add": ["$s", 4]}}, 0]}}]},
+        {"flush": 1},
+        {"out": "B3 06"},
+        {"read": 600, "if": {"all": [{"len": 21}, {"eq": [{"b": 1}, 6]}]}},
+        {"set": {"p": {"and": [{"b": 20}, "7F"]}}},
+        {"need": {"ge": ["$p", 1]}},
+        {"need": {"le": ["$p", 100]}},
+        {"emit": {"id": "D028", "percent": "$p", "charging": {"ne": [{"and": [{"b": 20}, "80"]}, 0]}}}
+      ]
+    },
+    "launcher": {
+      "pick": [{"page": "FF0A", "usage": "0001", "out": 65, "in": 65}, {"out": 65, "in": 65}],
+      "strip": [" Link", " Receiver"],
+      "run": [
+        {"set": {"c": 1, "s": 1, "q1": 0}},
+        {"first": [[{"call": "lq"}, {"set": {"q1": 1, "tag": {"u16le": 6}, "q5": {"b": 5}, "q10": {"b": 10}, "q11": {"b": 11}}}], []]},
+        {"first": [[{"need": {"eq": ["$q1", 1]}}, {"need": {"not": {"in": ["$tag", ["3434", "362D"]]}}}, {"set": {"c": "41", "s": 1}}, {"call": "lq"}, {"need": {"ge": [{"b": 6}, 1]}}, {"need": {"le": [{"b": 6}, 100]}}, {"set": {"pct": {"b": 6}, "chg": {"if": [{"ne": [{"b": 5}, 0]}, 1, 0]}}}, {"first": [[{"set": {"c": "40", "s": 0}}, {"call": "lq"}, {"set": {"pp": {"u16le": 4}}}, {"first": [[{"need": {"eq": ["$pp", "0620"]}}, {"emit": {"percent": "$pct", "charging": {"eq": ["$chg", 1]}, "name": "Keychron M3 mini 4K"}}], [{"need": {"eq": ["$pp", "0621"]}}, {"emit": {"percent": "$pct", "charging": {"eq": ["$chg", 1]}, "name": "Keychron M4 4K"}}], [{"need": {"eq": ["$pp", "0622"]}}, {"emit": {"percent": "$pct", "charging": {"eq": ["$chg", 1]}, "name": "Keychron M3 mini 4K"}}], [{"need": {"eq": ["$pp", "0624"]}}, {"emit": {"percent": "$pct", "charging": {"eq": ["$chg", 1]}, "name": "Keychron M6 4K"}}], [{"need": {"eq": ["$pp", "07A0"]}}, {"emit": {"percent": "$pct", "charging": {"eq": ["$chg", 1]}, "name": "Keychron M3 4K"}}], [{"emit": {"percent": "$pct", "charging": {"eq": ["$chg", 1]}}}]]}], [{"emit": {"percent": "$pct", "charging": {"eq": ["$chg", 1]}}}]]}], [{"need": {"eq": ["$q1", 1]}}, {"need": {"eq": ["$tag", "3434"]}}, {"need": {"le": ["$q11", 100]}}, {"emit": {"percent": "$q11", "charging": {"ne": ["$q10", 0]}}}], [{"set": {"c": "41", "s": 1}}, {"call": "lq"}, {"need": {"le": [{"b": 10}, 3]}}, {"need": {"le": [{"b": 11}, 100]}}, {"emit": {"percent": {"b": 11}, "charging": {"eq": [{"b": 10}, 1]}}}], [{"need": {"eq": ["$q1", 1]}}, {"need": {"le": ["$q10", 3]}}, {"need": {"ge": ["$q11", 1]}}, {"need": {"le": ["$q11", 100]}}, {"need": {"ge": ["$q5", 1]}}, {"need": {"le": ["$q5", 8]}}, {"emit": {"percent": "$q11", "charging": {"eq": ["$q10", 1]}}}]]}
+      ]
+    },
+    "linkkb": {
+      "pick": [{"page": "FF60", "usage": "0061", "out": 33}],
+      "run": [
+        {"call": "kb"}
+      ]
+    }
+  },
+  "tests": [
+    {"protocol": "nape", "out": 33, "vars": {"pid": 53286}, "replies": ["00 B2 03 34 34 40 04 01 00 00 00 00 00 00 00 00 00 00", "00 A7 31 52 01"], "sent": ["00 B2", "00 A7 31"], "expect": [{"percent": 82, "charging": true}]},
+    {"protocol": "nape", "out": 33, "vars": {"pid": 53286}, "replies": ["00 B2 03 34 34 40 04 00 00 00 00 00 00 00 00 00 00 00"], "expect": []},
+    {"protocol": "link1k", "out": 0, "feat": 1001, "vars": {"pid": 53296}, "replies": ["51 00 00", "51 06 01 00 34 34 32 D0 00 00 00 3C 01 00 00 00 00 00 00 00"], "sent": ["51 06"], "expect": [{"slot": "ms", "percent": 60, "charging": true}]},
+    {"protocol": "linkkb", "out": 33, "feat": 0, "vars": {"pid": 53296}, "replies": ["00 B2 02 34 34 50 0A 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00", "00 A4 4B 10 0F 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"], "sent": ["00 B2", "00 A4"], "expect": [{"slot": "kb", "percent": 75}]},
+    {"protocol": "linkkb", "out": 33, "feat": 0, "vars": {"pid": 53296}, "replies": ["00 B2 02 34 34 50 0A 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"], "expect": []},
+    {"protocol": "ul8k", "out": 21, "replies": ["B5 03 00 34 34 28 D0 01 00 00 00 00 00 00 00 00 00 00 00 00 00", "B3 06 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 C5"], "sent": ["B5 03"], "expect": [{"percent": 69, "charging": true}]},
+    {"protocol": "launcher", "out": 65, "replies": ["00 01 00 81 01 00 00 34 34 31 D0 00 4B 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"], "sent": ["00 01 00 81 01"], "expect": [{"percent": 75}]},
+    {"protocol": "launcher", "out": 65, "replies": ["00 01 00 81 01 00 01 21 06 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00", "00 41 00 81 01 00 01 37 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00", "00 40 00 81 00 21 06 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"], "sent": ["00 01 00 81 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 1E"], "expect": [{"percent": 55, "charging": true}]}
+  ]
+}

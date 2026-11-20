@@ -1,0 +1,250 @@
+{
+  "v": 1,
+  "devices": [
+    ["0BDA:FFE0", "mx6", "Motospeed X6", "mouse", {"cable": 0}],
+    ["0BDA:FFF2", "mx6", "Motospeed X6", "mouse", {"cable": 0}],
+    ["0BDA:FFF1", "mx6", "Motospeed X6", "mouse", {"cable": 1}],
+    ["248A:5B2E", "m800", "Delux M800 Pro", "mouse", {"cable": 1}],
+    ["248A:5B2F", "m800", "Delux M800 Pro", "mouse", {"cable": 0}],
+    ["248A:*", "aj179", "Ajazz mouse", "mouse", {"rx": 0}],
+    ["249A:*", "aj179", "Ajazz mouse", "mouse", {"rx": 1}],
+    ["3151:*", "aj3151", "", "mouse"],
+    ["A8A5:2255", "aj139", "AJAZZ wireless mouse", "mouse", {"cable": 0}],
+    ["A8A4:2255", "aj139", "AJAZZ wireless mouse", "mouse", {"cable": 1}],
+    ["093A:522C", "w1", "Incott mouse", "mouse", {"cable": 0}],
+    ["093A:622C", "w1", "Incott mouse", "mouse", {"cable": 1}]
+  ],
+  "subs": {
+    "w1btn": [
+      {"fset": "09 86 $btn"},
+      {"sleep": 150},
+      {"first": [[{"fget": 9}, {"need": {"all": [{"len": 4}, {"eq": [{"b": 1}, 134]}]}}], [{"sleep": 20}, {"fget": 9}], []]}
+    ]
+  },
+  "protocols": {
+    "mx6": {"pick": [{"mi": 4, "out": [21]}], "open": "rw", "kind": "mouse",
+      "run": [
+        {"first": [[{"need": {"eq": ["$cable", 1]}}, {"emit": {"id": "motospeed-x6", "charging": true}}, {"stop": 1}], []]},
+        {"flush": 1},
+        {"out": "B5 06"},
+        {"read": 500, "if": {"all": [{"len": 21}, {"eq": [{"b": 0}, 180]}]}},
+        {"set": {"raw": {"b": 20}}},
+        {"set": {"pct": {"if": [{"ge": ["$raw", 128]}, {"sub": ["$raw", 128]}, "$raw"]}}},
+        {"emit": {"id": "motospeed-x6", "percent": {"min": ["$pct", 100]}, "charging": {"ge": ["$raw", 128]}}}
+      ]},
+    "m800": {"pick": [{"page": "FF00", "usage": "0001", "feat": [33]}], "open": "feature", "kind": "mouse",
+      "run": [
+        {
+          "any": "seq",
+          "in": [1, 2],
+          "do": [
+            {"fset": "0C 01 20 00 $seq"},
+            {"sleep": 20},
+            {"fget": 12},
+            {"need": {"all": [{"len": 20}, {"eq": [{"b": 0}, 12]}, {"eq": [{"b": 2}, 32]}, {"le": [{"b": 18}, 100]}]}},
+            {"need": {"any": [{"eq": ["$cable", 1]}, {"ne": [{"b": 6}, 0]}, {"eq": ["$seq", 2]}]}}
+          ]
+        },
+        {"set": {
+            "con": {"if": [{"any": [{"ne": [{"b": 6}, 0]}, {"gt": [{"b": 18}, 0]}]}, 1, 0]},
+            "st": {"b": 19},
+            "lvl": {"b": 18}
+          }},
+        {"emit": {
+            "id": "delux-m800",
+            "percent": {"if": [{"eq": ["$st", 2]}, 100, {"if": [{"all": [{"eq": ["$con", 1]}, {"gt": ["$lvl", 0]}]}, "$lvl", -1]}]},
+            "charging": {"in": ["$st", [1, 2]]},
+            "full": {"eq": ["$st", 2]},
+            "asleep": {"all": [{"eq": ["$con", 0]}, {"eq": ["$st", 0]}]}
+          }}
+      ]},
+    "aj179": {"pick": [{"mi": 2, "out": 33, "in": 33}], "open": "rw", "kind": "mouse",
+      "run": [
+        {"flush": 1},
+        {"out": "00 10"},
+        {
+          "read": 500,
+          "if": {"all": [
+              {"len": 32},
+              {"eq": [{"b": 0}, 16]},
+              {"eq": [{"b": 1}, 0]},
+              {"ck": {"t": "sum", "from": 4, "to": 30, "at": 31}}
+            ]}
+        },
+        {"need": {"le": [{"b": 13}, 100]}},
+        {"set": {"con": {"if": [{"any": [{"eq": ["$rx", 0]}, {"ne": [{"b": 14}, 0]}]}, 1, 0]}}},
+        {"first": [
+            [
+              {"need": {"at": [4, "4D 31 37 39"]}},
+              {"emit": {
+                  "name": "Ajazz AJ179",
+                  "percent": {"if": [{"eq": ["$con", 1]}, {"b": 13}, -1]},
+                  "charging": {"ne": [{"b": 12}, 0]},
+                  "asleep": {"eq": ["$con", 0]}
+                }}
+            ],
+            [
+              {"emit": {
+                  "name": "Ajazz mouse",
+                  "percent": {"if": [{"eq": ["$con", 1]}, {"b": 13}, -1]},
+                  "charging": {"ne": [{"b": 12}, 0]},
+                  "asleep": {"eq": ["$con", 0]}
+                }}
+            ]
+          ]}
+      ]},
+    "aj3151": {"pick": [{"page": "FFFF", "usage": "0002", "feat": [65]}], "open": "feature", "kind": "mouse", "strip": [" Receiver", " Dongle", " 2.4G"],
+      "run": [
+        {"fset": "00 F7"},
+        {"sleep": 30},
+        {"fget": 5},
+        {"need": {"all": [{"eq": [{"b": 0}, 5]}, {"eq": [{"b": 1}, 0]}, {"eq": [{"b": 2}, 0]}, {"le": [{"b": 3}, 100]}]}},
+        {"emit": {"percent": {"if": [{"gt": [{"b": 3}, 0]}, {"b": 3}, -1]}, "asleep": {"eq": [{"b": 3}, 0]}}}
+      ]},
+    "aj139": {"pick": [{"page": "FF01", "usage": "0010", "out": [65], "in": [65]}], "open": "rw", "kind": "mouse",
+      "run": [
+        {"flush": 1},
+        {"first": [
+            [
+              {"out": "00 55 30 A5 2E 2E"},
+              {"read": 500, "if": {"all": [{"len": 10}, {"eq": [{"b": 0}, 170]}, {"eq": [{"b": 1}, 48]}]}}
+            ],
+            [
+              {"out": "00 55 30 A5 0B 2E 01 01"},
+              {"read": 500, "if": {"all": [{"len": 10}, {"eq": [{"b": 0}, 170]}, {"eq": [{"b": 1}, 48]}]}}
+            ]
+          ]},
+        {"need": {"le": [{"b": 8}, 100]}},
+        {"set": {"con": {"if": [{"any": [{"eq": ["$cable", 1]}, {"ne": [{"b": 8}, 0]}]}, 1, 0]}}},
+        {"emit": {
+            "percent": {"if": [{"eq": ["$con", 1]}, {"b": 8}, -1]},
+            "charging": {"ne": [{"b": 9}, 0]},
+            "asleep": {"eq": ["$con", 0]}
+          }}
+      ]},
+    "w1": {"pick": [{"page": "FF05", "feat": [9], "in": [2]}, {"page": "FF05", "feat": [9]}], "open": "rw", "grace": 1800, "kind": "mouse",
+      "run": [
+        {"set": {"model": 0}},
+        {"first": [
+            [
+              {"fset": "09 8F"},
+              {"sleep": 50},
+              {
+                "retry": 10,
+                "gap": 50,
+                "do": [{"fget": 9}, {"need": {"all": [{"eq": [{"b": 0}, 9]}, {"eq": [{"b": 1}, 143]}]}}]
+              },
+              {"set": {"model": {"b": 3}}}
+            ],
+            []
+          ]},
+        {"first": [
+            [
+              {"need": {"in": ["$model", [18, 20]]}},
+              {"flush": 1},
+              {"sleep": 200},
+              {"each": "btn", "in": [0, 1, 2, 4, 3], "do": [{"call": "w1btn"}]},
+              {"set": {"got": 0}},
+              {"first": [
+                  [
+                    {
+                      "read": 400,
+                      "if": {"all": [{"len": 2}, {"eq": [{"b": 0}, 9]}, {"le": [{"and": [{"b": 1}, 127]}, 100]}]}
+                    },
+                    {"set": {"got": 1}}
+                  ],
+                  [
+                    {
+                      "retry": 4,
+                      "do": [
+                        {"set": {"btn": 0}},
+                        {"call": "w1btn"},
+                        {
+                          "read": 550,
+                          "if": {"all": [{"len": 2}, {"eq": [{"b": 0}, 9]}, {"le": [{"and": [{"b": 1}, 127]}, 100]}]}
+                        }
+                      ]
+                    },
+                    {"set": {"got": 1}}
+                  ],
+                  []
+                ]},
+              {"first": [
+                  [
+                    {"need": {"eq": ["$got", 1]}},
+                    {"set": {"pct": {"and": [{"b": 1}, 127]}, "chg": {"if": [{"ge": [{"b": 1}, 128]}, 1, 0]}}},
+                    {"set": {"con": {"if": [{"any": [{"eq": ["$cable", 1]}, {"gt": ["$pct", 0]}, {"eq": ["$chg", 1]}]}, 1, 0]}}},
+                    {"first": [
+                        [
+                          {"need": {"eq": ["$model", 18]}},
+                          {"emit": {
+                              "name": "Wraith W1",
+                              "percent": {"if": [{"eq": ["$con", 1]}, "$pct", -1]},
+                              "charging": {"eq": ["$chg", 1]},
+                              "asleep": {"eq": ["$con", 0]}
+                            }}
+                        ],
+                        [
+                          {"need": {"eq": ["$model", 20]}},
+                          {"emit": {
+                              "name": "Wraith W1 Freestyle",
+                              "percent": {"if": [{"eq": ["$con", 1]}, "$pct", -1]},
+                              "charging": {"eq": ["$chg", 1]},
+                              "asleep": {"eq": ["$con", 0]}
+                            }}
+                        ]
+                      ]}
+                  ],
+                  [
+                    {"first": [
+                        [{"need": {"eq": ["$model", 18]}}, {"emit": {"name": "Wraith W1", "state": "asleep"}}],
+                        [
+                          {"need": {"eq": ["$model", 20]}},
+                          {"emit": {"name": "Wraith W1 Freestyle", "state": "asleep"}}
+                        ]
+                      ]}
+                  ]
+                ]},
+              {"stop": 1}
+            ],
+            [
+              {"fset": "09 89"},
+              {"sleep": 50},
+              {
+                "retry": 10,
+                "gap": 50,
+                "do": [
+                  {"fget": 9},
+                  {"need": {"all": [
+                        {"eq": [{"b": 0}, 9]},
+                        {"eq": [{"b": 1}, 137]},
+                        {"any": [{"ne": [{"b": 2}, 0]}, {"ne": [{"b": 3}, 0]}]}
+                      ]}}
+                ]
+              },
+              {"set": {"pct": {"and": [{"b": 2}, 127]}, "chg": {"if": [{"ge": [{"b": 2}, 128]}, 1, 0]}}},
+              {"need": {"le": ["$pct", 100]}},
+              {"set": {"con": {"if": [{"any": [{"eq": ["$cable", 1]}, {"gt": ["$pct", 0]}]}, 1, 0]}}},
+              {"emit": {
+                  "name": "Incott mouse",
+                  "percent": {"if": [{"eq": ["$con", 1]}, "$pct", -1]},
+                  "charging": {"eq": ["$chg", 1]},
+                  "asleep": {"eq": ["$con", 0]}
+                }}
+            ]
+          ]}
+      ]}
+  },
+  "tests": [
+    {"protocol": "mx6", "out": 21, "vars": {"cable": 0}, "replies": ["B4 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 C6"], "sent": ["B5 06"], "expect": [{"percent": 70, "charging": true}]},
+    {"protocol": "mx6", "out": 21, "vars": {"cable": 1}, "replies": [], "expect": [{"charging": true}]},
+    {"protocol": "m800", "feat": 33, "vars": {"cable": 0}, "replies": ["0C 01 20 00 01 00 01 00 4D 38 30 32 00 00 00 00 00 00 50 00 00 00 00 00 00 00 00 00 00 00 00 00 00"], "sent": ["0C 01 20 00 01"], "expect": [{"percent": 80}]},
+    {"protocol": "m800", "feat": 33, "vars": {"cable": 1}, "replies": ["0C 01 20 00 01 00 01 00 4D 38 30 32 00 00 00 00 00 00 64 02 00 00 00 00 00 00 00 00 00 00 00 00 00"], "expect": [{"percent": 100, "charging": true}]},
+    {"protocol": "aj179", "out": 33, "vars": {"rx": 1}, "replies": ["00 10 00 00 00 4D 31 37 39 00 00 00 00 01 4D 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 3D"], "sent": ["00 10"], "expect": [{"percent": 77, "charging": true}]},
+    {"protocol": "aj3151", "feat": 65, "replies": ["05 00 00 4B"], "sent": ["00 F7"], "expect": [{"percent": 75}]},
+    {"protocol": "aj3151", "feat": 65, "replies": ["05 00 00 00"], "expect": [{"state": "asleep"}]},
+    {"protocol": "aj139", "out": 65, "vars": {"cable": 0}, "replies": ["00 AA 30 00 00 00 00 00 00 50 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"], "sent": ["00 55 30 A5 2E 2E"], "expect": [{"percent": 80, "charging": true}]},
+    {"protocol": "w1", "feat": 9, "vars": {"cable": 0}, "replies": ["09 8F 00 12 00 00 00 00 00", "09 86 00 00 00 00 00 00 00", "09 86 00 00 00 00 00 00 00", "09 86 00 00 00 00 00 00 00", "09 86 00 00 00 00 00 00 00", "09 86 00 00 00 00 00 00 00", "09 D5 01"], "sent": ["09 8F"], "expect": [{"percent": 85, "charging": true}]},
+    {"protocol": "w1", "feat": 9, "vars": {"cable": 0}, "replies": ["09 8F 00 02 00 00 00 00 00", "09 89 3C 00 00 00 00 00 00"], "expect": [{"percent": 60}]}
+  ]
+}

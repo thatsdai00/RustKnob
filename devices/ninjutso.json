@@ -1,0 +1,97 @@
+{
+  "v": 1,
+  "devices": [
+    ["1915:AE11", "sora", "Ninjutso Sora V2", "mouse", {"cable": 1}],
+    ["1915:AE1C", "sora", "Ninjutso Sora V2", "mouse", {"cable": 0}],
+    ["093A:E020", "ten", "", "mouse"],
+    ["093A:EB01", "ten", "", "mouse"],
+    ["1915:AC11", "sprime", "Sprime PM1", "mouse", {"cable": 1}],
+    ["1915:AC12", "sprime", "Sprime PM1", "mouse", {"cable": 1}],
+    ["1915:AC13", "sprime", "Sprime PM1", "mouse", {"cable": 1}],
+    ["1915:AC1C", "sprime", "Sprime PM1", "mouse", {"cable": 0}],
+    ["1915:AD8C", "sprime", "Sprime PM1", "mouse", {"cable": 0}]
+  ],
+  "subs": {
+    "q15": [
+      {"set": {"got": 0}},
+      {"first": [
+          [
+            {
+              "retry": 4,
+              "gap": 90,
+              "do": [
+                {"fset": "05 15 00 00 01"},
+                {"sleep": 15},
+                {"fget": 5},
+                {"need": {"all": [{"len": 13}, {"eq": [{"b": 0}, 5]}, {"eq": [{"b": 1}, 21]}, {"le": [{"b": 9}, 100]}]}},
+                {"set": {
+                    "got": 1,
+                    "lvl": {"b": 9},
+                    "chg": {"b": 10},
+                    "full": {"b": 11},
+                    "on": {"if": [{"any": [{"eq": ["$cable", 1]}, {"ne": [{"b": 12}, 0]}]}, 1, 0]}
+                  }},
+                {"need": {"eq": ["$on", 1]}}
+              ]
+            }
+          ],
+          []
+        ]},
+      {"need": {"eq": ["$got", 1]}}
+    ],
+    "q06": [
+      {"fset": "06 $c 00 00 01"},
+      {
+        "retry": 3,
+        "do": [
+          {"sleep": 30},
+          {"fget": 6},
+          {"need": {"all": [{"len": 16}, {"eq": [{"b": 0}, 6]}, {"eq": [{"b": 1}, "$c"]}]}}
+        ]
+      },
+      {"set": {"val": {"b": 8}}}
+    ]
+  },
+  "protocols": {
+    "sora": {"pick": [{"page": "FFA0", "usage": "0001", "feat": [32]}], "open": "feature",
+      "run": [
+        {"call": "q15"},
+        {"emit": {
+            "id": "sora-v2",
+            "percent": {"if": [{"eq": ["$on", 1]}, {"if": [{"eq": ["$lvl", 0]}, 100, "$lvl"]}, -1]},
+            "charging": {"all": [{"eq": ["$on", 1]}, {"ne": ["$chg", 0]}]},
+            "asleep": {"eq": ["$on", 0]}
+          }}
+      ]},
+    "sprime": {"pick": [{"page": "FFA0", "usage": "0001", "feat": [32]}], "open": "feature",
+      "run": [
+        {"call": "q15"},
+        {"emit": {
+            "id": "sprime-pm1",
+            "percent": {"if": [{"eq": ["$on", 1]}, {"if": [{"ne": ["$full", 0]}, 100, "$lvl"]}, -1]},
+            "charging": {"all": [{"eq": ["$on", 1]}, {"ne": ["$chg", 0]}, {"eq": ["$full", 0]}]},
+            "full": {"all": [{"eq": ["$on", 1]}, {"ne": ["$full", 0]}]},
+            "asleep": {"eq": ["$on", 0]}
+          }}
+      ]},
+    "ten": {"pick": [{"page": "FF01", "usage": "0001", "feat": 16}], "open": "feature", "strip": [" Receiver", " Dongle", " Wireless"],
+      "run": [
+        {"set": {"c": 19}},
+        {"call": "q06"},
+        {"need": {"eq": ["$val", 1]}},
+        {"set": {"c": 18}},
+        {"call": "q06"},
+        {"need": {"le": ["$val", 100]}},
+        {"set": {"pct": "$val", "chg": 0}},
+        {"first": [[{"set": {"c": 17}}, {"call": "q06"}, {"set": {"chg": {"if": [{"ne": ["$val", 0]}, 1, 0]}}}], []]},
+        {"emit": {"id": "ninjutso-ten", "percent": "$pct", "charging": {"eq": ["$chg", 1]}}}
+      ]}
+  },
+  "tests": [
+    {"protocol": "sora", "feat": 32, "vars": {"cable": 0}, "replies": ["05 15 00 00 01 00 00 00 00 46 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"], "sent": ["05 15 00 00 01"], "expect": [{"percent": 70}]},
+    {"protocol": "sora", "feat": 32, "vars": {"cable": 0}, "replies": ["05 15 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00", "05 15 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00", "05 15 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00", "05 15 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"], "expect": [{"state": "asleep"}]},
+    {"protocol": "sprime", "feat": 32, "vars": {"cable": 0}, "replies": ["05 15 00 00 01 00 00 00 00 50 01 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"], "expect": [{"percent": 80, "charging": true}]},
+    {"protocol": "ten", "feat": 16, "replies": ["06 13 00 00 01 00 00 00 01 00 00 00 00 00 00 00", "06 12 00 00 01 00 00 00 37 00 00 00 00 00 00 00", "06 11 00 00 01 00 00 00 00 00 00 00 00 00 00 00"], "sent": ["06 13 00 00 01", "06 12 00 00 01", "06 11 00 00 01"], "expect": [{"percent": 55}]},
+    {"protocol": "ten", "feat": 16, "replies": ["06 13 00 00 01 00 00 00 00 00 00 00 00 00 00 00"], "expect": []}
+  ]
+}

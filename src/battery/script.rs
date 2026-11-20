@@ -250,13 +250,7 @@ impl Run<'_> {
 
     /// The bytes of a frame ("08 03 $idx 00"), padded to `len` (at least as long as given), checksum filled in.
     fn frame(&self, hex: &Value, ck: Option<&Value>, len: usize) -> Option<Vec<u8>> {
-        let mut f = Vec::new();
-        for tok in hex.str()?.split_ascii_whitespace() {
-            f.push(match tok.strip_prefix('$') {
-                Some(v) => self.var(v)? as u8,
-                None => u8::from_str_radix(tok, 16).ok()?,
-            });
-        }
+        let mut f = self.bytes(hex.str()?)?;
         if f.len() < len {
             f.resize(len, 0);
         }
@@ -268,6 +262,16 @@ impl Run<'_> {
             }
         }
         Some(f)
+    }
+
+    /// "08 03 $idx": hex bytes and variables' low bytes.
+    fn bytes(&self, hex: &str) -> Option<Vec<u8>> {
+        hex.split_ascii_whitespace()
+            .map(|tok| match tok.strip_prefix('$') {
+                Some(v) => self.var(v).map(|b| b as u8),
+                None => u8::from_str_radix(tok, 16).ok(),
+            })
+            .collect()
     }
 
     /// A checksum over `f`: {"t": "xor" | "sum" | "sum16le", "from": a, "to": b (inclusive), "at": c, "sub": k}
@@ -413,19 +417,8 @@ impl Run<'_> {
                     // the bytes from an offset are these: ["at", [off, "08 03"]]
                     "at" => (|| {
                         let off = usize::try_from(at(0)?).ok()?;
-                        let want = args.get(1)?.str()?;
-                        let mut i = off;
-                        for tok in want.split_ascii_whitespace() {
-                            let b = match tok.strip_prefix('$') {
-                                Some(v) => self.var(v)? as u8,
-                                None => u8::from_str_radix(tok, 16).ok()?,
-                            };
-                            if self.r.get(i) != Some(&b) {
-                                return Some(false);
-                            }
-                            i += 1;
-                        }
-                        Some(true)
+                        let want = self.bytes(args.get(1)?.str()?)?;
+                        Some(self.r.get(off..off + want.len())? == want)
                     })()
                     .unwrap_or(false),
                     _ => false,

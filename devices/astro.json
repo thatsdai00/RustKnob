@@ -1,0 +1,94 @@
+{
+  "v": 1,
+  "devices": [
+    ["046D:0B0B", "a50x", "ASTRO A50 X", "headset"],
+    ["046D:0B1C", "a50x", "ASTRO A50 Gen 5", "headset"],
+    ["9886:002C", "base", "ASTRO A50 Gen 4", "headset"], ["9886:002D", "base", "ASTRO A50 Gen 4", "headset"],
+    ["9886:002A", "base", "ASTRO A50 Gen 4", "headset"],
+    ["9886:0015", "base", "ASTRO A50 Gen 3", "headset", {"gen3": 1}], ["9886:0014", "base", "ASTRO A50 Gen 3", "headset", {"gen3": 1}],
+    ["9886:0018", "base", "ASTRO A50 Gen 3", "headset", {"gen3": 1}], ["9886:001D", "base", "ASTRO A50 Gen 3", "headset", {"gen3": 1}],
+    ["9886:0026", "base", "ASTRO A50 Gen 3", "headset", {"gen3": 1}],
+    ["9886:0037", "base", "ASTRO A20 Wireless", "headset"], ["9886:0038", "base", "ASTRO A20 Wireless", "headset"],
+    ["9886:0039", "base", "ASTRO A20 Wireless", "headset"], ["9886:0043", "base", "ASTRO A20 Wireless", "headset"],
+    ["9886:0044", "base", "ASTRO A20 Wireless", "headset"], ["9886:0045", "base", "ASTRO A20 Wireless", "headset"]
+  ],
+  "subs": {
+    "ask": [
+      {"first": [
+        [{"need": {"ne": ["$fr", 0]}}, {"flush": 1}, {"out": "02 $cmd"},
+         {"read": 500, "if": {"all": [{"len": 4}, {"eq": [{"b": 0}, 2]}, {"in": [{"b": 1}, [1, 2]]}]}}, {"set": {"fr": 1}}],
+        [{"need": {"ne": ["$fr", 1]}}, {"flush": 1}, {"out": "00 02 $cmd"},
+         {"read": 500, "if": {"all": [{"len": 4}, {"eq": [{"b": 0}, 2]}, {"in": [{"b": 1}, [1, 2]]}]}}, {"set": {"fr": 0}}]
+      ]}
+    ],
+    "ui": [
+      {"first": [
+        [{"need": {"ne": ["$fr", 0]}}, {"flush": 1}, {"out": "02 72 01 01"},
+         {"read": 500, "if": {"all": [{"len": 4}, {"eq": [{"b": 0}, 2]}, {"in": [{"b": 1}, [1, 2]]}]}}, {"set": {"fr": 1}}],
+        [{"need": {"ne": ["$fr", 1]}}, {"flush": 1}, {"out": "00 02 72 01 01"},
+         {"read": 500, "if": {"all": [{"len": 4}, {"eq": [{"b": 0}, 2]}, {"in": [{"b": 1}, [1, 2]]}]}}, {"set": {"fr": 0}}]
+      ]},
+      {"need": {"eq": [{"b": 1}, 2]}},
+      {"need": {"all": [{"ge": [{"and": [{"b": 2}, 63]}, 16]}, {"len": 19}]}},
+      {"need": {"all": [{"eq": [{"b": 15}, 2]}, {"eq": [{"b": 16}, 4]}, {"le": [{"and": [{"b": 17}, 127]}, 100]}]}},
+      {"set": {"bat": {"b": 17}}}
+    ]
+  },
+  "protocols": {
+    "a50x": {
+      "pick": [{"page": "FF32", "usage": "0074", "in": 64, "out": 64}],
+      "kind": "headset",
+      "run": [
+        {"flush": 1},
+        {"out": "02 0C 03 00 06 0C"},
+        {"retry": 2, "do": [
+          {"read": 500, "if": {"all": [{"len": 9}, {"at": [0, "02 0C"]}, {"ge": [{"b": 2}, 6]},
+            {"le": [{"add": [{"b": 2}, 3]}, {"len": 0}]}, {"at": [3, "00 06"]}, {"in": [{"b": 5}, [0, 12]]}, {"le": [{"b": 6}, 100]}]}}
+        ]},
+        {"emit": {"percent": {"b": 6}, "charging": {"ne": [{"b": 8}, 0]}}}
+      ]
+    },
+    "base": {
+      "pick": [{"page": "FF32", "in": [64], "out": [64]}, {"page": "FF31", "in": [64], "out": [64]}, {"page": "FF00", "in": [64], "out": [64]}],
+      "kind": "headset",
+      "grace": 1800,
+      "run": [
+        {"set": {"fr": -1, "s54": 0, "dock": 0, "link": 0, "bat": -1, "e7c": 0}},
+        {"first": [[{"set": {"cmd": 84}}, {"call": "ask"}, {"need": {"eq": [{"b": 1}, 2]}},
+                    {"set": {"s54": 1, "dock": {"and": [{"b": 3}, 1]}, "link": {"shr": [{"and": [{"b": 3}, 2]}, 1]}}}], []]},
+        {"first": [[{"need": {"eq": ["$s54", 1]}}, {"need": {"all": [{"eq": ["$dock", 0]}, {"eq": ["$link", 0]}]}},
+                    {"emit": {"state": "offline"}}, {"stop": 1}], []]},
+        {"first": [
+          [{"set": {"cmd": 124}}, {"call": "ask"},
+           {"first": [[{"need": {"eq": [{"b": 1}, 2]}}, {"set": {"bat": {"b": 3}}}],
+                      [{"need": {"eq": [{"b": 1}, 1]}}, {"set": {"e7c": 1}}]]}],
+          []]},
+        {"first": [[{"need": {"all": [{"eq": ["$e7c", 1]}, {"eq": ["$s54", 1]}, {"eq": ["$gen3", 1]}]}}, {"call": "ui"}], []]},
+        {"first": [
+          [{"need": {"all": [{"ge": ["$bat", 0]}, {"le": [{"and": ["$bat", 127]}, 100]}]}},
+           {"emit": {"percent": {"and": ["$bat", 127]},
+                     "charging": {"any": [{"ne": [{"and": ["$bat", 128]}, 0]}, {"all": [{"eq": ["$dock", 1]}, {"lt": [{"and": ["$bat", 127]}, 100]}]}]}}}],
+          [{"need": {"all": [{"eq": ["$e7c", 1]}, {"eq": ["$s54", 0]}]}}, {"emit": {"state": "offline"}}],
+          [{"need": {"eq": ["$s54", 1]}}, {"emit": {}}]
+        ]}
+      ]
+    }
+  },
+  "tests": [
+    {"protocol": "a50x", "out": 64,
+     "replies": ["02 0D 01 00 00 00 00 00 00", "02 0C 06 00 06 0C 4B 00 01 00 00"],
+     "sent": ["02 0C 03 00 06 0C"],
+     "expect": [{"percent": 75, "charging": true}]},
+    {"protocol": "base", "out": 64,
+     "replies": ["02 02 01 03", "02 02 01 D2"],
+     "sent": ["02 54", "02 7C"],
+     "expect": [{"percent": 82, "charging": true}]},
+    {"protocol": "base", "out": 64,
+     "replies": ["02 02 01 00"],
+     "expect": [{"state": "offline"}]},
+    {"protocol": "base", "out": 64, "vars": {"gen3": 1},
+     "replies": ["02 02 01 02", "02 01 00 00",
+                 "02 02 10 02 01 00 00 02 02 00 00 02 03 00 00 02 04 3C 00"],
+     "expect": [{"percent": 60}]}
+  ]
+}

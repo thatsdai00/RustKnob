@@ -1,0 +1,217 @@
+{
+  "v": 1,
+  "devices": [
+    ["03F0:05B7", "c3", "HyperX Cloud III Wireless", "headset"], ["03F0:0C9D", "c3", "HyperX Cloud III Wireless", "headset"],
+    ["03F0:069F", "c3core", "HyperX Cloud II Core Wireless", "headset"], ["03F0:0995", "c3core", "HyperX Cloud II Core Wireless", "headset"],
+    ["03F0:06BE", "c3s", "HyperX Cloud III S Wireless", "headset"], ["03F0:02CC", "c3s", "HyperX Cloud III S Wireless", "headset"],
+    ["03F0:0696", "c2", "HyperX Cloud II Wireless", "headset"], ["03F0:018B", "c2", "HyperX Cloud II Wireless", "headset"],
+    ["03F0:0D93", "c2", "HyperX Cloud II Wireless", "headset"], ["03F0:0C8C", "c2", "HyperX Cloud Flight", "headset"],
+    ["0951:1718", "c2k", "HyperX Cloud II Wireless", "headset"],
+    ["0951:16EA", "c2kfs", "HyperX Cloud Flight S", "headset"], ["0951:16EB", "c2kfs", "HyperX Cloud Flight S", "headset"],
+    ["03F0:098D", "ca", "HyperX Cloud Alpha Wireless", "headset"],
+    ["03F0:08BE", "ca2", "HyperX Cloud Alpha 2 Wireless", "headset"],
+    ["03F0:0AB5", "haste", "HyperX Pulsefire Haste 2 Core Wireless", "mouse"],
+    ["03F0:0F98", "haste", "HyperX Pulsefire Haste 2 Wireless", "mouse"], ["03F0:0D97", "haste", "HyperX Pulsefire Haste 2 Wireless", "mouse"],
+    ["03F0:0DA0", "haste", "HyperX Pulsefire Haste 2 Mini", "mouse"],
+    ["0951:16C4", "cf", "HyperX Cloud Flight", "headset"], ["0951:1723", "cf", "HyperX Cloud Flight", "headset"],
+    ["0951:1749", "cf", "HyperX Cloud Flight", "headset"], ["03F0:0E90", "cf", "HyperX Cloud Flight", "headset"],
+    ["03F0:0A93", "stinger", "HyperX Cloud Stinger Core Wireless", "headset", {"ps": 1}],
+    ["03F0:0A8E", "stinger", "HyperX Cloud Stinger Core Wireless DTS", "headset", {"ps": 1}],
+    ["0951:170B", "stinger", "HyperX Cloud Stinger Core Wireless", "headset"],
+    ["0951:1713", "stinger", "HyperX Cloud Stinger Core Wireless", "headset", {"ps": 1}],
+    ["0951:173F", "stinger", "HyperX Cloud Core Wireless", "headset", {"ps": 1}]
+  ],
+  "curves": {
+    "cf": [[3975, 100], [3950, 93], [3925, 87], [3900, 82], [3875, 77], [3850, 71], [3825, 63], [3800, 55], [3775, 46],
+           [3750, 36], [3725, 26], [3700, 16], [3675, 9], [3650, 5], [3649, 5]],
+    "stchg": [[4130, 100], [4090, 90], [4050, 80], [4000, 70], [3967, 60], [3946, 50], [3930, 40], [3916, 30], [3871, 20], [3831, 10], [3400, 0]],
+    "stdis": [[4121, 100], [4042, 90], [3954, 80], [3905, 70], [3838, 60], [3785, 50], [3763, 40], [3738, 30], [3700, 20], [3651, 10], [3517, 0]]
+  },
+  "subs": {
+    "c3q": [
+      {"flush": 1}, {"out": "66 $cmd"},
+      {"retry": 2, "do": [{"read": 400, "if": {"all": [{"len": 5}, {"eq": [{"b": 0}, 102]}, {"eq": [{"b": 1}, "$cmd"]}]}}]}
+    ],
+    "c3": [
+      {"set": {"cmd": 130}}, {"call": "c3q"},
+      {"first": [[{"need": {"eq": [{"b": 2}, 0]}}, {"emit": {"state": "offline"}}, {"stop": 1}], []]},
+      {"set": {"chg": 0}},
+      {"first": [[{"set": {"cmd": 138}}, {"call": "c3q"}, {"set": {"chg": {"b": 2}}}], []]},
+      {"set": {"pct": -1}},
+      {"first": [[{"set": {"cmd": 137}}, {"call": "c3q"}, {"set": {"pct": {"b": 4}}}], []]},
+      {"emit": {"percent": "$pct", "charging": {"eq": ["$chg", 1]}}}
+    ],
+    "c3sq": [
+      {"flush": 1}, {"out": "0C 02 03 01 00 $cmd"},
+      {"retry": 2, "do": [{"read": 500, "if": {"all": [{"len": 7}, {"eq": [{"b": 0}, 12]}, {"eq": [{"b": 5}, "$cmd"]}, {"ne": [{"b": 6}, 255]}]}}]}
+    ],
+    "c2q": [
+      {"flush": 1}, {"out": "06 FF BB $cmd"},
+      {"retry": 2, "do": [{"read": 500, "if": {"all": [{"len": 8}, {"at": [0, "06 FF BB $cmd"]}]}}]}
+    ],
+    "c2kq": [
+      {"flush": 1}, {"out": "06 00 02 00 9A 00 00 68 4A 8E 0A 00 00 00 BB $cmd 00"},
+      {"retry": 2, "do": [{"read": 500, "if": {"all": [{"len": 8}, {"eq": [{"b": 0}, 11]}, {"eq": [{"b": 2}, 187]}, {"eq": [{"b": 3}, "$cmd"]}]}}]}
+    ],
+    "c2k": [
+      {"set": {"cmd": 2}}, {"call": "c2kq"},
+      {"need": {"le": [{"b": 7}, 100]}},
+      {"set": {"pct": {"b": 7}, "chg": 0}},
+      {"first": [[{"set": {"cmd": 3}}, {"call": "c2kq"}, {"set": {"chg": {"b": 4}}}], []]},
+      {"emit": {"percent": "$pct", "charging": {"eq": ["$chg", 1]}}}
+    ],
+    "caq": [
+      {"flush": 1}, {"out": "21 BB $cmd"},
+      {"retry": 2, "do": [{"read": 500, "if": {"all": [{"len": 4}, {"eq": [{"b": 0}, 33]}, {"eq": [{"b": 2}, "$cmd"]}]}}]}
+    ],
+    "pairq": [
+      {"flush": 1}, {"out": "$cmd $sub"},
+      {"retry": 2, "do": [{"read": 500, "if": {"all": [{"len": 8}, {"eq": [{"b": 0}, {"add": ["$cmd", 1]}]}, {"eq": [{"b": 1}, "$sub"]}]}}]}
+    ]
+  },
+  "protocols": {
+    "c3": {
+      "pick": [{"out": 62, "in": 62}],
+      "kind": "headset",
+      "run": [{"call": "c3"}]
+    },
+    "c3core": {
+      "pick": [{"page": "FF00", "out": [62], "in": [62]}, {"out": [62], "in": [62]}],
+      "kind": "headset",
+      "run": [{"call": "c3"}]
+    },
+    "c3s": {
+      "pick": [{"out": 64, "in": 64}],
+      "kind": "headset",
+      "run": [
+        {"set": {"cmd": 2}}, {"call": "c3sq"},
+        {"first": [[{"need": {"ne": [{"b": 6}, 2]}}, {"emit": {"state": "offline"}}, {"stop": 1}], []]},
+        {"set": {"pct": -1, "chg": 0}},
+        {"first": [[{"set": {"cmd": 6}}, {"call": "c3sq"}, {"set": {"pct": {"b": 6}}}], []]},
+        {"first": [[{"set": {"cmd": 72}}, {"call": "c3sq"}, {"set": {"chg": {"b": 6}}}], []]},
+        {"emit": {"percent": "$pct", "charging": {"in": ["$chg", [1, 2]]}, "full": {"eq": ["$chg", 2]}}}
+      ]
+    },
+    "c2": {
+      "pick": [{"page": "FF90", "usage": "0303"}],
+      "kind": "headset",
+      "run": [
+        {"set": {"cmd": 2}}, {"call": "c2q"},
+        {"need": {"le": [{"b": 7}, 100]}},
+        {"set": {"pct": {"b": 7}, "chg": 0}},
+        {"first": [[{"set": {"cmd": 3}}, {"call": "c2q"}, {"set": {"chg": {"b": 4}}}], []]},
+        {"emit": {"percent": "$pct", "charging": {"eq": ["$chg", 1]}}}
+      ]
+    },
+    "c2k": {
+      "pick": [{"out": 62}],
+      "kind": "headset",
+      "run": [{"call": "c2k"}]
+    },
+    "c2kfs": {
+      "pick": [{"page": "FF13", "usage": "0001", "out": 62, "in": 62}],
+      "kind": "headset",
+      "run": [{"call": "c2k"}]
+    },
+    "ca": {
+      "pick": [{"page": "FF00", "out": [3]}, {"out": [3]}],
+      "kind": "headset",
+      "run": [
+        {"first": [[{"set": {"cmd": 3}}, {"call": "caq"}, {"need": {"eq": [{"b": 3}, 1]}}, {"emit": {"state": "offline"}}, {"stop": 1}], []]},
+        {"set": {"chg": 0}},
+        {"first": [[{"set": {"cmd": 12}}, {"call": "caq"}, {"set": {"chg": {"b": 3}}}], []]},
+        {"set": {"cmd": 11}}, {"call": "caq"},
+        {"emit": {"percent": {"b": 3}, "charging": {"eq": ["$chg", 1]}}}
+      ]
+    },
+    "ca2": {
+      "pick": [{"page": "FF13", "usage": "FF00"}],
+      "kind": "headset",
+      "run": [
+        {"set": {"cmd": 82, "sub": 1}}, {"call": "pairq"},
+        {"first": [[{"need": {"eq": [{"b": 2}, 0]}}, {"emit": {"state": "offline"}}, {"stop": 1}], []]},
+        {"set": {"cmd": 80, "sub": 2}}, {"call": "pairq"},
+        {"emit": {"percent": {"b": 2}, "charging": {"eq": [{"b": 3}, 1]}}}
+      ]
+    },
+    "haste": {
+      "pick": [{"mi": 2, "page": "FF00", "usage": "0001", "out": 64, "in": 64}, {"page": "FF00", "out": [2], "in": [8]}],
+      "kind": "mouse",
+      "run": [
+        {"set": {"lnk": -1}},
+        {"first": [[{"set": {"cmd": 82, "sub": 1}}, {"call": "pairq"}, {"set": {"lnk": {"b": 2}}}], []]},
+        {"first": [[{"need": {"eq": ["$lnk", 0]}}, {"emit": {"state": "offline"}}, {"stop": 1}], []]},
+        {"set": {"cmd": 80, "sub": 2}}, {"call": "pairq"},
+        {"emit": {"percent": {"b": 2}, "charging": {"in": [{"b": 3}, [1, 2]]}, "full": {"eq": [{"b": 3}, 2]}}}
+      ]
+    },
+    "cf": {
+      "pick": [{"page": "FF00", "out": [3]}],
+      "kind": "headset",
+      "run": [
+        {"flush": 1}, {"out": "21 FF 05"},
+        {"retry": 2, "do": [{"read": 500, "if": {"len": 5}}]},
+        {"set": {"mv": {"u16be": 3}}},
+        {"emit": {"percent": {"if": [{"gt": ["$mv", 4107]}, null, {"if": [{"le": ["$mv", 3648]}, {"min": [{"div": ["$mv", 800]}, 100]}, {"curve": ["cf", "$mv"]}]}]},
+                  "charging": {"gt": ["$mv", 4107]}}}
+      ]
+    },
+    "stinger": {
+      "pick": [{"page": "FF00", "usage": "0001", "feat": [32]}],
+      "kind": "headset",
+      "run": [
+        {"set": {"tries": {"if": [{"eq": ["$ps", 1]}, 10, 1]}}},
+        {"fset": "FF 07 00 FD 04 00 00 02 82 03 05 29 0F 00 00 03 68 10 00 00"},
+        {"first": [[{"retry": "$tries", "do": [{"sleep": 20}, {"fget": 255}, {"need": {"len": 13}},
+                     {"need": {"not": {"all": [{"eq": [{"b": 1}, 1]}, {"eq": [{"b": 2}, 0]}]}}}]}],
+                   [{"need": {"len": 13}}]]},
+        {"first": [[{"need": {"ne": [{"b": 11}, 1]}}, {"emit": {"state": "offline"}}, {"stop": 1}], []]},
+        {"fset": "FF 07 00 FD 04 0C F1 02 01 04 F0 0C"},
+        {"retry": "$tries", "do": [{"sleep": 20}, {"fget": 255}, {"need": {"len": 13}}, {"need": {"at": [0, "FF 12 05"]}}]},
+        {"need": {"in": [{"b": 9}, [3, 5, 6]]}},
+        {"set": {"mv": {"u16le": 11}}},
+        {"emit": {"percent": {"if": [{"eq": [{"b": 9}, 6]}, 100, {"if": [{"eq": [{"b": 9}, 5]}, {"curve": ["stchg", "$mv"]}, {"curve": ["stdis", "$mv"]}]}]},
+                  "charging": {"eq": [{"b": 9}, 5]}, "full": {"eq": [{"b": 9}, 6]}}}
+      ]
+    }
+  },
+  "tests": [
+    {"protocol": "c3", "out": 62,
+     "replies": ["66 82 01 00 00", "66 8A 01 00 00", "66 89 0F A0 3C"],
+     "sent": ["66 82", "66 8A", "66 89"],
+     "expect": [{"percent": 60, "charging": true}]},
+    {"protocol": "c3", "out": 62, "replies": ["66 82 00 00 00"], "expect": [{"state": "offline"}]},
+    {"protocol": "c3s", "out": 64,
+     "replies": ["0C 02 03 01 00 02 02", "0C 02 03 01 00 06 FF", "0C 02 03 01 00 06 46", "0C 02 03 01 00 48 00"],
+     "sent": ["0C 02 03 01 00 02"],
+     "expect": [{"percent": 70}]},
+    {"protocol": "c2", "out": 20,
+     "replies": ["06 FF BB 02 00 0F 50 32", "06 FF BB 03 01 00 00 00"],
+     "sent": ["06 FF BB 02"],
+     "expect": [{"percent": 50, "charging": true}]},
+    {"protocol": "c2k", "out": 62,
+     "replies": ["0B 00 BB 02 00 00 00 21", "0B 00 BB 03 00 00 00 00"],
+     "sent": ["06 00 02 00 9A 00 00 68 4A 8E 0A 00 00 00 BB 02 00"],
+     "expect": [{"percent": 33}]},
+    {"protocol": "ca", "out": 20,
+     "replies": ["21 BB 03 00", "21 BB 0C 01", "21 BB 0B 5A"],
+     "expect": [{"percent": 90, "charging": true}]},
+    {"protocol": "ca2", "out": 64,
+     "replies": ["53 01 01 00 00 00 00 00", "51 02 2D 00 00 00 10 0F"],
+     "sent": ["52 01", "50 02"],
+     "expect": [{"percent": 45}]},
+    {"protocol": "haste", "out": 64,
+     "replies": ["53 01 00 00 00 00 00 00"],
+     "expect": [{"state": "offline"}]},
+    {"protocol": "haste", "out": 64,
+     "replies": ["53 01 01 00 00 00 00 00", "51 02 46 01 00 00 10 0F"],
+     "expect": [{"percent": 70, "charging": true}]},
+    {"protocol": "cf", "out": 20, "replies": ["21 FF 05 0F 3C"], "expect": [{"percent": 82}]},
+    {"protocol": "cf", "out": 20, "replies": ["21 FF 05 10 20"], "expect": [{"charging": true}]},
+    {"protocol": "stinger", "feat": 32, "vars": {"ps": 1},
+     "replies": ["FF 01 00 00 00 00 00 00 00 00 00 01 00", "FF 0A 05 00 00 00 00 00 00 00 00 01 00",
+                 "FF 0A 05 00 00 00 00 00 00 00 00 01 00", "FF 12 05 00 00 00 00 00 00 03 00 41 0F"],
+     "sent": ["FF 07 00 FD 04 00 00 02 82 03 05 29 0F 00 00 03 68 10 00 00"],
+     "expect": [{"percent": 70}]}
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "v": 1,
+  "devices": [
+    ["248A:FF4C", "rx", "Machenike L7", "mouse", {"rx": 1}],
+    ["248A:FF4E", "cable", "Machenike L7", "mouse", {"rx": 0}]
+  ],
+  "protocols": {
+    "rx": {
+      "pick": [{"mi": 1, "page": "008C", "usage": "0001", "in": 33, "out": 33, "feat": 1001}],
+      "open": "feature",
+      "grace": 1800,
+      "run": [
+        {"fset": "51 06"},
+        {"retry": 20, "do": [{"sleep": 10}, {"fget": "51"}, {"need": {"len": 21}}, {"need": {"at": [0, "51 06"]}}, {"need": {"at": [4, "8A 24 4E FF"]}}, {"need": {"eq": [{"and": [{"b": 10}, 7]}, "$rx"]}}]},
+        {"set": {"linked": {"if": [{"any": [{"eq": ["$rx", 0]}, {"ne": [{"and": [{"b": 10}, 8]}, 0]}]}, 1, 0]}}},
+        {"first": [[{"need": {"eq": ["$linked", 1]}}, {"need": {"le": [{"b": 11}, 100]}}, {"need": {"le": [{"b": 12}, 1]}}, {"emit": {"id": "l7", "percent": {"b": 11}, "charging": {"eq": [{"b": 12}, 1]}}}], [{"need": {"eq": ["$linked", 0]}}, {"emit": {"id": "l7", "state": "offline"}}]]}
+      ]
+    },
+    "cable": {
+      "pick": [{"mi": 2, "page": "008C", "usage": "0001", "in": 33, "out": 33, "feat": 1001}],
+      "open": "feature",
+      "grace": 0,
+      "run": [
+        {"fset": "51 06"},
+        {"retry": 20, "do": [{"sleep": 10}, {"fget": "51"}, {"need": {"len": 21}}, {"need": {"at": [0, "51 06"]}}, {"need": {"at": [4, "8A 24 4E FF"]}}, {"need": {"eq": [{"and": [{"b": 10}, 7]}, "$rx"]}}]},
+        {"set": {"linked": {"if": [{"any": [{"eq": ["$rx", 0]}, {"ne": [{"and": [{"b": 10}, 8]}, 0]}]}, 1, 0]}}},
+        {"first": [[{"need": {"eq": ["$linked", 1]}}, {"need": {"le": [{"b": 11}, 100]}}, {"need": {"le": [{"b": 12}, 1]}}, {"emit": {"id": "l7", "percent": {"b": 11}, "charging": {"eq": [{"b": 12}, 1]}}}], [{"need": {"eq": ["$linked", 0]}}, {"emit": {"id": "l7", "state": "offline"}}]]}
+      ]
+    }
+  },
+  "tests": [
+    {"protocol": "rx", "feat": 1001, "vars": {"rx": 1}, "replies": ["51 06 01 00 8A 24 4E FF 05 01 09 40 00 00 00 00 00 00 00 00 00"], "sent": ["51 06 00"], "expect": [{"percent": 64}]},
+    {"protocol": "cable", "feat": 1001, "vars": {"rx": 0}, "replies": ["51 06 01 00 8A 24 4E FF 05 01 00 4A 01 00 00 00 00 00 00 00 00"], "expect": [{"percent": 74, "charging": true}]},
+    {"protocol": "rx", "feat": 1001, "vars": {"rx": 1}, "replies": ["51 06 01 00 8A 24 4E FF 05 01 01 40 01 00 00 00 00 00 00 00 00"], "expect": [{"state": "offline"}]}
+  ]
+}

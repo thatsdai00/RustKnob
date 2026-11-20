@@ -1,0 +1,45 @@
+{
+  "v": 1,
+  "devices": [
+    ["3710:3402", "sonix", "Pulsar X2 V3", "mouse", {"cable": 1}],
+    ["3710:3406", "sonix", "Pulsar X2 V3 eS", "mouse", {"cable": 1}],
+    ["3710:5402", "sonix", "Pulsar wireless mouse", "mouse", {"cable": 0}],
+    ["3710:5403", "sonix", "Pulsar wireless mouse", "mouse", {"cable": 0}]
+  ],
+  "protocols": {
+    "sonix": {
+      "pick": [{"mi": 3, "feat": [65]}, {"mi": 2, "feat": [65]}, {"feat": [65]}],
+      "open": "feature",
+      "kind": "mouse",
+      "run": [
+        {"set": {"last": 0}},
+        {"first": [
+          [{"retry": 3, "do": [
+             {"fset": "00 00 08 81 01", "ck": {"t": "sum16le", "from": 1, "to": 62, "at": 63}},
+             {"retry": 6, "do": [
+               {"sleep": 50},
+               {"fget": 0},
+               {"need": {"all": [{"len": 8}, {"at": [2, "08 81 01"]}]}},
+               {"set": {"last": {"b": 1}}},
+               {"need": {"all": [{"eq": [{"b": 1}, 1]}, {"le": [{"b": 7}, 100]}]}}
+             ]}
+           ]}],
+          [{"need": {"eq": ["$last", 5]}}, {"emit": {"state": "offline"}}, {"stop": 1}]
+        ]},
+        {"first": [
+          [{"need": {"eq": ["$cable", 1]}}, {"emit": {"percent": {"b": 7}, "charging": true}}],
+          [{"need": {"gt": [{"b": 7}, 0]}}, {"emit": {"percent": {"b": 7}}}],
+          [{"emit": {"state": "offline"}}]
+        ]}
+      ]
+    }
+  },
+  "tests": [
+    {"protocol": "sonix", "feat": 65, "vars": {"cable": 0},
+     "replies": ["00 02 08 81 01 00 00 00", "00 01 08 81 01 00 00 4E"],
+     "sent": ["00 00 08 81 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 8A 00"],
+     "expect": [{"percent": 78}]},
+    {"protocol": "sonix", "feat": 65, "vars": {"cable": 1}, "replies": ["00 01 08 81 01 00 00 00"], "expect": [{"percent": 0, "charging": true}]},
+    {"protocol": "sonix", "feat": 65, "vars": {"cable": 0}, "replies": ["00 05 08 81 01 00 00 00"], "expect": [{"state": "offline"}]}
+  ]
+}

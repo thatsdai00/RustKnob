@@ -1,0 +1,49 @@
+{
+  "v": 1,
+  "devices": [
+    ["05AC:024F", "mi3", "", "keyboard"],
+    ["0C45:FEFE", "mi3", "", "keyboard"],
+    ["0C45:FDFD", "mi3", "", "keyboard"],
+    ["342D:E479", "any", "EPOMAKER P75", "keyboard"],
+    ["342D:E485", "any", "RK R75", "keyboard"],
+    ["342D:E4BC", "any", "Redragon Arlokks K742B", "keyboard"],
+    ["342D:E4C2", "any", "M1 V5 VIA", "keyboard"],
+    ["342D:E407", "any", "Lucky65V2", "keyboard"],
+    ["388D:0003", "any", "Lofree Flow2", "keyboard"],
+    ["388D:0002", "any", "Lofree Flow2", "keyboard"],
+    ["0DB0:0CA0", "any", "MSI FORGE TKL W FRIEREN", "keyboard"],
+    ["36B0:30BD", "any", "Essential75", "keyboard"],
+    ["342D:E51A", "any", "NUT65", "keyboard"],
+    ["342D:E487", "any", "RK 2.4G Dongle", "keyboard"],
+    ["342D:E537", "any", "WEIKAV MAX102", "keyboard"],
+    ["19F5:3245", "any", "NuPhy Air75V2", "keyboard"],
+    ["362D:D028", "any", "SKN Qinglong", "keyboard"],
+    ["362D:D030", "any", "Lemokey Link", "keyboard"],
+    ["362D:D101", "any", "Wireless Link", "keyboard"],
+    ["342D:E49F", "any", "Spade65-QMK-2.4GHz", "keyboard"]
+  ],
+  "protocols": {
+    "mi3": {
+      "pick": [{"mi": 3, "page": "FF60", "usage": "0061", "out": 33, "in": 33}],
+      "grace": 1800,
+      "strip": [" 2.4G"],
+      "run": [
+        {"retry": 2, "do": [{"flush": 1}, {"out": "00 20 01", "ck": {"t": "sum", "from": 1, "to": 31, "at": 32}}, {"read": 500, "if": {"all": [{"len": 4}, {"at": [0, "20 01 00"]}]}}]},
+        {"emit": {"percent": {"if": [{"ge": [{"b": 3}, 1]}, {"b": 3}, null]}, "offline": {"not": {"all": [{"ge": [{"b": 3}, 1]}, {"le": [{"b": 3}, 100]}]}}}}
+      ]
+    },
+    "any": {
+      "pick": [{"page": "FF60", "usage": "0061", "out": 33, "in": 33}],
+      "grace": 1800,
+      "strip": [" 2.4G"],
+      "run": [
+        {"retry": 2, "do": [{"flush": 1}, {"out": "00 20 01", "ck": {"t": "sum", "from": 1, "to": 31, "at": 32}}, {"read": 500, "if": {"all": [{"len": 4}, {"at": [0, "20 01 00"]}]}}]},
+        {"emit": {"percent": {"if": [{"ge": [{"b": 3}, 1]}, {"b": 3}, null]}, "offline": {"not": {"all": [{"ge": [{"b": 3}, 1]}, {"le": [{"b": 3}, 100]}]}}}}
+      ]
+    }
+  },
+  "tests": [
+    {"protocol": "any", "out": 33, "replies": ["00 20 01 00 3F 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"], "sent": ["00 20 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 21"], "expect": [{"percent": 63}]},
+    {"protocol": "mi3", "out": 33, "replies": ["00 20 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"], "expect": [{"state": "offline"}]}
+  ]
+}

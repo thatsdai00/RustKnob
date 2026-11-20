@@ -1,0 +1,126 @@
+{
+  "v": 1,
+  "devices": [
+    ["373E:0009", "arbiter", "Arbiter Studio Akitsu", "mouse", {"key": 10, "cable": 1}],
+    ["373E:0038", "arbiter", "Arbiter Studio Akitsu 3950", "mouse", {"key": 57, "cable": 1}],
+    ["373E:0066", "arbiter", "Arbiter Studio Akitsu Medium", "mouse", {"key": 103, "cable": 1}],
+    ["373E:000A", "arbiter", "Arbiter Studio Akitsu", "mouse", {"key": 10, "cable": 0}],
+    ["373E:0039", "arbiter", "Arbiter Studio Akitsu 3950", "mouse", {"key": 57, "cable": 0}],
+    ["373E:0067", "arbiter", "Arbiter Studio Akitsu Medium", "mouse", {"key": 103, "cable": 0}],
+    ["373E:001C", "lamzu", "LAMZU Maya X", "mouse", {"cable": 1}],
+    ["373E:001D", "lamzu", "LAMZU Maya X", "mouse", {"cable": 0}],
+    ["373E:001E", "lamzu", "LAMZU Maya X", "mouse", {"cable": 0}],
+    ["373E:0016", "lamzu", "LAMZU Maya X V2", "mouse", {"cable": 0}],
+    ["37B0:001F", "lamzu", "LAMZU Maya X V2", "mouse", {"cable": 1}],
+    ["37B0:0005", "lamzu", "LAMZU Tachi", "mouse", {"cable": 1}],
+    ["37B0:000B", "lamzu", "LAMZU Tachi", "mouse", {"cable": 0}],
+    ["37B0:000C", "lamzu", "LAMZU Tachi", "mouse", {"cable": 0}],
+    ["37B0:001C", "lamzu", "LAMZU Tachi Lite", "mouse", {"cable": 1}],
+    ["37B0:001E", "lamzu", "LAMZU Tachi Lite", "mouse", {"cable": 0}],
+    ["37B0:0009", "lamzu", "LAMZU Inca", "mouse", {"cable": 1}],
+    ["37B0:000F", "lamzu", "LAMZU Inca", "mouse", {"cable": 0}],
+    ["37B0:0010", "lamzu", "LAMZU Inca", "mouse", {"cable": 0}],
+    ["37B0:0011", "lamzu", "LAMZU Maya", "mouse", {"cable": 1}],
+    ["37B0:0013", "lamzu", "LAMZU Maya", "mouse", {"cable": 0}],
+    ["37B0:0015", "lamzu", "LAMZU Maya", "mouse", {"cable": 0}],
+    ["37B0:0007", "lamzu", "LAMZU Paro", "mouse", {"cable": 1}],
+    ["37B0:000D", "lamzu", "LAMZU Paro", "mouse", {"cable": 0}],
+    ["37B0:000E", "lamzu", "LAMZU Paro", "mouse", {"cable": 0}],
+    ["37B0:0017", "lamzu", "LAMZU Thorn", "mouse", {"cable": 1}],
+    ["37B0:0019", "lamzu", "LAMZU Thorn", "mouse", {"cable": 0}],
+    ["37B0:001B", "lamzu", "LAMZU Thorn", "mouse", {"cable": 0}],
+    ["37B0:0021", "lamzu", "LAMZU Thorn V2", "mouse", {"cable": 1}],
+    ["37B0:0003", "lamzu", "LAMZU Thorn V2", "mouse", {"cable": 0}],
+    ["37B0:0023", "lamzu", "LAMZU Thorn V2", "mouse", {"cable": 0}],
+    ["37B0:0030", "lamzu", "LAMZU Thorn V2", "mouse", {"cable": 1}],
+    ["37B0:0032", "lamzu", "LAMZU Thorn V2", "mouse", {"cable": 0}],
+    ["37B0:0040", "lamzu", "LAMZU Thorn V2", "mouse", {"cable": 1}],
+    ["37B0:0025", "lamzu", "LAMZU Atlantis OG Champion", "mouse", {"cable": 1}],
+    ["37B0:0027", "lamzu", "LAMZU Atlantis OG Champion", "mouse", {"cable": 0}],
+    ["37B0:0028", "lamzu", "LAMZU Atlantis Mini", "mouse", {"cable": 1}],
+    ["37B0:002B", "lamzu", "LAMZU Atlantis Mini", "mouse", {"cable": 0}],
+    ["37B0:002A", "lamzu", "LAMZU Atlantis Mini", "mouse", {"cable": 0}],
+    ["37B0:003E", "lamzu", "LAMZU Atlantis Mini", "mouse", {"cable": 1}],
+    ["37B0:003F", "lamzu", "LAMZU Atlantis Mini", "mouse", {"cable": 0}],
+    ["37B0:002C", "lamzu", "LAMZU Maya M", "mouse", {"cable": 1}],
+    ["37B0:0052", "lamzu", "LAMZU Maya M", "mouse", {"cable": 1}],
+    ["37B0:003A", "lamzu", "LAMZU Maya X", "mouse", {"cable": 1}],
+    ["37B0:003B", "lamzu", "LAMZU Maya X", "mouse", {"cable": 0}],
+    ["37B0:0044", "lamzu", "LAMZU Maya X", "mouse", {"cable": 1}],
+    ["37B0:003C", "lamzu", "LAMZU Maya", "mouse", {"cable": 1}],
+    ["37B0:0050", "lamzu", "LAMZU Maya", "mouse", {"cable": 1}],
+    ["37B0:0042", "lamzu", "LAMZU Orcus", "mouse", {"cable": 1}],
+    ["37B0:0056", "lamzu", "LAMZU Orcus", "mouse", {"cable": 1}],
+    ["37B0:0046", "lamzu", "LAMZU Mini", "mouse", {"cable": 1}],
+    ["37B0:0054", "lamzu", "LAMZU Mini", "mouse", {"cable": 0}],
+    ["37B0:0034", "lamzu", "LAMZU wireless mouse", "mouse", {"cable": 1}],
+    ["37B0:0038", "lamzu", "LAMZU wireless mouse", "mouse", {"cable": 1}],
+    ["373E:*", "lamzu", "LAMZU wireless mouse", "mouse", {"cable": 0}],
+    ["37B0:*", "lamzu", "LAMZU wireless mouse", "mouse", {"cable": 0}]
+  ],
+  "subs": {
+    "arbiter-get": [
+      {"fget": 0},
+      {"first": [
+        [{"need": {"all": [{"len": 9}, {"eq": [{"b": 4}, 2]}, {"eq": [{"b": 6}, "83"]}]}}, {"set": {"st": {"b": 1}, "chg": {"b": 7}, "lvl": {"b": 8}}}],
+        [{"need": {"all": [{"len": 8}, {"eq": [{"b": 3}, 2]}, {"eq": [{"b": 5}, "83"]}]}}, {"set": {"st": {"b": 0}, "chg": {"b": 6}, "lvl": {"b": 7}}}]
+      ]},
+      {"need": {"in": ["$st", ["A0", "A1", "A2"]]}}
+    ]
+  },
+  "protocols": {
+    "arbiter": {
+      "pick": [{"page": "FFFF", "usage": "0000", "feat": 65}, {"page": "FFFF", "feat": 65}],
+      "open": "feature",
+      "kind": "mouse",
+      "grace": 1800,
+      "run": [
+        {"set": {"st": 0}},
+        {"retry": 2, "do": [
+          {"fset": "00 00 00 02 02 00 83"},
+          {"any": "w", "in": [100, 60, 60], "do": [{"sleep": "$w"}, {"call": "arbiter-get"}]}
+        ]},
+        {"first": [
+          [{"need": {"eq": ["$st", "A0"]}}, {"emit": {"id": {"add": ["$key", 0]}, "state": "asleep"}}],
+          [{"need": {"le": ["$lvl", 100]}}, {"need": {"any": [{"eq": ["$cable", 1]}, {"gt": ["$lvl", 0]}]}},
+           {"emit": {"id": {"add": ["$key", 0]}, "percent": "$lvl", "charging": {"eq": ["$chg", 1]}}}],
+          [{"need": {"eq": ["$lvl", 0]}}, {"emit": {"id": {"add": ["$key", 0]}, "state": "asleep"}}]
+        ]}
+      ]
+    },
+    "lamzu": {
+      "pick": [{"feat": 65}],
+      "open": "feature",
+      "kind": "mouse",
+      "run": [
+        {"fset": "00 00 00 02 02 00 83"},
+        {"sleep": 100},
+        {"fget": 0},
+        {"need": {"len": 10}},
+        {"first": [
+          [{"need": {"all": [{"eq": [{"b": 1}, "A1"]}, {"eq": [{"b": 4}, 2]}, {"eq": [{"b": 6}, "83"]}]}}, {"set": {"chg": {"b": 7}, "pct": {"b": 8}}}],
+          [{"need": {"all": [{"eq": [{"b": 0}, "A1"]}, {"eq": [{"b": 3}, 2]}, {"eq": [{"b": 5}, "83"]}]}}, {"set": {"chg": {"b": 6}, "pct": {"b": 7}}}]
+        ]},
+        {"need": {"le": ["$pct", 100]}},
+        {"first": [
+          [{"need": {"any": [{"eq": ["$cable", 1]}, {"gt": ["$pct", 0]}]}}, {"emit": {"percent": "$pct", "charging": {"eq": ["$chg", 1]}}}],
+          [{"emit": {"state": "offline"}}]
+        ]}
+      ]
+    }
+  },
+  "tests": [
+    {"protocol": "arbiter", "feat": 65, "vars": {"key": 10, "cable": 0},
+     "replies": ["00 A1 00 00 02 00 83 00 55 00"],
+     "sent": ["00 00 00 02 02 00 83 00"],
+     "expect": [{"percent": 85}]},
+    {"protocol": "arbiter", "feat": 65, "vars": {"key": 10, "cable": 0}, "replies": ["A0 00 00 02 00 83 00 00 00"], "expect": [{"state": "asleep"}]},
+    {"protocol": "arbiter", "feat": 65, "vars": {"key": 10, "cable": 1},
+     "replies": ["00 00 00 00 00 00 00 00 00", "00 A2 00 00 02 00 83 01 46 00"], "expect": [{"percent": 70, "charging": true}]},
+    {"protocol": "lamzu", "feat": 65, "vars": {"cable": 0}, "replies": ["00 A1 00 00 02 00 83 00 3C 00"], "sent": ["00 00 00 02 02 00 83"],
+     "expect": [{"percent": 60}]},
+    {"protocol": "lamzu", "feat": 65, "vars": {"cable": 1}, "replies": ["A1 00 00 02 00 83 01 64 00 00"], "expect": [{"percent": 100, "charging": true}]},
+    {"protocol": "lamzu", "feat": 65, "vars": {"cable": 0}, "replies": ["00 A1 00 00 02 00 83 00 00 00"], "expect": [{"state": "offline"}]},
+    {"protocol": "lamzu", "feat": 65, "vars": {"cable": 0}, "replies": ["00 A2 00 00 02 00 83 00 3C 00"], "expect": []}
+  ]
+}

@@ -1,0 +1,83 @@
+{
+  "v": 1,
+  "devices": [
+    ["373B:1216", "nk", "", "mouse"],
+    ["373B:1154", "zero", "ATK Zero", "mouse", {"tgt": 0}],
+    ["373B:124F", "zero", "ATK Zero", "mouse", {"tgt": 1}],
+    ["373B:1155", "zero", "ATK Zero", "mouse", {"tgt": 1}],
+    ["373B:1178", "nano", "ATK 8K Nano mouse", "mouse"]
+  ],
+  "subs": {
+    "nk": [
+      {"flush": 1},
+      {"out": "08 00 72 02 00 01 $cmd 01", "ck": {"t": "sum", "from": 2, "to": 63, "at": 1}},
+      {"retry": 2, "do": [{"read": 350, "if": {"all": [{"len": 8}, {"at": [0, "08 72"]}, {"eq": [{"b": 5}, "$cmd"]}]}}]},
+      {"need": {"ne": [{"b": 2}, "FF"]}}
+    ],
+    "zero": [
+      {"flush": 1},
+      {"out": "08 7D 72 02 00 $tgt $cmd 01"},
+      {"read": 500, "if": {"all": [{"len": 8}, {"at": [0, "08 72 00"]}, {"eq": [{"b": 5}, "$cmd"]}, {"eq": [{"b": 6}, 1]}]}}
+    ]
+  },
+  "protocols": {
+    "nk": {
+      "pick": [{"page": "FF05", "usage": "0001", "out": [64], "in": [8]}],
+      "kind": "mouse",
+      "grace": 1800,
+      "strip": [" dongle", " Dongle"],
+      "run": [
+        {"set": {"cmd": 7}},
+        {"call": "nk"},
+        {"set": {"pct": {"b": 7}, "chg": 0}},
+        {"need": {"all": [{"ge": ["$pct", 1]}, {"le": ["$pct", 100]}]}},
+        {"set": {"cmd": "0F"}},
+        {"first": [[{"call": "nk"}, {"set": {"chg": {"b": 7}}}], []]},
+        {"emit": {"percent": "$pct", "charging": {"eq": ["$chg", 1]}}}
+      ]
+    },
+    "zero": {
+      "pick": [{"page": "FF05", "usage": "0001", "out": 64, "in": 64}],
+      "kind": "mouse",
+      "grace": 1800,
+      "run": [
+        {"set": {"cmd": 7}},
+        {"call": "zero"},
+        {"set": {"pct": {"b": 7}, "chg": 0}},
+        {"need": {"le": ["$pct", 100]}},
+        {"first": [[{"need": {"eq": ["$tgt", 0]}}, {"set": {"cmd": 8}}, {"call": "zero"}, {"set": {"chg": {"b": 7}}}], []]},
+        {"emit": {"id": "atk-zero", "percent": "$pct", "charging": {"eq": ["$chg", 2]}}}
+      ]
+    },
+    "nano": {
+      "pick": [{"page": "FF10", "usage": "0001", "feat": [9], "in": [11]}],
+      "kind": "mouse",
+      "grace": 1800,
+      "run": [
+        {"flush": 1},
+        {"fset": "00 82"},
+        {"retry": 2, "do": [{"read": 350, "if": {"all": [{"len": 10}, {"eq": [{"b": 0}, "82"]}]}}]},
+        {"need": {"ne": [{"b": 9}, 0]}},
+        {"set": {"pct": {"and": [{"b": 8}, "7F"]}}},
+        {"need": {"all": [{"ge": ["$pct", 1]}, {"le": ["$pct", 100]}]}},
+        {"emit": {"percent": "$pct", "charging": {"ne": [{"and": [{"b": 8}, "80"]}, 0]}}}
+      ]
+    }
+  },
+  "tests": [
+    {"protocol": "nk", "out": 64,
+     "replies": ["08 72 00 05 00 07 01 4B", "08 72 00 06 00 0F 01 01"],
+     "sent": ["08 7D 72 02 00 01 07 01 00", "08 85 72 02 00 01 0F 01 00"],
+     "expect": [{"percent": 75, "charging": true}]},
+    {"protocol": "nk", "out": 64, "replies": ["08 72 FF 05 00 07 01 00"], "expect": []},
+    {"protocol": "zero", "out": 64, "vars": {"tgt": 0},
+     "replies": ["08 72 00 01 00 07 01 3C", "08 72 00 02 00 08 01 02"],
+     "sent": ["08 7D 72 02 00 00 07 01", "08 7D 72 02 00 00 08 01"],
+     "expect": [{"percent": 60, "charging": true}]},
+    {"protocol": "zero", "out": 64, "vars": {"tgt": 1}, "replies": ["08 72 00 01 00 07 01 3C"], "sent": ["08 7D 72 02 00 01 07 01"],
+     "expect": [{"percent": 60}]},
+    {"protocol": "nano", "feat": 9, "replies": ["00 82 03 01 00 05 03 07 00 D5 01"], "sent": ["00 82 00 00 00 00 00 00 00"],
+     "expect": [{"percent": 85, "charging": true}]},
+    {"protocol": "nano", "feat": 9, "replies": ["00 82 03 01 00 05 03 07 00 55 00"], "expect": []}
+  ]
+}

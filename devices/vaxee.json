@@ -1,0 +1,30 @@
+{
+  "v": 1,
+  "devices": [
+    ["3057:1002", "vx", "VAXEE wireless mouse", "mouse"],
+    ["3057:2002", "vx", "VAXEE 8K Wireless", "mouse"],
+    ["3057:1011", "vx", "ZYGEN NP-01S V2 Wireless", "mouse"]
+  ],
+  "subs": {
+    "vq": [
+      {"fset": "0E A5 $c 01 01"},
+      {"sleep": 100},
+      {"fget": 14},
+      {"need": {"all": [{"len": 6}, {"at": [0, "0E A5 $c"]}, {"eq": [{"b": 4}, 1]}]}}
+    ]
+  },
+  "protocols": {
+    "vx": {"pick": [{"page": "FF05", "usage": "0001", "feat": 64}], "open": "feature", "grace": 1800,
+      "run": [
+        {"set": {"c": 11}},
+        {"retry": 2, "do": [{"call": "vq"}, {"need": {"le": [{"b": 5}, 20]}}]},
+        {"set": {"pct": {"mul": [{"b": 5}, 5]}, "chg": 0, "c": 16}},
+        {"first": [[{"call": "vq"}, {"set": {"chg": {"if": [{"ne": [{"b": 5}, 0]}, 1, 0]}}}], []]},
+        {"emit": {"percent": "$pct", "charging": {"eq": ["$chg", 1]}}}
+      ]}
+  },
+  "tests": [
+    {"protocol": "vx", "feat": 64, "replies": ["0E A5 0B 00 01 10", "0E A5 10 00 01 01"], "sent": ["0E A5 0B 01 01", "0E A5 10 01 01"], "expect": [{"percent": 80, "charging": true}]},
+    {"protocol": "vx", "feat": 64, "replies": ["0E A5 0B 00 01 FF", "0E A5 0B 00 01 FF"], "expect": []}
+  ]
+}

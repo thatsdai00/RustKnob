@@ -1,0 +1,58 @@
+{
+  "v": 1,
+  "devices": [
+    ["3554:F55D", "k08", "Redragon wireless mouse", "mouse"], ["3554:F5D5", "k08", "Redragon wireless mouse", "mouse"],
+    ["3554:F55E", "k08", "Redragon wireless mouse", "mouse"],
+    ["3554:F58A", "k08", "VXE Dragonfly R1", "mouse", {"key": 62858}], ["3554:F58C", "k08", "VXE Dragonfly R1", "mouse", {"key": 62858}],
+    ["3554:F58E", "k08", "VXE Dragonfly R1", "mouse", {"key": 62862}], ["3554:F58F", "k08", "VXE Dragonfly R1", "mouse", {"key": 62862}],
+    ["3554:F505", "k08", "VXE Dragonfly R1", "mouse", {"key": 62725}], ["3554:F506", "k08", "VXE Dragonfly R1", "mouse", {"key": 62725}],
+    ["35BB:D3FB", "k08", "HECATE mouse", "mouse"], ["35BB:D3FA", "k08", "HECATE mouse", "mouse"],
+    ["35BB:D3FC", "k08", "HECATE mouse", "mouse"], ["35BB:D3FD", "k08", "HECATE mouse", "mouse"],
+    ["3554:*", "k08", ""],
+    ["373B:*", "k08", ""],
+    ["3770:*", "k08", "Hitscan Hyperlight", "mouse"],
+    ["33E4:*", "k08", ""],
+    ["3710:*", "k08", ""]
+  ],
+  "except": ["373B:11CA", "373B:11CB", "373B:1203", "373B:1204", "373B:1178", "3554:FA09", "3554:FB40"],
+  "subs": {
+    "ask": [
+      {"out": "08 $cmd", "ck": {"t": "sum", "from": 0, "to": 15, "at": 16, "sub": 85}},
+      {"read": 500, "if": {"all": [{"len": 17}, {"at": [0, "08 $cmd"]}, {"ck": {"t": "sum", "from": 0, "to": 15, "at": 16, "sub": 85}}]}}
+    ]
+  },
+  "protocols": {
+    "k08": {
+      "pick": [
+        {"page": "FF02", "usage": "0002", "out": [17], "in": [17]},
+        {"out": 17, "in": 17},
+        {"page": "FF02", "out": [17], "in": [17]}, {"page": "FF00", "out": [17], "in": [17]},
+        {"page": "FF01", "out": [17], "in": [17]}, {"page": "FF03", "out": [17], "in": [17]},
+        {"page": "FF04", "out": [17], "in": [17]}, {"page": "FF05", "out": [17], "in": [17]},
+        {"page": "FF06", "out": [17], "in": [17]}, {"page": "FFFF", "out": [17], "in": [17]}
+      ],
+      "grace": 1800,
+      "strip": [" Dongle", " Receiver", " 2.4G", " Wireless Receiver"],
+      "run": [
+        {"flush": 1},
+        {"set": {"on": 2, "cmd": 3}},
+        {"first": [[{"call": "ask"}, {"set": {"on": {"if": [{"ne": [{"b": 6}, 0]}, 1, 0]}}}], []]},
+        {"need": {"ne": ["$on", 0]}},
+        {"set": {"cmd": 4}},
+        {"first": [
+          [{"call": "ask"}, {"emit": {"id": {"add": ["$key", 0]}, "percent": {"b": 6}, "charging": {"ne": [{"b": 7}, 0]}}}],
+          [{"need": {"eq": ["$on", 1]}}, {"emit": {"id": {"add": ["$key", 0]}, "state": "asleep"}}]
+        ]}
+      ]
+    }
+  },
+  "tests": [
+    {"protocol": "k08", "out": 17,
+     "replies": ["08 03 00 00 00 00 01 00 00 00 00 00 00 00 00 00 49", "08 04 00 00 00 00 55 01 0F A0 00 00 00 00 00 00 44"],
+     "sent": ["08 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 4A", "08 04 00 00 00 00 00 00 00 00 00 00 00 00 00 00 49"],
+     "expect": [{"percent": 85, "charging": true}]},
+    {"protocol": "k08", "out": 17, "replies": ["08 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 4A"], "expect": []},
+    {"protocol": "k08", "out": 17, "replies": ["08 03 00 00 00 00 01 00 00 00 00 00 00 00 00 00 49"], "expect": [{"state": "asleep"}]},
+    {"protocol": "k08", "out": 17, "replies": ["08 03 00 00 00 00 01 00 00 00 00 00 00 00 00 00 48"], "expect": []}
+  ]
+}

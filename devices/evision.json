@@ -1,0 +1,84 @@
+{
+  "v": 1,
+  "devices": [
+    ["320F:5055", "kb", "", "keyboard"],
+    ["320F:5088", "kb-rx", "", "keyboard"],
+    ["373B:1012", "z87", "ATK Z87", "keyboard"],
+    ["320F:226F", "m999", "Redragon wireless mouse", "mouse", {"var": 2}]
+  ],
+  "subs": {
+    "ask": [
+      {"flush": 1},
+      {"out": "04 01 00 1A $var"},
+      {"retry": "$n", "do": [
+        {"read": 100, "if": {"all": [{"len": 10}, {"at": [0, "04 01 00 1A"]}, {"eq": [{"b": 5}, 0]}, {"eq": [{"b": 6}, 0]}]}}
+      ]},
+      {"need": {"all": [{"le": [{"b": 8}, 100]}, {"le": [{"b": 9}, 2]}]}}
+    ],
+    "kb": [
+      {"set": {"n": 20}},
+      {"first": [
+        [{"any": "var", "in": [6, 0], "do": [{"call": "ask"}]},
+         {"emit": {"id": "atk-kb", "percent": {"b": 8}, "charging": {"ne": [{"b": 9}, 0]}}}],
+        [{"emit": {"id": "atk-kb", "state": "asleep"}}]
+      ]}
+    ]
+  },
+  "protocols": {
+    "kb": {
+      "pick": [{"page": "FF1C", "usage": "0092"}],
+      "kind": "keyboard",
+      "grace": 1800,
+      "strip": [" 2.4G Dongle"],
+      "run": [{"call": "kb"}]
+    },
+    "kb-rx": {
+      "pick": [{"page": "FF1C", "usage": "0092"}],
+      "kind": "keyboard",
+      "every": 600,
+      "asleep": 600,
+      "grace": 1800,
+      "strip": [" 2.4G Dongle"],
+      "run": [{"call": "kb"}]
+    },
+    "z87": {
+      "pick": [{"page": "FF1C", "usage": "0092", "out": 64, "in": 64}],
+      "kind": "keyboard",
+      "every": 600,
+      "asleep": 30,
+      "grace": 1800,
+      "run": [
+        {"flush": 1},
+        {"first": [
+          [{"out": "04 01 00 1A 00"},
+           {"retry": 10, "do": [{"read": 100, "if": {"all": [{"len": 4}, {"at": [0, "04 01 00"]}, {"any": [
+             {"eq": [{"b": 3}, "FF"]}, {"all": [{"len": 10}, {"eq": [{"b": 3}, "1A"]}, {"eq": [{"b": 5}, 0]}, {"eq": [{"b": 6}, 0]}]}]}]}}]},
+           {"need": {"ne": [{"b": 3}, "FF"]}},
+           {"need": {"all": [{"le": [{"b": 8}, 100]}, {"le": [{"b": 9}, 2]}]}},
+           {"emit": {"percent": {"b": 8}, "charging": {"ne": [{"b": 9}, 0]}}}],
+          [{"emit": {"state": "asleep"}}]
+        ]}
+      ]
+    },
+    "m999": {
+      "pick": [{"page": "FF1C", "usage": "0092"}],
+      "kind": "mouse",
+      "grace": 1800,
+      "run": [
+        {"set": {"n": 10}},
+        {"first": [
+          [{"call": "ask"}, {"emit": {"percent": {"b": 8}, "charging": {"ne": [{"b": 9}, 0]}}}],
+          [{"emit": {"state": "asleep"}}]
+        ]}
+      ]
+    }
+  },
+  "tests": [
+    {"protocol": "kb", "out": 33, "replies": ["04 01 00 1A 06 00 00 00 5D 00"], "sent": ["04 01 00 1A 06"],
+     "expect": [{"percent": 93}]},
+    {"protocol": "m999", "out": 33, "vars": {"var": 2}, "replies": ["04 01 00 1A 02 00 00 00 61 01"], "sent": ["04 01 00 1A 02"],
+     "expect": [{"percent": 97, "charging": true}]},
+    {"protocol": "z87", "out": 64, "replies": ["04 01 00 FF 00 00 00 00 00 00"], "expect": [{"state": "asleep"}]},
+    {"protocol": "z87", "out": 64, "replies": ["04 01 00 1A 00 00 00 00 32 00"], "sent": ["04 01 00 1A 00"], "expect": [{"percent": 50}]}
+  ]
+}

@@ -4,7 +4,7 @@
 // most once a day, and only when a device the copy does not know is plugged in (or once a week). Offline, the
 // copies on disk are used. In a development build next to the repository the repository's own files are read.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -28,14 +28,9 @@ pub fn driver(scan: &mut Scan, sources: &mut Vec<Box<dyn Source>>) {
     }
     let store = Store::new();
     let Some(index) = store.index(&present) else { return };
-    let ids = index.get("ids");
-    let family_of = |vid: u16, pid: u16| ids.and_then(|m| m.get(&format!("{vid:04X}:{pid:04X}")).or_else(|| m.get(&format!("{vid:04X}:*")))).and_then(Value::str);
+    let needed: Vec<&str> = present.iter().flat_map(|&(v, p)| families_of(&index, v, p)).collect();
     // the families needed, in the index's claiming order
-    let order: Vec<&str> = index.get("order").map(|o| o.arr().iter().filter_map(Value::str).collect()).unwrap_or_default();
-    let mut needed: Vec<&str> = present.iter().filter_map(|&(v, p)| family_of(v, p)).collect();
-    needed.sort_by_key(|f| order.iter().position(|o| o == f).unwrap_or(usize::MAX));
-    needed.dedup();
-    for name in needed {
+    for name in index.get("order").map(Value::arr).unwrap_or_default().iter().filter_map(Value::str).filter(|f| needed.contains(f)) {
         let version = index.get("families").and_then(|f| f.get(name)).and_then(Value::num).unwrap_or(0.0) as i64;
         if let Some(file) = store.family(name, version) {
             family(scan, sources, name, &Arc::new(file));
@@ -57,6 +52,7 @@ fn family(scan: &mut Scan, sources: &mut Vec<Box<dyn Source>>, family: &str, fil
             _ => id(spec).map_or((None, None), |(v, p)| (Some(v), Some(p))),
         };
         let Some(vid) = vid else { continue };
+        let wildcard = pid.is_none();
         let products: Vec<u16> = match pid {
             Some(p) => vec![p],
             None => scan.products(vid),
@@ -83,11 +79,23 @@ fn family(scan: &mut Scan, sources: &mut Vec<Box<dyn Source>>, family: &str, fil
                 proto: proto_name.to_string(),
                 vars,
             };
-            if let Some(source) = open(scan, device) {
+            // a whole vendor's products: only the ones that answer (another family may speak to the rest)
+            if let Some(source) = open(scan, device, wildcard) {
                 scan.claim(vid, pid);
                 sources.push(Box::new(source));
             }
         }
+    }
+}
+
+/// The families the index gives a product (its own entry, else its vendor's): one, or a list when products of
+/// different families share an id (each tries in the index's order; the first that gets an answer keeps it).
+fn families_of(index: &Value, vid: u16, pid: u16) -> Vec<&str> {
+    let Some(ids) = index.get("ids") else { return Vec::new() };
+    match ids.get(&format!("{vid:04X}:{pid:04X}")).or_else(|| ids.get(&format!("{vid:04X}:*"))) {
+        Some(Value::Str(f)) => vec![f.as_str()],
+        Some(list) => list.arr().iter().filter_map(Value::str).collect(),
+        None => Vec::new(),
     }
 }
 
@@ -149,8 +157,9 @@ fn candidates<'a>(scan: &'a Scan, d: &Device) -> Vec<&'a HidInfo> {
     out
 }
 
-/// The first collection that answers; none answering, the first one that opens (its device may be asleep now).
-fn open(scan: &Scan, d: Device) -> Option<Scripted> {
+/// The first collection that answers; none answering, the first one that opens (its device may be asleep now),
+/// unless `answer_only`.
+fn open(scan: &Scan, d: Device, answer_only: bool) -> Option<Scripted> {
     let mode = d.proto().get("open").and_then(Value::str).unwrap_or("rw");
     let mut fallback: Option<(HidIo, HidInfo)> = None;
     for c in candidates(scan, &d) {
@@ -172,7 +181,7 @@ fn open(scan: &Scan, d: Device) -> Option<Scripted> {
             fallback = Some((io, c.clone()));
         }
     }
-    let (io, c) = fallback?;
+    let (io, c) = fallback.filter(|_| !answer_only)?;
     let product = crate::hid::product(&c.path).map(|p| strip(&p, d.proto()));
     let kind = kind_of(scan, &d);
     Some(Scripted { device: d, io, product, kind, first: None, keys: Vec::new() })
@@ -314,10 +323,7 @@ impl Store {
         let copy = self.read("index");
         let stale = match &copy {
             None => true,
-            Some((v, age)) => {
-                let knows = |&(vid, pid): &(u16, u16)| v.get("ids").is_some_and(|m| m.get(&format!("{vid:04X}:{pid:04X}")).or_else(|| m.get(&format!("{vid:04X}:*"))).is_some());
-                *age > 7 * DAY || (*age > DAY && !present.iter().all(knows))
-            }
+            Some((v, age)) => *age > 7 * DAY || (*age > DAY && present.iter().any(|&(vid, pid)| families_of(v, vid, pid).is_empty())),
         };
         if stale {
             if let Some(v) = self.fetch("index") {
@@ -363,8 +369,14 @@ mod tests {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("devices");
         let index = Value::parse(&std::fs::read_to_string(dir.join("index.json")).expect("index.json")).expect("index.json parses");
         let Some(Value::Obj(ids)) = index.get("ids") else { panic!("index: ids") };
-        for (id, fam) in ids {
-            let fam = fam.str().expect("family name");
+        let names = |f: &Value| -> Vec<String> {
+            match f {
+                Value::Str(s) => vec![s.clone()],
+                list => list.arr().iter().map(|x| x.str().expect("family name").to_string()).collect(),
+            }
+        };
+        for (id, fam) in ids.iter().flat_map(|(id, f)| names(f).into_iter().map(move |n| (id, n))) {
+            let fam = fam.as_str();
             let path = dir.join(format!("{fam}.json"));
             let file = Value::parse(&std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("{fam}.json for {id}"))).unwrap_or_else(|| panic!("{fam}.json parses"));
             assert!(index.get("families").and_then(|f| f.get(fam)).and_then(Value::num).is_some(), "{fam}: version in index");
@@ -383,7 +395,7 @@ mod tests {
                 let p = d.arr().get(1).and_then(Value::str).unwrap_or_else(|| panic!("{name}: device without protocol"));
                 assert!(file.get("protocols").and_then(|x| x.get(p)).is_some(), "{name}: protocol {p} missing");
                 let id = d.arr()[0].str().unwrap();
-                assert!(ids.iter().any(|(k, f)| (k == id || k == &format!("{}:*", &id[..4])) && f.str() == Some(&name)), "{name}: {id} not in the index");
+                assert!(ids.iter().any(|(k, f)| (k == id || k == &format!("{}:*", &id[..4])) && names(f).contains(&name)), "{name}: {id} not in the index");
             }
             for (i, t) in file.get("tests").map(Value::arr).unwrap_or_default().iter().enumerate() {
                 let proto = file.get("protocols").and_then(|p| p.get(t.get("protocol").and_then(Value::str).unwrap())).unwrap();

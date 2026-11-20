@@ -38,6 +38,7 @@ use crate::{autostart, clipboard, device, history, install, ntfy, tray, ui, uplo
 const WM_APP_WARM: u32 = WM_APP + 25;
 const WM_APP_MOUSE: u32 = WM_APP + 41; // razer.rs: wparam mouse::EV_*
 const WM_APP_DISCORD: u32 = WM_APP + 42; // discord.rs: Discord's mute / deafen changed
+const WM_APP_BATTERY: u32 = WM_APP + 43; // battery/: a device's level or the list of devices changed
 const MOUSE_DPI_MS: u32 = 1700; // the DPI capsule stays this long after the last change
 const MOUSE_LINK_MS: u32 = 4200; // "connected" (its intro takes LINK_INTRO_SECS of it)
 const LINK_INTRO_SECS: f32 = 1.0;
@@ -366,6 +367,7 @@ pub unsafe fn init(cfg: Config, hwnd: HWND) {
     media::set_lyrics(st().cfg.pin_lyrics);
     media::start(hwnd.0 as isize, WM_APP_SONG, WM_APP_PIN);
     mouse::set_enabled(st().cfg.mouse, hwnd.0 as isize, WM_APP_MOUSE);
+    crate::battery::set_enabled(st().cfg.mouse, hwnd.0 as isize, WM_APP_BATTERY, mouse::products);
     crate::discord::set_enabled(st().cfg.discord, hwnd.0 as isize, WM_APP_DISCORD);
     ntfy::start(&st().cfg, hwnd.0 as isize, WM_APP_NTFY);
     if !tray::add(hwnd) {
@@ -553,7 +555,7 @@ impl State {
     /// The settings switches, in the panel's order.
     fn switches(&mut self) -> [&mut bool; ui::TOGGLES] {
         let c = &mut self.cfg;
-        [&mut c.click_sound, &mut c.notify_song, &mut c.notify_device, &mut c.volume_keys, &mut c.low_power, &mut c.upload_sound, &mut c.screenshot, &mut c.pin_media, &mut c.pin_fullscreen, &mut c.pin_lyrics, &mut c.lyric_words, &mut c.mouse, &mut c.tray_battery, &mut c.auto_update, &mut self.autostart, &mut c.discord]
+        [&mut c.click_sound, &mut c.notify_song, &mut c.notify_device, &mut c.volume_keys, &mut c.low_power, &mut c.upload_sound, &mut c.screenshot, &mut c.pin_media, &mut c.pin_fullscreen, &mut c.pin_lyrics, &mut c.lyric_words, &mut c.mouse, &mut c.tray_battery, &mut c.auto_update, &mut self.autostart, &mut c.discord, &mut c.taskbar_battery]
     }
 
     fn toggle_targets(&mut self) -> [f32; ui::TOGGLES] {
@@ -1535,16 +1537,27 @@ unsafe fn link_card(hwnd: HWND, sub: &str) {
     mouse_show(hwnd, Kind::MouseLink, Some(MOUSE_LINK_MS));
 }
 
-/// One icon per device in the notification area with its battery (when that is on), up to date.
+/// Every device's battery where it is shown (the taskbar strip, one icon each in the notification area, as
+/// switched on), up to date: the mice the cards follow and every other device battery/ reads.
 unsafe fn tray_refresh(hwnd: HWND) {
+    use crate::battery::Kind;
     let s = st();
-    let mut now = Vec::new();
-    if s.cfg.mouse && s.cfg.tray_battery {
+    let (mut icons, mut strip) = (Vec::new(), Vec::new());
+    if s.cfg.mouse {
         for o in followed().into_iter().chain(mouse::others()) {
-            now.push(tray::Battery { model: o.model as u32, percent: o.battery, charging: o.charging, name: o.model.name() });
+            let kind = if o.model.is_headset() { Kind::Headset } else { Kind::Mouse };
+            icons.push(tray::Battery { id: o.model as u32, percent: o.battery, charging: o.charging, name: o.model.name().to_string() });
+            strip.push(crate::taskbar::Item { kind, bluetooth: false, percent: o.battery, charging: o.charging, full: false, dim: false });
+        }
+        for d in crate::battery::devices() {
+            // an id of its own, the same every time (16 and up: the cards' models are below)
+            let id = 16 + d.key.bytes().fold(2166136261u32, |h, b| (h ^ b as u32).wrapping_mul(16777619)) % 60000;
+            icons.push(tray::Battery { id, percent: d.percent, charging: d.charging, name: d.name.clone() });
+            strip.push(crate::taskbar::Item { kind: d.kind, bluetooth: d.bluetooth, percent: d.percent, charging: d.charging, full: d.full, dim: d.dim });
         }
     }
-    tray::batteries(hwnd, &now, s.strings().mouse_charging);
+    tray::batteries(hwnd, if s.cfg.tray_battery { &icons } else { &[] }, s.strings().mouse_charging);
+    crate::taskbar::show(hwnd, if s.cfg.taskbar_battery { strip } else { Vec::new() });
 }
 
 /// A click on a device's battery icon: its card, as when it connects, with its battery right now.
@@ -1870,6 +1883,7 @@ unsafe fn settings_click(hwnd: HWND, screen: POINT) {
                 }
                 11 => {
                     mouse::set_enabled(s.cfg.mouse, hwnd.0 as isize, WM_APP_MOUSE);
+                    crate::battery::set_enabled(s.cfg.mouse, hwnd.0 as isize, WM_APP_BATTERY, mouse::products);
                     if !s.cfg.mouse {
                         (s.mouse.crit, s.mouse.low_pending) = (false, false); // its warnings go with it
                     } else if mouse::status().is_some() {
@@ -1877,7 +1891,7 @@ unsafe fn settings_click(hwnd: HWND, screen: POINT) {
                     }
                     tray_refresh(hwnd);
                 }
-                ui::TOGGLE_TRAY_BATTERY => tray_refresh(hwnd),
+                ui::TOGGLE_TRAY_BATTERY | ui::TOGGLE_TASKBAR => tray_refresh(hwnd),
                 ui::TOGGLE_AUTO_UPDATE => {
                     if s.cfg.auto_update && install::running_installed() {
                         SetTimer(hwnd, T_UPDATE, 3000, None); // look right away
@@ -2623,9 +2637,11 @@ pub unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPAR
             mouse_event(hwnd, wp.0);
             tray_refresh(hwnd);
         }
+        WM_APP_BATTERY => tray_refresh(hwnd),
         WM_DEVICECHANGE => {
             if matches!(wp.0, 0x0007 | 0x8000 | 0x8004) {
                 mouse::rescan(); // DBT_DEVNODES_CHANGED / arrival / removal: a receiver or cable may have come or gone
+                crate::battery::rescan();
             }
             return DefWindowProcW(hwnd, msg, wp, lp);
         }
@@ -2678,7 +2694,7 @@ pub unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPAR
             }
         }
         // a device's battery icon (its id is BATTERY_ID + the model): a click shows its card
-        tray::WM_TRAY if wp.0 as u32 >= tray::BATTERY_ID => {
+        tray::WM_TRAY if wp.0 as u32 >= tray::BATTERY_ID && wp.0 as u32 - tray::BATTERY_ID < 16 => {
             if (lp.0 & 0xFFFF) as u32 == WM_LBUTTONUP {
                 device_card(hwnd, wp.0 - tray::BATTERY_ID as usize);
             }

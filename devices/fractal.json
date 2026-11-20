@@ -1,0 +1,22 @@
+{
+  "v": 1,
+  "devices": [
+    ["36BC:0001", "scape", "Fractal Design Scape", "headset", {"dongle": 1}],
+    ["36BC:2001", "scape", "Fractal Design Scape", "headset", {"dongle": 0}]
+  ],
+  "protocols": {
+    "scape": {"pick": [{"page": "FF00", "usage": "0001", "out": [4], "in": [24]}], "kind": "headset",
+      "run": [
+        {"first": [[{"need": {"ne": ["$dongle", 1]}}], [{"flush": 1}, {"out": "02 11 21"}, {"read": 500, "if": {"all": [{"len": 24}, {"at": [0, "02 11 21"]}]}}, {"first": [[{"need": {"eq": [{"b": 4}, 1]}}], [{"emit": {"id": "scape", "state": "offline"}}, {"stop": 1}]]}]]},
+        {"flush": 1},
+        {"out": "02 F1 21"},
+        {"read": 500, "if": {"all": [{"len": 24}, {"at": [0, "02 F1 21"]}]}},
+        {"emit": {"id": "scape", "percent": {"b": 15}, "charging": {"eq": [{"b": 23}, 1]}}}
+      ]}
+  },
+  "tests": [
+    {"protocol": "scape", "out": 64, "vars": {"dongle": 1}, "replies": ["02 11 21 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00", "02 F1 21 00 00 00 00 00 00 00 00 00 00 00 00 40 00 00 00 00 00 00 00 00"], "sent": ["02 11 21", "02 F1 21"], "expect": [{"percent": 64}]},
+    {"protocol": "scape", "out": 64, "vars": {"dongle": 1}, "replies": ["02 11 21 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"], "expect": [{"state": "offline"}]},
+    {"protocol": "scape", "out": 64, "vars": {"dongle": 0}, "replies": ["02 F1 21 00 00 00 00 00 00 00 00 00 00 00 00 40 00 00 00 00 00 00 00 01"], "sent": ["02 F1 21"], "expect": [{"percent": 64, "charging": true}]}
+  ]
+}

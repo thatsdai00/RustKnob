@@ -1,0 +1,214 @@
+{
+  "v": 1,
+  "devices": [
+    ["0B05:1B84", "cc", "ROG Pelta", "headset", {"cmd": 7}],
+    ["0B05:1AFA", "cc", "ROG Delta II", "headset", {"cmd": 7}],
+    ["0B05:1CAC", "cetra", "ROG Cetra Open Wireless", "headset"],
+    ["0B05:1ACE", "omni", "ROG Omni Receiver"],
+    ["0B05:1A85", "t", "ROG Azoth", "keyboard", {"ra": 2, "sub": 1, "off": 6, "u": 1, "kb": 1, "rb": 0}],
+    ["0B05:1A83", "t", "ROG Azoth", "keyboard", {"ra": 0, "sub": 1, "off": 6, "u": 1, "kb": 1}],
+    ["0B05:1B42", "t", "ROG Azoth Extreme", "keyboard", {"ra": 2, "sub": 1, "off": 6, "u": 2, "kb": 1}],
+    ["0B05:1B3F", "t", "ROG Azoth Extreme", "keyboard", {"ra": 0, "sub": 1, "off": 6, "u": 2, "kb": 1}],
+    ["0B05:1CF1", "t", "ROG Azoth Extreme SE", "keyboard", {"ra": 2, "sub": 1, "off": 6, "u": 3, "kb": 1}],
+    ["0B05:1CEF", "t", "ROG Azoth Extreme SE", "keyboard", {"ra": 0, "sub": 1, "off": 6, "u": 3, "kb": 1}],
+    ["0B05:1C25", "t", "ROG Azoth X", "keyboard", {"ra": 0, "sub": 1, "off": 6, "u": 4, "kb": 1}],
+    ["0B05:1C24", "t", "ROG Azoth X", "keyboard", {"ra": 0, "sub": 1, "off": 6, "u": 4, "kb": 1}],
+    ["0B05:193E", "t", "ROG Falchion", "keyboard", {"ra": 0, "sub": 1, "off": 11, "u": 5, "kb": 1}],
+    ["0B05:193C", "t", "ROG Falchion", "keyboard", {"ra": 0, "sub": 1, "off": 11, "u": 5, "kb": 1}],
+    ["0B05:1B04", "t", "ROG Falchion RX", "keyboard", {"ra": 0, "sub": 1, "off": 11, "u": 6, "kb": 1}],
+    ["0B05:1B06", "t", "ROG Falchion RX Low Profile", "keyboard", {"ra": 2, "sub": 1, "off": 11, "u": 7, "kb": 1}],
+    ["0B05:1AB0", "t", "ROG Strix Scope II 96", "keyboard", {"ra": 2, "sub": 1, "off": 6, "u": 8, "kb": 1}],
+    ["0B05:1AAE", "t", "ROG Strix Scope II 96", "keyboard", {"ra": 0, "sub": 1, "off": 6, "u": 8, "kb": 1}],
+    ["0B05:1B7A", "t", "ROG Strix Scope II 96 RX", "keyboard", {"ra": 2, "sub": 1, "off": 6, "u": 9, "kb": 1}],
+    ["0B05:1B78", "t", "ROG Strix Scope II 96 RX", "keyboard", {"ra": 0, "sub": 1, "off": 6, "u": 9, "kb": 1}],
+    ["0B05:1A07", "t", "ROG Strix Scope RX TKL", "keyboard", {"ra": 0, "sub": 1, "off": 6, "u": 10, "kb": 1}],
+    ["0B05:18E5", "t", "ROG Chakram", "mouse", {"ra": 0, "sub": 7, "off": 5, "u": 11, "kb": 0, "sc": 25}],
+    ["0B05:18E3", "t", "ROG Chakram", "mouse", {"ra": 0, "sub": 7, "off": 5, "u": 11, "kb": 0, "sc": 25}],
+    ["0B05:1A1A", "t", "ROG Chakram X", "mouse", {"ra": 0, "sub": 7, "off": 5, "u": 12, "kb": 0, "sc": 1}],
+    ["0B05:1A18", "t", "ROG Chakram X", "mouse", {"ra": 0, "sub": 7, "off": 5, "u": 12, "kb": 0, "sc": 1}],
+    ["0B05:18A0", "t", "ROG Gladius II Wireless", "mouse", {"ra": 0, "sub": 7, "off": 5, "u": 13, "kb": 0, "sc": 25}],
+    ["0B05:197F", "t", "ROG Gladius III Wireless", "mouse", {"ra": 0, "sub": 7, "off": 5, "u": 14, "kb": 0, "sc": 1}],
+    ["0B05:197D", "t", "ROG Gladius III Wireless", "mouse", {"ra": 0, "sub": 7, "off": 5, "u": 14, "kb": 0, "sc": 1}],
+    ["0B05:1A72", "t", "ROG Gladius III Aimpoint", "mouse", {"ra": 3, "sub": 7, "off": 5, "u": 15, "kb": 0, "sc": 1, "rb": 0}],
+    ["0B05:1A70", "t", "ROG Gladius III Aimpoint", "mouse", {"ra": 0, "sub": 7, "off": 5, "u": 15, "kb": 0, "sc": 1}],
+    ["0B05:1B0C", "t", "ROG Gladius III Aimpoint EVA-02", "mouse", {"ra": 0, "sub": 7, "off": 5, "u": 16, "kb": 0, "sc": 1}],
+    ["0B05:1B0A", "t", "ROG Gladius III Aimpoint EVA-02", "mouse", {"ra": 0, "sub": 7, "off": 5, "u": 16, "kb": 0, "sc": 1}],
+    ["0B05:1A94", "t", "ROG Harpe Ace Aim Lab Edition", "mouse", {"ra": 3, "sub": 7, "off": 5, "u": 17, "kb": 0, "sc": 1, "rb": 0}],
+    ["0B05:1A92", "t", "ROG Harpe Ace Aim Lab Edition", "mouse", {"ra": 0, "sub": 7, "off": 5, "u": 17, "kb": 0, "sc": 1}],
+    ["0B05:1B68", "t", "ROG Harpe Ace Extreme", "mouse", {"ra": 3, "sub": 7, "off": 5, "u": 18, "kb": 0, "sc": 1}],
+    ["0B05:1B69", "t", "ROG Harpe Ace Extreme", "mouse", {"ra": 3, "sub": 7, "off": 5, "u": 18, "kb": 0, "sc": 1}],
+    ["0B05:1B67", "t", "ROG Harpe Ace Extreme", "mouse", {"ra": 0, "sub": 7, "off": 5, "u": 18, "kb": 0, "sc": 1}],
+    ["0B05:1B65", "t", "ROG Harpe Ace Mini", "mouse", {"ra": 3, "sub": 7, "off": 5, "u": 19, "kb": 0, "sc": 1}],
+    ["0B05:1B63", "t", "ROG Harpe Ace Mini", "mouse", {"ra": 0, "sub": 7, "off": 5, "u": 19, "kb": 0, "sc": 1}],
+    ["0B05:1AD0", "t", "ROG Harpe II Ace", "mouse", {"ra": 3, "sub": 7, "off": 5, "u": 20, "kb": 0, "sc": 1}],
+    ["0B05:1C69", "t", "ROG Harpe II Ace", "mouse", {"ra": 0, "sub": 7, "off": 5, "u": 20, "kb": 0, "sc": 1}],
+    ["0B05:1960", "t", "ROG Keris Wireless", "mouse", {"ra": 0, "sub": 7, "off": 5, "u": 21, "kb": 0, "sc": 25}],
+    ["0B05:195E", "t", "ROG Keris Wireless", "mouse", {"ra": 0, "sub": 7, "off": 5, "u": 21, "kb": 0, "sc": 25}],
+    ["0B05:1A59", "t", "ROG Keris Wireless EVA Edition", "mouse", {"ra": 0, "sub": 7, "off": 5, "u": 22, "kb": 0, "sc": 25}],
+    ["0B05:1A57", "t", "ROG Keris Wireless EVA Edition", "mouse", {"ra": 0, "sub": 7, "off": 5, "u": 22, "kb": 0, "sc": 25}],
+    ["0B05:1A68", "t", "ROG Keris Wireless Aimpoint", "mouse", {"ra": 3, "sub": 7, "off": 5, "u": 23, "kb": 0, "sc": 1, "rb": 0}],
+    ["0B05:1A6A", "t", "ROG Keris Wireless Aimpoint", "mouse", {"ra": 3, "sub": 7, "off": 5, "u": 23, "kb": 0, "sc": 1}],
+    ["0B05:1A66", "t", "ROG Keris Wireless Aimpoint", "mouse", {"ra": 0, "sub": 7, "off": 5, "u": 23, "kb": 0, "sc": 1}],
+    ["0B05:1B1A", "t", "ROG Keris II Ace", "mouse", {"ra": 3, "sub": 7, "off": 5, "u": 24, "kb": 0, "sc": 1}],
+    ["0B05:1B18", "t", "ROG Keris II Ace", "mouse", {"ra": 3, "sub": 7, "off": 5, "u": 24, "kb": 0, "sc": 1}],
+    ["0B05:1B16", "t", "ROG Keris II Ace", "mouse", {"ra": 0, "sub": 7, "off": 5, "u": 24, "kb": 0, "sc": 1}],
+    ["0B05:1C0E", "t", "ROG Keris II Origin", "mouse", {"ra": 3, "sub": 7, "off": 5, "u": 25, "kb": 0, "sc": 1}],
+    ["0B05:1C0C", "t", "ROG Keris II Origin", "mouse", {"ra": 0, "sub": 7, "off": 5, "u": 25, "kb": 0, "sc": 1}],
+    ["0B05:1D4E", "t", "ROG Keris II Origin KJP", "mouse", {"ra": 3, "sub": 7, "off": 5, "u": 26, "kb": 0, "sc": 1}],
+    ["0B05:1D4C", "t", "ROG Keris II Origin KJP", "mouse", {"ra": 0, "sub": 7, "off": 5, "u": 26, "kb": 0, "sc": 1}],
+    ["0B05:1908", "t", "ROG Pugio II", "mouse", {"ra": 0, "sub": 7, "off": 5, "u": 27, "kb": 0, "sc": 25}],
+    ["0B05:1906", "t", "ROG Pugio II", "mouse", {"ra": 0, "sub": 7, "off": 5, "u": 27, "kb": 0, "sc": 25}],
+    ["0B05:1979", "t", "ROG Spatha X", "mouse", {"ra": 0, "sub": 7, "off": 5, "u": 28, "kb": 0, "sc": 1}],
+    ["0B05:1977", "t", "ROG Spatha X", "mouse", {"ra": 0, "sub": 7, "off": 5, "u": 28, "kb": 0, "sc": 1}],
+    ["0B05:18B4", "t", "ROG Strix Carry", "mouse", {"ra": 0, "sub": 7, "off": 7, "u": 29, "kb": 0, "sc": 25}],
+    ["0B05:1949", "t", "ROG Strix Impact II Wireless", "mouse", {"ra": 0, "sub": 7, "off": 5, "u": 30, "kb": 0, "sc": 25}],
+    ["0B05:1947", "t", "ROG Strix Impact II Wireless", "mouse", {"ra": 0, "sub": 7, "off": 5, "u": 30, "kb": 0, "sc": 25}],
+    ["0B05:1AD7", "t", "ROG Strix Impact III Wireless", "mouse", {"ra": 3, "sub": 7, "off": 5, "u": 31, "kb": 0, "sc": 1}]
+  ],
+  "subs": {
+    "cc": [
+      {"flush": 1},
+      {"first": [[{"oset": "CC 12 $cmd"}], [{"out": "CC 12 $cmd"}]]},
+      {
+        "read": 1200,
+        "if": {"all": [
+            {"len": 8},
+            {"eq": [{"b": 0}, 204]},
+            {"any": [
+                {"at": [1, "FF AA"]},
+                {"all": [{"eq": [{"b": 1}, 18]}, {"at": [5, "FF AA"]}]},
+                {"all": [{"eq": [{"b": 1}, 18]}, {"eq": [{"b": 2}, "$cmd"]}]}
+              ]}
+          ]}
+      }
+    ]
+  },
+  "protocols": {
+    "t": {"pick": [{"mi": 2, "out": [12]}, {"mi": 1, "out": [12]}, {"mi": 0, "out": [12]}, {"out": [12]}], "open": "rw", "strip": [" Wireless Receiver", " Receiver", " Dongle"],
+      "run": [
+        {
+          "any": "rid",
+          "in": ["$ra", "$rb"],
+          "do": [
+            {"set": {"d": {"if": [{"eq": ["$rid", 0]}, 1, 0]}}},
+            {"flush": 1},
+            {"out": "$rid 12 $sub"},
+            {
+              "read": 500,
+              "if": {"any": [{"at": [{"sub": [1, "$d"]}, "FF AA"]}, {"at": [{"sub": [1, "$d"]}, "12 $sub"]}]}
+            },
+            {"need": {"not": {"all": [{"ne": ["$rid", 0]}, {"at": [{"sub": [1, "$d"]}, "FF AA"]}]}}}
+          ]
+        },
+        {"first": [
+            [{"need": {"at": [{"sub": [1, "$d"]}, "12 $sub"]}}],
+            [{"emit": {"id": {"add": ["$u", 0]}, "state": "asleep"}}, {"stop": 1}]
+          ]},
+        {"first": [
+            [
+              {"need": {"eq": ["$kb", 1]}},
+              {"emit": {
+                  "id": {"add": ["$u", 0]},
+                  "percent": {"b": {"sub": ["$off", "$d"]}},
+                  "charging": {"eq": [{"b": {"sub": [9, "$d"]}}, 1]}
+                }}
+            ],
+            [
+              {"set": {"val": {"mul": [{"b": {"sub": ["$off", "$d"]}}, "$sc"]}}},
+              {"emit": {
+                  "id": {"add": ["$u", 0]},
+                  "percent": "$val",
+                  "charging": {"ne": [{"b": {"sub": [10, "$d"]}}, 0]},
+                  "asleep": {"not": {"all": [{"ge": ["$val", 1]}, {"le": ["$val", 100]}]}}
+                }}
+            ]
+          ]}
+      ]},
+    "omni": {"pick": [{"mi": 2, "out": [12]}], "open": "rw",
+      "run": [
+        {
+          "any": "k",
+          "in": [0, 1],
+          "do": [
+            {"set": {"rid": {"pick": ["$k", [3, 2]]}, "sub": {"pick": ["$k", [7, 1]]}, "off": {"pick": ["$k", [5, 6]]}}},
+            {"flush": 1},
+            {"out": "$rid 12 $sub"},
+            {"read": 500, "if": {"any": [{"at": [1, "FF AA"]}, {"at": [1, "12 $sub"]}]}},
+            {"need": {"at": [1, "12 $sub"]}}
+          ]
+        },
+        {"first": [
+            [
+              {"need": {"eq": ["$k", 0]}},
+              {"set": {"val": {"b": "$off"}}},
+              {"emit": {
+                  "slot": "ms",
+                  "kind": "mouse",
+                  "name": "ROG wireless mouse",
+                  "percent": "$val",
+                  "charging": {"ne": [{"b": 10}, 0]},
+                  "asleep": {"not": {"all": [{"ge": ["$val", 1]}, {"le": ["$val", 100]}]}}
+                }}
+            ],
+            [
+              {"emit": {
+                  "slot": "kb",
+                  "kind": "keyboard",
+                  "name": "ROG wireless keyboard",
+                  "percent": {"b": "$off"},
+                  "charging": {"eq": [{"b": 9}, 1]}
+                }}
+            ]
+          ]}
+      ]},
+    "cc": {"pick": [{"mi": 3, "page": "FF00", "usage": "0001", "in": [8], "out": [8]}], "open": "rw", "kind": "headset",
+      "run": [
+        {"call": "cc"},
+        {"first": [
+            [
+              {"need": {"all": [
+                    {"all": [{"eq": [{"b": 1}, 18]}, {"eq": [{"b": 2}, "$cmd"]}, {"not": {"at": [5, "FF AA"]}}]},
+                    {"le": [{"b": 6}, 100]}
+                  ]}}
+            ],
+            [{"emit": {"state": "asleep"}}, {"stop": 1}]
+          ]},
+        {"set": {"pct": {"b": 6}, "chg": 0, "cmd": 8}},
+        {"first": [
+            [
+              {"call": "cc"},
+              {"need": {"all": [{"eq": [{"b": 1}, 18]}, {"eq": [{"b": 2}, "$cmd"]}, {"not": {"at": [5, "FF AA"]}}]}},
+              {"set": {"chg": {"if": [{"eq": [{"b": 5}, 1]}, 1, 0]}}}
+            ],
+            []
+          ]},
+        {"emit": {"percent": "$pct", "charging": {"eq": ["$chg", 1]}}}
+      ]},
+    "cetra": {"pick": [{"mi": 3, "page": "FF00", "usage": "0001", "in": [8], "out": [8]}], "open": "rw", "kind": "headset",
+      "run": [
+        {"set": {"cmd": 18}},
+        {"call": "cc"},
+        {"first": [
+            [{"need": {"all": [{"eq": [{"b": 1}, 18]}, {"eq": [{"b": 2}, "$cmd"]}, {"not": {"at": [5, "FF AA"]}}]}}],
+            [{"emit": {"state": "asleep"}}, {"stop": 1}]
+          ]},
+        {"set": {
+            "l": {"if": [{"all": [{"ge": [{"b": 5}, 1]}, {"le": [{"b": 5}, 100]}]}, {"b": 5}, 999]},
+            "r": {"if": [{"all": [{"ge": [{"b": 6}, 1]}, {"le": [{"b": 6}, 100]}]}, {"b": 6}, 999]}
+          }},
+        {"set": {"pct": {"min": ["$l", "$r"]}}},
+        {"emit": {"percent": "$pct", "asleep": {"gt": ["$pct", 100]}}}
+      ]}
+  },
+  "tests": [
+    {"protocol": "t", "out": 65, "vars": {"ra": 0, "sub": 7, "off": 5, "sc": 25, "kb": 0, "u": 9}, "replies": ["00 12 07 00 00 03 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"], "sent": ["00 12 07"], "expect": [{"percent": 75, "charging": true}]},
+    {"protocol": "t", "out": 65, "vars": {"ra": 2, "rb": 0, "sub": 1, "off": 6, "kb": 1, "u": 1}, "replies": ["02 12 01 00 00 00 55 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"], "sent": ["02 12 01"], "expect": [{"percent": 85, "charging": true}]},
+    {"protocol": "t", "out": 65, "vars": {"ra": 3, "rb": 0, "sub": 7, "off": 5, "sc": 1, "kb": 0, "u": 2}, "replies": ["03 FF AA 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00", "00 FF AA 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"], "expect": [{"state": "asleep"}]},
+    {"protocol": "t", "out": 65, "vars": {"ra": 3, "sub": 7, "off": 5, "sc": 1, "kb": 0, "u": 2}, "replies": ["03 FF AA 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"], "expect": []},
+    {"protocol": "omni", "out": 65, "replies": ["03 12 07 00 00 5A 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"], "sent": ["03 12 07"], "expect": [{"slot": "ms", "percent": 90}]},
+    {"protocol": "cc", "out": 64, "vars": {"cmd": 7}, "replies": ["CC 12 07 00 00 0A 50 14 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00", "CC 12 08 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"], "sent": ["CC 12 07", "CC 12 08"], "expect": [{"percent": 80, "charging": true}]},
+    {"protocol": "cc", "out": 64, "vars": {"cmd": 7}, "replies": ["CC 12 07 00 00 0A FE 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"], "expect": [{"state": "asleep"}]},
+    {"protocol": "cetra", "out": 64, "replies": ["CC 12 12 00 00 63 63 56 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"], "sent": ["CC 12 12"], "expect": [{"percent": 99}]},
+    {"protocol": "cetra", "out": 64, "replies": ["CC 12 12 00 00 00 28 56 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"], "expect": [{"percent": 40}]}
+  ]
+}

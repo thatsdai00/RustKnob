@@ -1,0 +1,18 @@
+{
+  "v": 1,
+  "devices": [
+    ["1E71:2129", "lift", "NZXT Lift Elite", "mouse"],
+    ["1E71:2101", "lift", "NZXT Lift Elite", "mouse"]
+  ],
+  "protocols": {
+    "lift": {"pick": [{"page": "FFCA", "usage": "0001"}], "grace": 1800, "kind": "mouse",
+      "run": [
+        {"first": [[{"out": "00 4E 02 81 00 B0"}, {"read": 1000, "if": {"all": [{"len": 27}, {"at": [0, "4E 02 97"]}]}}, {"need": {"le": [{"u16le": 17}, 100]}}], [{"emit": {"id": "2101", "state": "asleep"}}, {"stop": 1}]]},
+        {"emit": {"id": "2101", "percent": {"u16le": 17}, "charging": {"eq": [{"and": [{"b": 22}, 1]}, 1]}}}
+      ]}
+  },
+  "tests": [
+    {"protocol": "lift", "out": 65, "replies": ["4E E5 00", "4E 02 97 00 00 00 00 00 0F A0 00 00 00 00 00 00 00 5A 00 00 00 00 01 00 00 00 00"], "sent": ["00 4E 02 81 00 B0"], "expect": [{"percent": 90, "charging": true}]},
+    {"protocol": "lift", "out": 65, "replies": [], "expect": [{"state": "asleep"}]}
+  ]
+}

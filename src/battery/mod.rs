@@ -156,11 +156,6 @@ impl Scan {
         self.cols.iter().filter(|c| !self.claimed.contains(&(c.vid, c.pid)))
     }
 
-    /// The first free collection of (vid, pid) that `ours` takes.
-    pub fn find(&self, vid: u16, pid: u16, ours: impl Fn(&HidInfo) -> bool) -> Option<HidInfo> {
-        self.free().find(|c| c.is(vid, pid) && ours(c)).cloned()
-    }
-
     pub fn claim(&mut self, vid: u16, pid: u16) {
         if !self.claimed.contains(&(vid, pid)) {
             self.claimed.push((vid, pid));
@@ -191,25 +186,27 @@ const DRIVERS: &[Driver] = &[catalog::driver, bt::driver, generic::driver];
 
 // ---- the thread ----------------------------------------------------------------
 
+type Products = fn() -> Vec<(u16, u16)>;
+
 struct Control {
     on: bool,
     rescan: bool,
     started: bool,
-    skip: Vec<(u16, u16)>, // products mouse.rs follows
+    skip: Option<Products>, // the products mouse.rs follows, asked at every rescan
 }
 
-static CONTROL: (Mutex<Control>, Condvar) = (Mutex::new(Control { on: false, rescan: false, started: false, skip: Vec::new() }), Condvar::new());
+static CONTROL: (Mutex<Control>, Condvar) = (Mutex::new(Control { on: false, rescan: false, started: false, skip: None }), Condvar::new());
 static SHOWN: Mutex<Vec<Device>> = Mutex::new(Vec::new());
 static TARGET: AtomicIsize = AtomicIsize::new(0);
 static MSG: AtomicIsize = AtomicIsize::new(0);
 
-/// Turns it on or off; `msg` is posted to `hwnd` whenever the list or a level changes. `skip`: the products
-/// mouse.rs already reads.
-pub fn set_enabled(on: bool, hwnd: isize, msg: u32, skip: Vec<(u16, u16)>) {
+/// Turns it on or off; `msg` is posted to `hwnd` whenever the list or a level changes. `skip` gives the products
+/// mouse.rs already reads (left to it).
+pub fn set_enabled(on: bool, hwnd: isize, msg: u32, skip: Products) {
     TARGET.store(hwnd, Ordering::Relaxed);
     MSG.store(msg as isize, Ordering::Relaxed);
     let Ok(mut c) = CONTROL.0.lock() else { return };
-    (c.on, c.rescan, c.skip) = (on, true, skip);
+    (c.on, c.rescan, c.skip) = (on, true, Some(skip));
     if on && !c.started {
         c.started = true;
         let _ = std::thread::Builder::new().name("battery".into()).spawn(run);
@@ -263,7 +260,7 @@ fn run() {
         let (rescan, skip) = {
             let Ok(c) = CONTROL.0.lock() else { return };
             let Ok(mut c) = CONTROL.1.wait_while(c, |c| !c.on) else { return };
-            (std::mem::take(&mut c.rescan), c.skip.clone())
+            (std::mem::take(&mut c.rescan), c.skip)
         };
         if rescan {
             // a plug-in brings a burst of device changes: let it pass, then take them as one
@@ -271,7 +268,7 @@ fn run() {
             if let Ok(mut c) = CONTROL.0.lock() {
                 c.rescan = false;
             }
-            slots = find_sources(skip).into_iter().map(|source| Slot { source, due: Instant::now() }).collect();
+            slots = find_sources(skip.map(|f| f()).unwrap_or_default()).into_iter().map(|source| Slot { source, due: Instant::now() }).collect();
         }
 
         let now = Instant::now();
@@ -328,10 +325,11 @@ fn remember(known: &mut Vec<Known>, readings: Vec<Reading>) {
     known.retain(|k| k.reading.state == State::Awake || now.duration_since(k.seen) < k.reading.grace);
 }
 
+/// What is shown: one entry per device. The same device reached twice (its cable and its receiver, or a vendor
+/// protocol and Windows' Bluetooth level) is one entry, the one that answers, charging if either says so.
 fn shown(known: &[Known]) -> Vec<Device> {
-    known
-        .iter()
-        .map(|k| {
+    let mut out: Vec<Device> = Vec::new();
+    for d in known.iter().map(|k| {
             let r = &k.reading;
             Device {
                 key: r.key.clone(),
@@ -343,8 +341,19 @@ fn shown(known: &[Known]) -> Vec<Device> {
                 full: r.full,
                 dim: r.state != State::Awake,
             }
-        })
-        .collect()
+        }) {
+        match out.iter_mut().find(|o| o.name == d.name && o.kind == d.kind && (o.bluetooth == d.bluetooth || d.bluetooth)) {
+            Some(o) => {
+                let charging = o.charging || d.charging;
+                if o.dim && !d.dim && !d.bluetooth {
+                    *o = d;
+                }
+                o.charging = charging;
+            }
+            None => out.push(d),
+        }
+    }
+    out
 }
 
 #[cfg(test)]

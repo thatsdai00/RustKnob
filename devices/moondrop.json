@@ -1,0 +1,26 @@
+{
+  "v": 1,
+  "devices": [
+    ["35D8:0133", "4b", "MOONDROP GM01 Pro", "headset"]
+  ],
+  "subs": {
+    "q": [
+      {"flush": 1},
+      {"out": "4B 80 $c 00"},
+      {"read": 400, "if": {"all": [{"len": 5}, {"at": [0, "4B 80 $c"]}]}}
+    ]
+  },
+  "protocols": {
+    "4b": {
+      "pick": [{"mi": 3, "page": "000C", "out": [4], "in": [10]}],
+      "grace": 1800,
+      "run": [
+        {"first": [[{"set": {"c": "27"}}, {"call": "q"}, {"need": {"len": 10}}, {"need": {"ge": [{"b": 3}, 6]}}, {"need": {"ne": [{"b": 8}, 0]}}, {"need": {"le": [{"b": 9}, 100]}}, {"emit": {"id": "0133", "percent": {"b": 9}}}], [{"set": {"c": "31"}}, {"call": "q"}, {"need": {"ge": [{"b": 3}, 1]}}, {"need": {"eq": [{"b": 4}, 0]}}, {"emit": {"id": "0133", "state": "offline"}}]]}
+      ]
+    }
+  },
+  "tests": [
+    {"protocol": "4b", "out": 4, "replies": ["4B 80 27 06 00 00 00 00 01 3A"], "sent": ["4B 80 27 00"], "expect": [{"percent": 58}]},
+    {"protocol": "4b", "out": 4, "replies": ["4B 80 27 06 00 00 00 00 00 00", "4B 80 31 01 00"], "expect": [{"state": "offline"}]}
+  ]
+}

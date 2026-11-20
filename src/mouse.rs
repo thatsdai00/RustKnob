@@ -155,6 +155,18 @@ fn set_others(o: Vec<Other>) {
     }
 }
 
+/// The products (vid, pid) the cards follow, plugged in now: their batteries are read here, not by battery/.
+pub fn products() -> Vec<(u16, u16)> {
+    Device::present()
+        .iter()
+        .filter_map(|(_, path)| {
+            let p = String::from_utf16_lossy(path).to_ascii_lowercase();
+            let hex = |tag: &str| p.find(tag).and_then(|i| p.get(i + 4..i + 8)).and_then(|h| u16::from_str_radix(h, 16).ok());
+            Some((hex("vid_")?, hex("pid_")?))
+        })
+        .collect()
+}
+
 /// Turns the mouse support on or off; `msg` is posted to `hwnd` with an EV_* code.
 pub fn set_enabled(on: bool, hwnd: isize, msg: u32) {
     TARGET.store(hwnd, Ordering::Relaxed);

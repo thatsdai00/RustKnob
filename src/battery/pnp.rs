@@ -37,10 +37,14 @@ pub fn guid(node: u32, key: &DEVPROPKEY) -> Option<GUID> {
 
 /// A string, or the first of a string list.
 pub fn string(node: u32, key: &DEVPROPKEY) -> Option<String> {
-    let (t, b) = prop(node, key).filter(|(t, _)| *t == DEVPROP_TYPE_STRING || *t == DEVPROP_TYPE_STRING_LIST)?;
-    let wide: Vec<u16> = b.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).take_while(|&c| c != 0).collect();
-    let _ = t;
-    Some(String::from_utf16_lossy(&wide)).filter(|s| !s.is_empty())
+    let (_, b) = prop(node, key).filter(|(t, _)| *t == DEVPROP_TYPE_STRING || *t == DEVPROP_TYPE_STRING_LIST)?;
+    Some(utf16(&b)).filter(|s| !s.is_empty())
+}
+
+/// UTF-16 bytes up to the first 0.
+fn utf16(b: &[u8]) -> String {
+    let wide: Vec<u16> = b.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c)).take_while(|&c| c != 0).collect();
+    String::from_utf16_lossy(&wide)
 }
 
 /// A GUID's 16 stored bytes (Data1..3 little-endian) in the big-endian order `GUID::from_u128` takes.
@@ -92,7 +96,6 @@ pub fn container_of(path: &[u16]) -> Option<GUID> {
         if CM_Get_Device_Interface_PropertyW(PCWSTR(path.as_ptr()), &DEVPKEY_Device_InstanceId, &mut ty, Some(buf.as_mut_ptr()), &mut size, 0) != CR_SUCCESS {
             return None;
         }
-        let wide: Vec<u16> = buf[..size as usize].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).take_while(|&c| c != 0).collect();
-        guid(locate(&String::from_utf16_lossy(&wide))?, &DEVPKEY_Device_ContainerId)
+        guid(locate(&utf16(&buf[..size as usize]))?, &DEVPKEY_Device_ContainerId)
     }
 }

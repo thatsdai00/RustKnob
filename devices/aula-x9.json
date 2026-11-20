@@ -1,0 +1,54 @@
+{
+  "v": 1,
+  "devices": [["320F:22A0", "x9", "AULA X9 Ultra / V9", "mouse"]],
+  "subs": {
+    "wait": [
+      {"retry": "$n", "do": [
+        {"read": 100, "if": {"any": [{"at": [0, "04 00 00 $cmd 00 00 00 00"]}, {"at": [0, "04 AA 00 AA"]}]}},
+        {"first": [[{"need": {"all": [{"at": [0, "04 AA 00 AA"]}, {"eq": [{"b": 8}, 0]}]}}, {"set": {"down": 1}}], []]},
+        {"need": {"at": [0, "04 00 00 $cmd 00 00 00 00"]}}
+      ]}
+    ]
+  },
+  "protocols": {
+    "x9": {
+      "pick": [{"mi": 1, "page": "FF1C", "usage": "0092", "out": 64, "in": 64}],
+      "kind": "mouse",
+      "grace": 1800,
+      "run": [
+        {"flush": 1},
+        {"set": {"down": 0, "ok": 0, "pct": 0, "st": 0}},
+        {"first": [[
+          {"out": "04 00 00 01"},
+          {"set": {"cmd": 1, "n": 4}},
+          {"call": "wait"},
+          {"out": "04 00 00 1A"},
+          {"set": {"cmd": "1A", "n": 4}},
+          {"call": "wait"},
+          {"need": {"len": 10}},
+          {"set": {"pct": {"b": 8}, "st": {"b": 9}}},
+          {"need": {"all": [{"ge": ["$pct", 1]}, {"le": ["$pct", 100]}, {"le": ["$st", 2]}]}},
+          {"set": {"ok": 1}}
+        ], []]},
+        {"out": "04 00 00 02"},
+        {"set": {"cmd": 2, "n": 2}},
+        {"first": [[{"call": "wait"}], []]},
+        {"first": [
+          [{"need": {"all": [{"eq": ["$ok", 1]}, {"eq": ["$down", 0]}]}}, {"emit": {"percent": "$pct", "charging": {"ne": ["$st", 0]}, "full": {"eq": ["$st", 2]}}}],
+          [{"emit": {"state": "asleep"}}]
+        ]}
+      ]
+    }
+  },
+  "tests": [
+    {"protocol": "x9", "out": 64,
+     "replies": ["04 00 00 01 00 00 00 00 00 00", "04 AA 00 AA 00 00 00 00 FF 00", "04 00 00 1A 00 00 00 00 5A 01", "04 00 00 02 00 00 00 00 00 00"],
+     "sent": ["04 00 00 01 00", "04 00 00 1A 00", "04 00 00 02 00"],
+     "expect": [{"percent": 90, "charging": true}]},
+    {"protocol": "x9", "out": 64,
+     "replies": ["04 AA 00 AA 00 00 00 00 00 00", "04 00 00 01 00 00 00 00 00 00", "04 00 00 1A 00 00 00 00 5A 00"],
+     "expect": [{"state": "asleep"}]},
+    {"protocol": "x9", "out": 64, "replies": ["04 00 00 01 00 00 00 00 00 00", "04 00 00 1A 00 00 00 00 00 00"],
+     "expect": [{"state": "asleep"}]}
+  ]
+}

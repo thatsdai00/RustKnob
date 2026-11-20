@@ -89,13 +89,14 @@ pub unsafe fn remove(hwnd: HWND) {
 
 // ---- a battery icon per device -------------------------------------------------
 
-/// One device's icon: its model's number (the icon's id is BATTERY_ID + it), percent and charger.
-#[derive(Clone, Copy, PartialEq)]
+/// One device's icon: its number (the icon's id is BATTERY_ID + it: a card's model, or 16 and up for the other
+/// devices), percent and charger.
+#[derive(Clone, PartialEq)]
 pub struct Battery {
-    pub model: u32,
+    pub id: u32,
     pub percent: Option<u8>,
     pub charging: bool,
-    pub name: &'static str,
+    pub name: String,
 }
 
 pub const BATTERY_ID: u32 = 100;
@@ -108,11 +109,11 @@ static SHOWN: std::sync::Mutex<Vec<Battery>> = std::sync::Mutex::new(Vec::new())
 /// in the tooltip.
 pub unsafe fn batteries(hwnd: HWND, now: &[Battery], charging_word: &str) {
     let Ok(mut shown) = SHOWN.lock() else { return };
-    for old in shown.iter().filter(|o| !now.iter().any(|n| n.model == o.model)) {
-        let _ = Shell_NotifyIconW(NIM_DELETE, &data(hwnd, BATTERY_ID + old.model));
+    for old in shown.iter().filter(|o| !now.iter().any(|n| n.id == o.id)) {
+        let _ = Shell_NotifyIconW(NIM_DELETE, &data(hwnd, BATTERY_ID + old.id));
     }
     for b in now {
-        let before = shown.iter().find(|o| o.model == b.model);
+        let before = shown.iter().find(|o| o.id == b.id);
         if before == Some(b) {
             continue;
         }
@@ -122,7 +123,7 @@ pub unsafe fn batteries(hwnd: HWND, now: &[Battery], charging_word: &str) {
             (None, _) => b.name.to_string(),
         };
         // a new one (or the taskbar came back without it): added; one on show: changed
-        show(hwnd, BATTERY_ID + b.model, battery_icon(b), &tip, before.is_some());
+        show(hwnd, BATTERY_ID + b.id, battery_icon(b), &tip, before.is_some());
     }
     *shown = now.to_vec();
 }
@@ -204,7 +205,7 @@ mod tests {
     fn battery_pixels() {
         for n in [16usize, 20, 24, 32] {
             for (pct, charging) in [(7u8, false), (46, false), (100, true), (18, false), (3, false)] {
-                let b = super::Battery { model: 0, percent: Some(pct), charging, name: "" };
+                let b = super::Battery { id: 0, percent: Some(pct), charging, name: String::new() };
                 let mut px = vec![0u32; n * n];
                 super::battery_pixels(&mut px, n, &b);
                 let raw: Vec<u8> = px.iter().flat_map(|p| [(p >> 16) as u8, (p >> 8) as u8, *p as u8, (p >> 24) as u8]).collect();

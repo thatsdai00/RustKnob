@@ -1,0 +1,37 @@
+{
+  "v": 1,
+  "devices": [
+    ["0DB0:9E22", "q", "MSI VERSA 300 ELITE WIRELESS", "mouse"],
+    ["0DB0:0D3C", "q", "MSI Clutch GM31 Lightweight Wireless", "mouse", {"u": 31}],
+    ["0DB0:0D3B", "q", "MSI Clutch GM31 Lightweight Wireless", "mouse", {"u": 31}],
+    ["0DB0:0D4C", "p", "MSI Clutch GM41 Lightweight Wireless", "mouse", {"u": 41}],
+    ["0DB0:0D4B", "p", "MSI Clutch GM41 Lightweight Wireless", "mouse", {"u": 41}]
+  ],
+  "protocols": {
+    "q": {"pick": [{"mi": 1, "page": "FF0D", "usage": "00B0", "out": [65], "in": [65]}, {"mi": 1, "page": "FF00", "usage": "0001", "out": [65], "in": [65]}], "open": "rw", "grace": 1800,
+      "run": [
+        {"flush": 1},
+        {"out": "00 0F 20"},
+        {"read": 500, "if": {"all": [{"len": 15}, {"eq": [{"b": 0}, 15]}, {"eq": [{"b": 1}, 32]}]}},
+        {"set": {"pct": {"and": [{"b": 14}, 127]}, "chg": {"if": [{"ge": [{"b": 14}, 128]}, 1, 0]}}},
+        {"need": {"le": ["$pct", 100]}},
+        {"emit": {
+            "id": {"add": ["$u", 0]},
+            "percent": "$pct",
+            "charging": {"eq": ["$chg", 1]},
+            "asleep": {"all": [{"eq": ["$pct", 0]}, {"eq": ["$chg", 0]}]}
+          }}
+      ]},
+    "p": {"pick": [{"mi": 1, "page": "FF10", "usage": "0006", "in": [7]}], "open": "read", "grace": 1800,
+      "run": [
+        {"read": 2000, "if": {"all": [{"len": 7}, {"eq": [{"b": 0}, 160]}, {"eq": [{"b": 2}, 7]}]}},
+        {"set": {"pct": {"min": [100, {"max": [0, {"div": [{"add": [{"mul": [{"b": 1}, 51]}, 1810]}, 100]}]}]}}},
+        {"emit": {"id": {"add": ["$u", 0]}, "percent": "$pct", "asleep": {"eq": ["$pct", 0]}}}
+      ]}
+  },
+  "tests": [
+    {"protocol": "q", "out": 65, "vars": {"u": 31}, "replies": ["00 0F 20 00 00 23 05 7A 91 00 00 00 00 05 80 56 11"], "sent": ["00 0F 20"], "expect": [{"percent": 86}]},
+    {"protocol": "q", "out": 65, "replies": ["00 0F 20 00 00 00 00 00 00 00 00 00 00 00 00 C6 00"], "expect": [{"percent": 70, "charging": true}]},
+    {"protocol": "p", "vars": {"u": 41}, "replies": ["A0 4D 07 00 94 00 94"], "expect": [{"percent": 57}]}
+  ]
+}

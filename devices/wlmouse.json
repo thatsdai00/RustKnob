@@ -1,0 +1,48 @@
+{
+  "v": 1,
+  "devices": [
+    ["36A7:A879", "wl", "WLMouse Sword X 8K", "mouse", {"u": 1}],
+    ["36A7:A884", "wl", "WLMouse Beast X 8K", "mouse", {"u": 2}],
+    ["36A7:A861", "wl", "WLMouse Beast G", "mouse", {"u": 3}],
+    ["36A7:A866", "wl", "WLMouse mouse", "mouse", {"u": 4}],
+    ["36A7:A867", "wl", "WLMouse mouse", "mouse", {"u": 5}],
+    ["36A7:A871", "wl", "WLMouse Beast X Pro", "mouse", {"u": 6}],
+    ["36A7:A856", "wl", "WLMouse Beast X V2", "mouse", {"u": 7}],
+    ["36A7:A860", "wl", "WLMouse Beast G", "mouse", {"u": 3}],
+    ["36A7:A868", "wl", "WLMouse Beast X Mini Pro", "mouse", {"u": 8}],
+    ["36A7:A870", "wl", "WLMouse Beast X Pro", "mouse", {"u": 6}],
+    ["36A7:A878", "wl", "WLMouse Sword X 8K", "mouse", {"u": 1}],
+    ["36A7:A880", "wl", "WLMouse Beast MAX", "mouse", {"u": 9}],
+    ["36A7:A883", "wl", "WLMouse Beast X 8K", "mouse", {"u": 2}],
+    ["36A7:A885", "wl", "WLMouse Beast X Mini", "mouse", {"u": 10}]
+  ],
+  "protocols": {
+    "wl": {"pick": [{"page": "FFFF", "usage": "0000", "feat": [65]}, {"page": "FFFF", "feat": [65]}], "open": "feature", "grace": 1800,
+      "run": [
+        {
+          "retry": 2,
+          "do": [
+            {"fset": "00 00 00 02 02 00 83"},
+            {
+              "retry": 6,
+              "do": [
+                {"sleep": 60},
+                {"fget": 0},
+                {"need": {"all": [{"len": 9}, {"at": [3, "02 02"]}, {"eq": [{"b": 6}, 131]}, {"in": [{"b": 1}, [160, 161, 162]]}]}}
+              ]
+            }
+          ]
+        },
+        {"first": [
+            [{"need": {"eq": [{"b": 1}, 160]}}, {"emit": {"id": {"add": ["$u", 0]}, "state": "asleep"}}, {"stop": 1}],
+            []
+          ]},
+        {"need": {"le": [{"b": 8}, 100]}},
+        {"emit": {"id": {"add": ["$u", 0]}, "percent": {"b": 8}, "charging": {"eq": [{"b": 7}, 1]}}}
+      ]}
+  },
+  "tests": [
+    {"protocol": "wl", "feat": 65, "vars": {"u": 2}, "replies": ["00 00 00 02 02 00 83 00 00", "00 A1 00 02 02 00 83 01 64"], "sent": ["00 00 00 02 02 00 83"], "expect": [{"percent": 100, "charging": true}]},
+    {"protocol": "wl", "feat": 65, "vars": {"u": 2}, "replies": ["00 A0 00 02 02 00 83 00 00"], "expect": [{"state": "asleep"}]}
+  ]
+}

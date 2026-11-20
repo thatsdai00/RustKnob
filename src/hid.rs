@@ -174,33 +174,22 @@ impl Drop for HidIo {
 
 impl HidIo {
     pub fn open(path: &[u16]) -> Option<HidIo> {
-        unsafe {
-            let info = probe(path.to_vec())?;
-            let handle = CreateFileW(PCWSTR(path.as_ptr()), (GENERIC_READ | GENERIC_WRITE).0, FILE_SHARE_READ | FILE_SHARE_WRITE, None, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, None).ok().filter(|h| !h.is_invalid())?;
-            let Ok(event) = windows::Win32::System::Threading::CreateEventW(None, true, false, PCWSTR::null()) else {
-                let _ = CloseHandle(handle);
-                return None;
-            };
-            Some(HidIo { handle, event, pid: info.pid, out_len: info.output_len as usize, in_len: info.input_len as usize, feat_len: info.feature_len as usize })
-        }
+        Self::open_as(&unsafe { probe(path.to_vec()) }?, (GENERIC_READ | GENERIC_WRITE).0, FILE_FLAG_OVERLAPPED)
     }
 
     /// Opened for reading only (input reports and feature reports): for collections that refuse to be written.
     pub fn open_read(info: &HidInfo) -> Option<HidIo> {
-        unsafe {
-            let handle = CreateFileW(PCWSTR(info.path.as_ptr()), GENERIC_READ.0, FILE_SHARE_READ | FILE_SHARE_WRITE, None, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, None).ok().filter(|h| !h.is_invalid())?;
-            let Ok(event) = windows::Win32::System::Threading::CreateEventW(None, true, false, PCWSTR::null()) else {
-                let _ = CloseHandle(handle);
-                return None;
-            };
-            Some(HidIo { handle, event, pid: info.pid, out_len: info.output_len as usize, in_len: info.input_len as usize, feat_len: info.feature_len as usize })
-        }
+        Self::open_as(info, GENERIC_READ.0, FILE_FLAG_OVERLAPPED)
     }
 
     /// Opened with no rights at all: feature reports only (a mouse or keyboard collection the input stack owns).
     pub fn open_feature(info: &HidInfo) -> Option<HidIo> {
+        Self::open_as(info, 0, FILE_FLAGS_AND_ATTRIBUTES(0))
+    }
+
+    fn open_as(info: &HidInfo, access: u32, flags: FILE_FLAGS_AND_ATTRIBUTES) -> Option<HidIo> {
         unsafe {
-            let handle = open(&info.path)?;
+            let handle = CreateFileW(PCWSTR(info.path.as_ptr()), access, FILE_SHARE_READ | FILE_SHARE_WRITE, None, OPEN_EXISTING, flags, None).ok().filter(|h| !h.is_invalid())?;
             let Ok(event) = windows::Win32::System::Threading::CreateEventW(None, true, false, PCWSTR::null()) else {
                 let _ = CloseHandle(handle);
                 return None;
@@ -246,30 +235,6 @@ impl HidIo {
         let mut buf = self.input_buffer();
         buf[0] = id;
         unsafe { HidD_GetInputReport(self.handle, buf.as_mut_ptr() as *mut _, buf.len() as u32) }.as_bool().then_some(buf)
-    }
-
-    /// The queue flushed, `report` written (interrupt OUT, padded), and the first input report within `within`
-    /// that `answer` takes, given without a leading 0 report id (see `payload`).
-    pub fn request<R>(&mut self, report: &[u8], within: Duration, mut answer: impl FnMut(&[u8]) -> Option<R>) -> Option<R> {
-        self.flush();
-        self.write(report).ok()?;
-        self.listen(within, |r| answer(r))
-    }
-
-    /// Input reports for `within`, until `answer` takes one (each given as `payload` sees it).
-    pub fn listen<R>(&mut self, within: Duration, mut answer: impl FnMut(&[u8]) -> Option<R>) -> Option<R> {
-        let until = Instant::now() + within;
-        let mut buf = self.input_buffer();
-        loop {
-            let left = until.saturating_duration_since(Instant::now());
-            if left.is_zero() {
-                return None;
-            }
-            let n = unsafe { self.receive(&mut buf, left.as_millis().max(1) as u32) }.ok()??;
-            if let Some(r) = answer(payload(&buf[..n])) {
-                return Some(r);
-            }
-        }
     }
 
     /// Sends `report` (its id first) and returns the first input report within `within` that `answer` takes

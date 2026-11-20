@@ -1,0 +1,59 @@
+{
+  "v": 1,
+  "devices": [
+    ["25A7:FA07", "gp", "Redragon wireless mouse", "mouse", {"x10": 1}],
+    ["25A7:FA08", "gp", "Redragon wireless mouse", "mouse", {"x10": 1}],
+    ["25A7:FA7B", "gp", "Fantech Helios Go XD5", "mouse", {"x10": 0}],
+    ["25A7:FA7C", "gp", "Fantech Helios Go XD5", "mouse", {"x10": 0}],
+    ["25A7:FA7E", "gp", "Redragon Invader Pro", "mouse", {"x10": 1}]
+  ],
+  "protocols": {
+    "gp": {"pick": [{"feat": [17], "in": [6]}, {"feat": [17]}], "open": "rw", "grace": 1800,
+      "run": [
+        {
+          "retry": 2,
+          "gap": 200,
+          "do": [
+            {"flush": 1},
+            {"fset": "08 04", "ck": {"t": "sum", "from": 0, "to": 15, "at": 16, "sub": 85}},
+            {"first": [
+                [
+                  {
+                    "read": 500,
+                    "if": {"all": [
+                        {"eq": [{"b": 0}, 9]},
+                        {"all": [
+                            {"len": 17},
+                            {"eq": [{"b": 1}, 4]},
+                            {"eq": [{"b": 2}, 0]},
+                            {"ck": {"t": "sum", "from": 0, "to": 15, "at": 16, "sub": 85}}
+                          ]}
+                      ]}
+                  }
+                ],
+                [
+                  {"fget": 8},
+                  {"need": {"all": [
+                        {"len": 17},
+                        {"eq": [{"b": 1}, 4]},
+                        {"eq": [{"b": 2}, 0]},
+                        {"ck": {"t": "sum", "from": 0, "to": 15, "at": 16, "sub": 85}}
+                      ]}}
+                ]
+              ]}
+          ]
+        },
+        {"set": {"pct": {"if": [
+                {"eq": ["$x10", 1]},
+                {"if": [{"le": [{"b": 6}, 10]}, {"mul": [{"b": 6}, 10]}, -1]},
+                {"if": [{"all": [{"ge": [{"b": 6}, 1]}, {"le": [{"b": 6}, 100]}]}, {"b": 6}, -1]}
+              ]}}},
+        {"need": {"ge": ["$pct", 0]}},
+        {"emit": {"percent": "$pct", "charging": {"ne": [{"b": 7}, 0]}}}
+      ]}
+  },
+  "tests": [
+    {"protocol": "gp", "feat": 17, "vars": {"x10": 1}, "replies": ["09 04 00 00 00 02 08 00 00 00 00 00 00 00 00 00 3E"], "sent": ["08 04 00 00 00 00 00 00 00 00 00 00 00 00 00 00 49"], "expect": [{"percent": 80}]},
+    {"protocol": "gp", "feat": 17, "vars": {"x10": 0}, "replies": ["09 04 00 00 00 02 4B 01 00 00 00 00 00 00 00 00 FA"], "expect": [{"percent": 75, "charging": true}]}
+  ]
+}

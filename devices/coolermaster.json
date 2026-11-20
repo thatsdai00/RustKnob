@@ -1,0 +1,48 @@
+{
+  "v": 1,
+  "devices": [
+    ["2516:0167", "cm", "Cooler Master MM731", "mouse"],
+    ["2516:0169", "cm", "Cooler Master MM712", "mouse"],
+    ["2516:01B7", "cm", "Cooler Master wireless mouse", "mouse"]
+  ],
+  "protocols": {
+    "cm": {"pick": [{"mi": 3, "page": "FF0A"}], "open": "rw", "grace": 1800,
+      "run": [
+        {"flush": 1},
+        {"out": "00 46 81"},
+        {"read": 500, "if": {"all": [{"len": 13}, {"eq": [{"b": 0}, 71]}, {"eq": [{"b": 1}, 129]}]}},
+        {"first": [
+            [
+              {"need": {"eq": [{"b": 2}, 80]}},
+              {"emit": {
+                  "id": "mm712",
+                  "name": "Cooler Master MM712",
+                  "percent": {"if": [{"all": [{"ge": [{"b": 10}, 1]}, {"le": [{"b": 10}, 100]}]}, {"b": 10}, -1]},
+                  "charging": {"ne": [{"b": 11}, 0]},
+                  "asleep": {"all": [{"eq": [{"b": 10}, 0]}, {"eq": [{"b": 11}, 0]}]}
+                }}
+            ],
+            [
+              {"need": {"eq": [{"b": 2}, 112]}},
+              {"emit": {
+                  "id": "mm731",
+                  "name": "Cooler Master MM731",
+                  "percent": {"if": [{"all": [{"ge": [{"b": 10}, 1]}, {"le": [{"b": 10}, 100]}]}, {"b": 10}, -1]},
+                  "charging": {"ne": [{"b": 11}, 0]},
+                  "asleep": {"all": [{"eq": [{"b": 10}, 0]}, {"eq": [{"b": 11}, 0]}]}
+                }}
+            ],
+            [
+              {"emit": {
+                  "percent": {"if": [{"all": [{"ge": [{"b": 10}, 1]}, {"le": [{"b": 10}, 100]}]}, {"b": 10}, -1]},
+                  "charging": {"ne": [{"b": 11}, 0]},
+                  "asleep": {"all": [{"eq": [{"b": 10}, 0]}, {"eq": [{"b": 11}, 0]}]}
+                }}
+            ]
+          ]}
+      ]}
+  },
+  "tests": [
+    {"protocol": "cm", "out": 33, "replies": ["00 47 81 50 00 00 00 00 00 00 00 4B 00 01"], "sent": ["00 46 81"], "expect": [{"percent": 75}]}
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "v": 1,
+  "devices": [["372E:10BB", "zhou", "", "headset"]],
+  "protocols": {
+    "zhou": {
+      "pick": [{"page": "000C", "usage": "0001", "out": [63], "in": [3]}],
+      "kind": "headset",
+      "grace": 1800,
+      "run": [
+        {"flush": 1},
+        {"oset": "55 65 01"},
+        {"first": [
+          [{"read": 500, "if": {"any": [{"at": [0, "55 65"]}, {"eq": [{"b": 0}, "65"]}]}}],
+          [{"read": 300, "if": {"any": [{"at": [0, "55 65"]}, {"eq": [{"b": 0}, "65"]}]}}]
+        ]},
+        {"set": {"pct": {"if": [{"eq": [{"b": 0}, "55"]}, {"b": 2}, {"b": 1}]}}},
+        {"need": {"le": ["$pct", 100]}},
+        {"emit": {"percent": "$pct"}}
+      ]
+    }
+  },
+  "tests": [
+    {"protocol": "zhou", "out": 64, "replies": ["55 66 00", "55 65 4B"], "sent": ["55 65 01 00"], "expect": [{"percent": 75}]},
+    {"protocol": "zhou", "out": 64, "replies": ["00 65 32"], "expect": [{"percent": 50}]}
+  ]
+}

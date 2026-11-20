@@ -1,0 +1,89 @@
+{
+  "v": 1,
+  "devices": [
+    ["361D:0100", "ulx", "Finalmouse UltralightX", "mouse", {"ro": 4, "ri": 5, "c1": 161, "sv": 0}],
+    ["361D:0300", "slx", "Finalmouse Starlight X", "mouse", {"ro": 1, "ri": 2, "c1": 215, "sv": 1}],
+    ["361D:0301", "slx", "Finalmouse Starlight X", "mouse", {"ro": 1, "ri": 2, "c1": 215, "sv": 1}]
+  ],
+  "curves": {"fm": [[4380, 100], [4170, 75], [3880, 50], [3740, 25], [3660, 10], [3620, 5], [3000, 0]]},
+  "subs": {
+    "fm": [
+      {"set": {"soc": -1, "mv": 0, "chg": -1, "link": -1, "done": 0}},
+      {"flush": 1},
+      {"out": "$ro 02 $c1 00"},
+      {"out": "$ro 02 96 00"},
+      {
+        "each": "i",
+        "in": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23],
+        "do": [
+          {"need": {"eq": ["$done", 0]}},
+          {"first": [
+              [
+                {
+                  "read": {"if": [{"any": [{"ge": ["$soc", 0]}, {"all": [{"eq": ["$sv", 0]}, {"gt": ["$mv", 0]}]}]}, 150, 500]},
+                  "if": {"eq": [{"b": 0}, "$ri"]}
+                },
+                {"call": "fmdec"},
+                {"first": [
+                    [
+                      {"need": {"all": [
+                            {"any": [{"ge": ["$soc", 0]}, {"all": [{"eq": ["$sv", 0]}, {"gt": ["$mv", 0]}]}]},
+                            {"ge": ["$chg", 0]}
+                          ]}},
+                      {"set": {"done": 1}}
+                    ],
+                    []
+                  ]}
+              ],
+              [{"set": {"done": 1}}]
+            ]}
+        ]
+      },
+      {"first": [
+          [{"need": {"ge": ["$soc", 0]}}, {"set": {"pct": "$soc"}}],
+          [{"need": {"gt": ["$mv", 0]}}, {"set": {"pct": {"curve": ["fm", "$mv"]}}}],
+          [{"need": {"eq": ["$link", 0]}}, {"emit": {"state": "asleep"}}, {"stop": 1}],
+          [{"stop": 1}]
+        ]},
+      {"emit": {"percent": "$pct", "charging": {"eq": ["$chg", 1]}}}
+    ],
+    "fmdec": [
+      {"set": {"inner": {"min": [{"b": 1}, {"sub": [{"len": 0}, 2]}]}}},
+      {"need": {"ge": ["$inner", 2]}},
+      {"set": {"n": {"min": [{"b": 3}, {"sub": ["$inner", 2]}]}}},
+      {"first": [
+          [
+            {"need": {"all": [{"eq": [{"b": 2}, 5]}, {"ge": ["$n", 2]}]}},
+            {"set": {"t": {"u16le": 4}}},
+            {"set": {"mv": {"if": [{"all": [{"ge": ["$t", 1]}, {"le": ["$t", 4999]}]}, "$t", "$mv"]}}}
+          ],
+          [
+            {"need": {"all": [{"eq": [{"b": 2}, 56]}, {"ge": ["$n", 3]}, {"le": [{"b": 4}, 100]}]}},
+            {"set": {"soc": {"b": 4}, "t": {"u16le": 5}}},
+            {"set": {"mv": {"if": [{"all": [{"ge": ["$t", 1]}, {"le": ["$t", 4999]}]}, "$t", "$mv"]}}}
+          ],
+          [
+            {"need": {"all": [{"eq": [{"b": 2}, 55]}, {"ge": ["$n", 1]}]}},
+            {"set": {"chg": {"if": [{"eq": [{"b": 4}, 1]}, 1, 0]}}}
+          ],
+          [{"need": {"all": [{"eq": [{"b": 2}, 54]}, {"ge": ["$n", 1]}]}}, {"set": {"link": {"b": 4}}}],
+          []
+        ]}
+    ]
+  },
+  "protocols": {
+    "ulx": {"pick": [{"page": "FF00", "usage": "0001", "in": [4], "out": [4]}], "open": "rw", "grace": 1800,
+      "run": [
+        {"call": "fm"}
+      ]},
+    "slx": {"pick": [{"page": "FF00", "usage": "0001", "in": [4], "out": [4]}, {"page": "FF00", "in": [4], "out": [4]}], "open": "rw", "grace": 1800,
+      "run": [
+        {"call": "fm"}
+      ]}
+  },
+  "tests": [
+    {"protocol": "ulx", "out": 64, "vars": {"ro": 4, "ri": 5, "c1": 161, "sv": 0}, "replies": ["05 05 38 03 55 10 0F 00", "05 03 37 01 01 00"], "sent": ["04 02 A1 00", "04 02 96 00"], "expect": [{"percent": 85, "charging": true}]},
+    {"protocol": "ulx", "out": 64, "vars": {"ro": 4, "ri": 5, "c1": 161, "sv": 0}, "replies": ["05 04 05 02 28 0F 00", "05 03 37 01 00 00"], "expect": [{"percent": 50}]},
+    {"protocol": "slx", "out": 64, "vars": {"ro": 1, "ri": 2, "c1": 215, "sv": 1}, "replies": ["02 03 36 01 00 00"], "sent": ["01 02 D7 00", "01 02 96 00"], "expect": [{"state": "asleep"}]}
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "v": 1,
+  "devices": [
+    ["04A5:8005", "ec", "ZOWIE EC-CW", "mouse", {"cable": 1}],
+    ["04A5:8006", "ec", "ZOWIE EC-CW", "mouse", {"cable": 0}],
+    ["04A5:800A", "dw", "ZOWIE DW mouse", "mouse", {"cable": 0}],
+    ["04A5:8008", "dw", "ZOWIE U2", "mouse", {"cable": 0}],
+    ["04A5:*", "dw", "", "mouse", {"cable": 1}]
+  ],
+  "curves": {"zowie": [[4200, 100], [4000, 75], [3890, 50], [3760, 25], [3680, 10], [3500, 0]]},
+  "protocols": {
+    "ec": {"pick": [{"page": "FF00", "out": 65}, {"page": "00FF", "out": 65}, {"out": 65}], "open": "rw", "grace": 1800,
+      "run": [
+        {"flush": 1},
+        {"out": "00 A5 03"},
+        {
+          "read": 500,
+          "if": {"all": [
+              {"len": 3},
+              {"any": [{"eq": [{"u16le": 0}, 0]}, {"all": [{"ge": [{"u16le": 0}, 3000]}, {"le": [{"u16le": 0}, 4500]}]}]}
+            ]}
+        },
+        {"set": {"mv": {"u16le": 0}}},
+        {"first": [[{"need": {"eq": ["$mv", 0]}}, {"emit": {"state": "asleep"}}, {"stop": 1}], []]},
+        {"emit": {
+            "percent": {"if": [{"all": [{"ge": [{"b": 2}, 1]}, {"le": [{"b": 2}, 100]}]}, {"b": 2}, {"curve": ["zowie", "$mv"]}]},
+            "charging": {"any": [{"eq": ["$cable", 1]}, {"ge": ["$mv", 4250]}]}
+          }}
+      ]},
+    "dw": {"pick": [{"page": "FF03", "out": 16, "in": [2]}, {"page": "FF03", "out": 16}], "open": "rw", "grace": 1800, "strip": [" Receiver"],
+      "run": [
+        {"flush": 1},
+        {"out": "08 B4 15"},
+        {"read": 500, "if": {"all": [{"len": 5}, {"eq": [{"b": 0}, 9]}]}},
+        {"need": {"all": [{"ne": [{"b": 1}, 230]}, {"eq": [{"b": 4}, 200]}]}},
+        {"set": {"mv": {"mul": [{"add": [{"mul": [{"b": 1}, 256]}, {"b": 2}]}, 10]}}},
+        {"first": [[{"need": {"eq": ["$mv", 0]}}, {"emit": {"state": "asleep"}}, {"stop": 1}], []]},
+        {"emit": {
+            "percent": {"curve": ["zowie", "$mv"]},
+            "charging": {"any": [{"eq": ["$cable", 1]}, {"ge": ["$mv", 4250]}]}
+          }}
+      ]}
+  },
+  "tests": [
+    {"protocol": "ec", "out": 65, "vars": {"cable": 0}, "replies": ["00 04 10 50"], "sent": ["00 A5 03"], "expect": [{"percent": 80}]},
+    {"protocol": "ec", "out": 65, "vars": {"cable": 0}, "replies": ["00 04 10 00"], "expect": [{"percent": 88}]},
+    {"protocol": "ec", "out": 65, "vars": {"cable": 0}, "replies": ["00 00 00 00"], "expect": [{"state": "asleep"}]},
+    {"protocol": "dw", "out": 16, "vars": {"cable": 0}, "replies": ["09 01 85 00 C8"], "sent": ["08 B4 15"], "expect": [{"percent": 50}]}
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "v": 1,
+  "devices": [
+    ["046A:00E3", "mx", "CHERRY MX 3.0S Wireless", "keyboard"],
+    ["046A:00EA", "mx", "CHERRY MX 3.0S Wireless", "keyboard"],
+    ["046A:0330", "xt", "Cherry XTRFY wireless mouse", "mouse"]
+  ],
+  "subs": {
+    "x": [
+      {"flush": 1},
+      {"out": "08 $c", "ck": {"t": "sum", "from": 0, "to": 15, "at": 16, "sub": 85}},
+      {
+        "read": 500,
+        "if": {"all": [
+            {"len": 17},
+            {"eq": [{"b": 0}, 8]},
+            {"eq": [{"b": 1}, "$c"]},
+            {"ck": {"t": "sum", "from": 0, "to": 15, "at": 16, "sub": 85}}
+          ]}
+      }
+    ]
+  },
+  "protocols": {
+    "mx": {"pick": [{"page": "FF1C", "usage": "0092", "in": 64, "out": 64}], "open": "rw", "grace": 1800,
+      "run": [
+        {
+          "retry": 2,
+          "do": [
+            {"flush": 1},
+            {"out": "04 00 00 1A 03 00 00 55", "ck": {"t": "sum16le", "from": 3, "to": 63, "at": 1}},
+            {"read": 400, "if": {"all": [{"len": 10}, {"eq": [{"b": 0}, 4]}, {"eq": [{"b": 3}, 26]}]}}
+          ]
+        },
+        {"emit": {"id": "mx30s", "percent": {"b": 8}, "charging": {"ne": [{"b": 9}, 0]}, "asleep": {"gt": [{"b": 8}, 100]}}}
+      ]},
+    "xt": {"pick": [{"page": "FF02", "usage": "0002", "in": 17, "out": 17}], "open": "rw", "grace": 1800,
+      "run": [
+        {"set": {"con": -1, "c": 3}},
+        {"first": [[{"call": "x"}, {"set": {"con": {"if": [{"ne": [{"b": 6}, 0]}, 1, 0]}}}], []]},
+        {"need": {"ne": ["$con", 0]}},
+        {"set": {"c": 4}},
+        {"first": [
+            [
+              {"call": "x"},
+              {"need": {"le": [{"b": 6}, 100]}},
+              {"emit": {"percent": {"b": 6}, "charging": {"ne": [{"b": 7}, 0]}}}
+            ],
+            [{"need": {"eq": ["$con", 1]}}, {"emit": {"state": "asleep"}}]
+          ]}
+      ]}
+  },
+  "tests": [
+    {"protocol": "mx", "out": 64, "replies": ["04 00 00 1A 00 00 00 00 3C 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"], "sent": ["04 72 00 1A 03 00 00 55"], "expect": [{"percent": 60}]},
+    {"protocol": "xt", "out": 17, "replies": ["08 03 00 00 00 01 01 00 00 00 00 00 00 00 00 00 48", "08 04 00 00 00 02 5f 00 0f f4 00 00 00 00 00 00 e5"], "sent": ["08 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 4A", "08 04 00 00 00 00 00 00 00 00 00 00 00 00 00 00 49"], "expect": [{"percent": 95}]},
+    {"protocol": "xt", "out": 17, "replies": ["08 03 00 00 00 01 00 00 00 00 00 00 00 00 00 00 49"], "expect": []}
+  ]
+}

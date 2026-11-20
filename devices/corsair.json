@@ -1,0 +1,108 @@
+{
+  "v": 1,
+  "devices": [
+    ["1B1C:1B1C", "void", "", "headset"], ["1B1C:1B27", "void", "", "headset"], ["1B1C:0A14", "void", "", "headset"],
+    ["1B1C:0A16", "void", "", "headset"], ["1B1C:0A17", "void", "", "headset"], ["1B1C:0A1D", "void", "", "headset"],
+    ["1B1C:0A1A", "void", "", "headset"], ["1B1C:1B2A", "void", "", "headset"], ["1B1C:1B23", "void", "", "headset"],
+    ["1B1C:1B29", "void", "", "headset"], ["1B1C:0A55", "void", "", "headset"], ["1B1C:0A51", "void", "", "headset"],
+    ["1B1C:0A52", "void", "", "headset"], ["1B1C:0A38", "void", "", "headset"], ["1B1C:0A4F", "void", "", "headset"],
+    ["1B1C:0A2B", "void", "", "headset"], ["1B1C:0A75", "void", "", "headset"], ["1B1C:0A56", "void", "", "headset"],
+    ["1B1C:2B2A", "compx", "Corsair Sabre V2 Pro Ultralight", "mouse"],
+    ["1B1C:2B34", "compx", "Corsair Sabre V2 Pro Wireless MG", "mouse"],
+    ["1B1C:2A08", "bragik", ""], ["1B1C:2A02", "bragik", ""], ["1B1C:0A97", "bragik", ""], ["1B1C:0A64", "bragik", ""],
+    ["1B1C:0A62", "bragik", ""], ["1B1C:0A3E", "bragik", ""], ["1B1C:0A3D", "bragik", ""], ["1B1C:2B00", "bragik", ""],
+    ["1B1C:*", "bragi", ""]
+  ],
+  "subs": {
+    "cxq": [
+      {"flush": 1},
+      {"out": "08 $cmd", "ck": {"t": "sum", "from": 0, "to": 15, "at": 16, "sub": 85}},
+      {"read": 500, "if": {"all": [{"len": 17}, {"eq": [{"b": 0}, 8]}, {"eq": [{"b": 1}, "$cmd"]}, {"ck": {"t": "sum", "from": 0, "to": 15, "at": 16, "sub": 85}}]}}
+    ],
+    "bget": [
+      {"set": {"src": {"if": [{"eq": ["$t", 8]}, 0, 1]}}},
+      {"first": [
+        [{"need": {"ne": ["$mode", 2]}}, {"set": {"o": 1}},
+         {"first": [[{"flush": 1}, {"out": "02 $t 02 $p"}], [{"flush": 1}, {"out": "00 02 $t 02 $p"}]]},
+         {"read": 300, "if": {"all": [{"len": 8}, {"eq": [{"b": 1}, "$src"]}, {"eq": [{"b": 2}, 2]}]}},
+         {"set": {"mode": 1}}],
+        [{"need": {"ne": ["$mode", 1]}}, {"set": {"o": 0}},
+         {"flush": 1}, {"out": "00 $t 02 $p"},
+         {"read": 300, "if": {"all": [{"len": 7}, {"eq": [{"b": 0}, "$src"]}, {"eq": [{"b": 1}, 2]}]}},
+         {"set": {"mode": 2}}]
+      ]},
+      {"need": {"eq": [{"b": {"add": ["$o", 2]}}, 0]}},
+      {"set": {"val": {"or": [{"u16le": {"add": ["$o", 3]}}, {"shl": [{"u16le": {"add": ["$o", 5]}}, 16]}]}}}
+    ],
+    "target": [
+      {"set": {"p": 15}},
+      {"retry": 3, "do": [{"call": "bget"}, {"need": {"all": [{"ne": ["$val", 0]}, {"le": ["$val", 1000]}]}}]},
+      {"need": {"le": ["$val", 1000]}},
+      {"set": {"pct": {"min": [{"div": [{"add": ["$val", 5]}, 10]}, 100]}, "chg": 0, "kt": 0, "any": 1}},
+      {"first": [[{"set": {"p": 16}}, {"call": "bget"}, {"set": {"chg": {"if": [{"in": ["$val", [1, 3]]}, 1, 0]}}}], []]},
+      {"first": [[{"need": {"ne": ["$t", 8]}}, {"set": {"p": 18}}, {"call": "bget"},
+                  {"set": {"kt": {"if": [{"eq": ["$val", 7038]}, 1, {"if": [{"eq": [{"shr": ["$val", 8]}, 10]}, 2, 0]}]}}}], []]},
+      {"set": {"kt": {"if": [{"all": [{"eq": ["$kt", 0]}, {"eq": [{"shr": ["$pid", 8]}, 10]}]}, 2, "$kt"]}}},
+      {"first": [
+        [{"need": {"eq": ["$kt", 1]}}, {"emit": {"slot": {"add": ["$t", 0]}, "kind": "mouse", "name": "Corsair Dark Core RGB Pro SE", "percent": "$pct", "charging": {"eq": ["$chg", 1]}}}],
+        [{"need": {"eq": ["$kt", 2]}}, {"emit": {"slot": {"add": ["$t", 0]}, "kind": "headset", "percent": "$pct", "charging": {"eq": ["$chg", 1]}}}],
+        [{"emit": {"slot": {"add": ["$t", 0]}, "percent": "$pct", "charging": {"eq": ["$chg", 1]}}}]
+      ]}
+    ],
+    "bragi": [
+      {"set": {"mode": 0, "any": 0}},
+      {"each": "t", "in": [9, 10, 11], "do": [{"call": "target"}]},
+      {"first": [[{"need": {"eq": ["$any", 0]}}, {"set": {"t": 8}}, {"call": "target"}], []]}
+    ]
+  },
+  "protocols": {
+    "void": {
+      "pick": [{"page": "FFC5", "out": [1]}, {"page": "FF00", "out": [1]}],
+      "kind": "headset",
+      "strip": [" Receiver"],
+      "run": [
+        {"flush": 1}, {"out": "C9 64"},
+        {"retry": 2, "do": [{"read": 500, "if": {"len": 5}}]},
+        {"emit": {"percent": {"if": [{"in": [{"b": 4}, [1, 2, 4, 5]]}, {"min": [{"and": [{"b": 2}, 127]}, 100]}, null]},
+                  "charging": {"in": [{"b": 4}, [4, 5]]}, "offline": {"eq": [{"b": 4}, 0]}}}
+      ]
+    },
+    "compx": {
+      "pick": [{"page": "FF02", "usage": "0002", "out": [17], "in": [17]}],
+      "kind": "mouse",
+      "grace": 1800,
+      "run": [
+        {"set": {"on": -1}},
+        {"first": [[{"set": {"cmd": 3}}, {"call": "cxq"}, {"set": {"on": {"if": [{"ne": [{"b": 6}, 0]}, 1, 0]}}}], []]},
+        {"first": [[{"need": {"eq": ["$on", 0]}}, {"stop": 1}], []]},
+        {"first": [
+          [{"set": {"cmd": 4}}, {"call": "cxq"}, {"emit": {"percent": {"b": 6}, "charging": {"ne": [{"b": 7}, 0]}}}],
+          [{"need": {"eq": ["$on", 1]}}, {"emit": {"state": "asleep"}}]
+        ]}
+      ]
+    },
+    "bragi": {
+      "pick": [{"page": "FF42", "out": [64, 65], "in": [64, 65]}],
+      "grace": 1800,
+      "run": [{"call": "bragi"}]
+    },
+    "bragik": {
+      "pick": [{"page": "FF42", "out": [64, 65], "in": [64, 65]}, {"mi": 4, "out": [64, 65], "in": [64, 65]},
+               {"page": "FF00", "out": [64, 65], "in": [64, 65]}],
+      "grace": 1800,
+      "run": [{"call": "bragi"}]
+    }
+  },
+  "tests": [
+    {"protocol": "void", "out": 64, "replies": ["64 00 B7 00 01"], "sent": ["C9 64"], "expect": [{"percent": 55}]},
+    {"protocol": "void", "out": 64, "replies": ["64 00 32 00 00"], "expect": [{"state": "offline"}]},
+    {"protocol": "compx", "out": 17,
+     "replies": ["08 03 00 00 00 00 01 00 00 00 00 00 00 00 00 00 49", "08 04 00 00 00 00 4B 01 0F A0 00 00 00 00 00 00 4E"],
+     "sent": ["08 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 4A"],
+     "expect": [{"percent": 75, "charging": true}]},
+    {"protocol": "bragi", "out": 64, "vars": {"pid": 7132},
+     "replies": ["02 01 02 00 52 03 00 00", "02 01 02 00 01 00 00 00", "02 01 02 00 7E 1B 00 00"],
+     "sent": ["02 09 02 0F", "02 09 02 10", "02 09 02 12"],
+     "expect": [{"slot": "9", "percent": 85, "charging": true}]}
+  ]
+}

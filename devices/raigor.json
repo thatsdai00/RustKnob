@@ -1,0 +1,25 @@
+{
+  "v": 1,
+  "devices": [
+    ["1EA7:0066", "b5", ""],
+    ["1EA7:0064", "b5", ""]
+  ],
+  "protocols": {
+    "b5": {"pick": [{"page": "FFB5", "usage": "0001", "in": 8, "out": 8}], "open": "rw", "grace": 1800, "strip": [" Receiver", " Dongle"],
+      "run": [
+        {"flush": 1},
+        {"out": "B5 05 00 00 00 00 00 00"},
+        {
+          "read": 1200,
+          "if": {"all": [{"len": 8}, {"eq": [{"b": 0}, 181]}, {"any": [{"at": [1, "05 94"]}, {"eq": [{"b": 1}, 103]}]}]}
+        },
+        {"set": {"pct": {"if": [{"eq": [{"b": 1}, 5]}, {"b": 6}, {"b": 7}]}}},
+        {"need": {"le": ["$pct", 100]}},
+        {"emit": {"percent": "$pct"}}
+      ]}
+  },
+  "tests": [
+    {"protocol": "b5", "out": 8, "replies": ["B5 05 90 04 00 00 00 00", "B5 05 94 04 35 09 40 38"], "sent": ["B5 05 00 00 00 00 00 00"], "expect": [{"percent": 64}]},
+    {"protocol": "b5", "out": 8, "replies": ["B5 67 01 02 03 04 09 2A"], "expect": [{"percent": 42}]}
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "v": 1,
+  "devices": [
+    ["413C:A515", "aw", "Alienware AW920H", "headset"]
+  ],
+  "protocols": {
+    "aw": {"pick": [{"mi": 5, "page": "FF13", "usage": "0001", "in": 62, "out": 62}], "open": "rw", "grace": 180, "kind": "headset",
+      "run": [
+        {
+          "retry": 3,
+          "do": [
+            {"flush": 1},
+            {"oset": "06 C0 0A"},
+            {"first": [
+                [
+                  {
+                    "read": 20,
+                    "if": {"all": [
+                        {"len": 14},
+                        {"at": [0, "07 C0 0A 09"]},
+                        {"ck": {"t": "xor", "from": 3, "to": 12, "at": 13}},
+                        {"ne": [{"b": 6}, 0]}
+                      ]}
+                  }
+                ],
+                [
+                  {
+                    "retry": 12,
+                    "gap": 15,
+                    "do": [
+                      {"iget": 7},
+                      {"need": {"all": [
+                            {"len": 14},
+                            {"at": [0, "07 C0 0A 09"]},
+                            {"ck": {"t": "xor", "from": 3, "to": 12, "at": 13}},
+                            {"ne": [{"b": 6}, 0]}
+                          ]}}
+                    ]
+                  }
+                ]
+              ]}
+          ]
+        },
+        {"set": {"pct": {"if": [{"eq": [{"b": 8}, 1]}, {"b": 11}, {"b": 6}]}}},
+        {"emit": {"percent": "$pct", "charging": {"eq": [{"b": 7}, 1]}}}
+      ]}
+  },
+  "tests": [
+    {"protocol": "aw", "out": 62, "replies": ["07 C0 0A 09 00 01 5F 00 00 1C 10 5F 02 06"], "sent": ["06 C0 0A"], "expect": [{"percent": 95}]},
+    {"protocol": "aw", "out": 62, "replies": ["07 00 80", "07 00 80", "07 C0 0A 09 00 01 5F 01 00 1C 10 5F 02 07"], "expect": [{"percent": 95, "charging": true}]}
+  ]
+}

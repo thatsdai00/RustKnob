@@ -40,25 +40,26 @@ pub const CAPSULE_RADIUS: f32 = 34.0;
 
 // ---- settings panel --------------------------------------------------------
 
-pub const ROWS: usize = 26;
+pub const ROWS: usize = 27;
 pub const ROW_H: f32 = 26.0;
 pub const PAD: f32 = 12.0;
 pub const SETTINGS: (f32, f32) = (380.0, PAD * 2.0 + ROWS as f32 * ROW_H);
 
-pub const TOGGLES: usize = 16; // rows 0..15 are on/off switches
+pub const TOGGLES: usize = 17; // rows 0..16 are on/off switches
 pub const TOGGLE_TRAY_BATTERY: usize = 12;
 pub const TOGGLE_AUTO_UPDATE: usize = 13;
 pub const TOGGLE_AUTOSTART: usize = 14;
 pub const TOGGLE_DISCORD: usize = 15;
-pub const ROW_STEP: usize = 16;
-pub const ROW_TOPIC: usize = 17; // ntfy topic, server and token are text fields
-pub const ROW_TOKEN: usize = 19;
-pub const ROW_SOUND: usize = 20; // notification sound file picker
-pub const ROW_VOLUME: usize = 21; // notification sound level
-pub const ROW_LANG: usize = 22; // click cycles auto / English / Türkçe
-pub const ROW_THEME: usize = 23; // click cycles auto / dark / light
-pub const ROW_UPDATE: usize = 24; // click: look for a new release now (and install it)
-pub const ROW_QUIT: usize = 25;
+pub const TOGGLE_TASKBAR: usize = 16;
+pub const ROW_STEP: usize = 17;
+pub const ROW_TOPIC: usize = 18; // ntfy topic, server and token are text fields
+pub const ROW_TOKEN: usize = 20;
+pub const ROW_SOUND: usize = 21; // notification sound file picker
+pub const ROW_VOLUME: usize = 22; // notification sound level
+pub const ROW_LANG: usize = 23; // click cycles auto / English / Türkçe
+pub const ROW_THEME: usize = 24; // click cycles auto / dark / light
+pub const ROW_UPDATE: usize = 25; // click: look for a new release now (and install it)
+pub const ROW_QUIT: usize = 26;
 
 // stepper control geometry, measured from the panel's right edge
 pub const STEP_MINUS_X: f32 = 86.0;

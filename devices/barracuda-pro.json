@@ -1,0 +1,36 @@
+{
+  "v": 1,
+  "devices": [["1532:053A", "bpro", "Razer Barracuda Pro", "headset"]],
+  "subs": {
+    "ask": [
+      {"retry": 3, "do": [
+        {"flush": 1},
+        {"out": "01 80 08 50 41 08 08 03 $cmd"},
+        {"read": 450, "if": {"all": [{"len": 17}, {"eq": [{"b": 13}, "$cmd"]}, {"in": [{"b": 14}, [1, 2]]},
+          {"ge": [{"b": 15}, 1]}, {"le": [{"b": 15}, 32]}]}}
+      ]},
+      {"set": {"val": {"b": 16}}}
+    ]
+  },
+  "protocols": {
+    "bpro": {
+      "pick": [{"page": "FF00", "out": [64]}],
+      "kind": "headset",
+      "run": [
+        {"set": {"pct": -1, "chg": 0}},
+        {"first": [[{"retry": 3, "gap": 150, "do": [{"flush": 1}, {"out": "01 80 07 50 41 0E 08 02 E1 01"}]}, {"sleep": 50}], []]},
+        {"first": [[{"set": {"cmd": 33}}, {"call": "ask"}, {"set": {"pct": "$val"}},
+                    {"first": [[{"set": {"cmd": 42}}, {"call": "ask"}, {"set": {"chg": "$val"}}], []]}], []]},
+        {"first": [[{"flush": 1}, {"out": "01 80 07 50 41 0E 08 02 E1 00"}], []]},
+        {"emit": {"percent": "$pct", "charging": {"gt": ["$chg", 0]}, "offline": {"not": {"all": [{"ge": ["$pct", 0]}, {"le": ["$pct", 100]}]}}}}
+      ]
+    }
+  },
+  "tests": [
+    {"protocol": "bpro", "out": 64,
+     "replies": ["01 80 0D 50 49 08 00 00 00 00 00 00 00 21 01 01 47", "01 80 0D 50 49 08 00 00 00 00 00 00 00 2A 01 01 01"],
+     "sent": ["01 80 07 50 41 0E 08 02 E1 01", "01 80 08 50 41 08 08 03 21", "01 80 08 50 41 08 08 03 2A", "01 80 07 50 41 0E 08 02 E1 00"],
+     "expect": [{"percent": 71, "charging": true}]},
+    {"protocol": "bpro", "out": 64, "replies": [], "expect": [{"state": "offline"}]}
+  ]
+}
