@@ -12,6 +12,7 @@ pub enum Lang {
 
 pub struct Strings {
     pub labels: [&'static str; ui::ROWS],
+    pub tabs: [&'static str; ui::TABS.len()],
     pub tap_to_type: &'static str,
     pub builtin_sound: &'static str,
     pub auto: &'static str,
@@ -96,6 +97,7 @@ static EN: Strings = Strings {
         "Check for updates",
         "Quit",
     ],
+    tabs: ["General", "Media", "Devices", "Alerts"],
     tap_to_type: "click to type",
     builtin_sound: "Built-in chime (click to choose)",
     auto: "Auto",
@@ -180,6 +182,7 @@ static TR: Strings = Strings {
         "Güncellemeleri denetle",
         "Çıkış",
     ],
+    tabs: ["Genel", "Medya", "Cihazlar", "Bildirim"],
     tap_to_type: "yazmak için tıkla",
     builtin_sound: "Yerleşik çan sesi (seçmek için tıkla)",
     auto: "Otomatik",

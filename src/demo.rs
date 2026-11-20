@@ -721,7 +721,7 @@ pub fn run(dir: &str) {
         sc.mouse = Some(view);
         shoot(&sc)
     };
-    let base = |level: u8, fill: f32| MouseView { picture: pic, others: &[], dpi: None, dpi_old: None, roll: 1.0, dpi_label: None, stage: 1.0, stages: 3, title: None, sub: None, warn: None, percent: None, fill, level, charging: false, intro: 1.0 };
+    let base = |level: u8, fill: f32| MouseView { picture: pic, glyph: None, others: &[], dpi: None, dpi_old: None, roll: 1.0, dpi_label: None, stage: 1.0, stages: 3, title: None, sub: None, warn: None, percent: None, fill, level, charging: false, intro: 1.0 };
     // leak the bitmaps: the pictures live as long as the program anyway
     let keep = |t: Option<TextBmp>| -> Option<&'static TextBmp> { t.map(|t| &*Box::leak(Box::new(t))) };
     let (dpi, dpi_label, name, linked, pct, low, low_pct, crit, crit_pct) = (keep(dpi), keep(dpi_label), keep(name), keep(linked), keep(pct), keep(low), keep(low_pct), keep(crit), keep(crit_pct));
@@ -746,7 +746,7 @@ pub fn run(dir: &str) {
     );
 
     // 6. themes and settings
-    let labels: Vec<TextBmp> = en.labels.iter().filter_map(|l| raster(l, -52, 400)).collect();
+    let labels: Vec<TextBmp> = en.labels.iter().chain(en.tabs.iter()).filter_map(|l| raster(l, -52, 400)).collect();
     let values: Vec<(TextBmp, bool)> = [("my-private-topic", false), ("https://ntfy.sh", false), ("click to type", true), ("notification.mp3", false), ("Auto", false), ("Auto", false)]
         .iter()
         .map(|(t, ph)| (raster(t, -48, 400).unwrap(), *ph))
@@ -754,19 +754,22 @@ pub fn run(dir: &str) {
     let mut toggles = [1.0f32; ui::TOGGLES];
     toggles[4] = 0.0;
     toggles[5] = 0.0;
-    let settings_scene = |pal: Palette, unit: f32| {
-        let mut s = scene(ui::SETTINGS.0, ui::SETTINGS.1, ui::CAPSULE_RADIUS, Kind::Settings, unit);
+    let settings_scene = |pal: Palette, unit: f32, tab: usize| {
+        ui::set_tab(tab);
+        let (sw, sh) = ui::settings_size();
+        let mut s = scene(sw, sh, ui::CAPSULE_RADIUS, Kind::Settings, unit);
         s.pal = pal;
         s.settings = Some(SettingsView { labels: &labels, toggles, hover: None, step: 2, notify_volume: 20, values: &values, editing: None, sound_set: true });
         shoot(&s)
     };
-    let dark_settings = settings_scene(DARK, 0.86);
-    let light_settings = settings_scene(LIGHT, 0.86);
+    let dark_settings = settings_scene(DARK, 1.0, 0);
+    let light_settings = settings_scene(LIGHT, 1.0, 2);
+    ui::set_tab(0);
     save(
         "card-settings",
         &card("Yours to shape.", "Light or dark. Two languages. Every feature has a switch, and nothing runs that you turned off.", teal, |c, cx, cy| {
-            c.place_center(&dark_settings, (cx - 245.0) as i32, (cy - 385.0) as i32);
-            c.place_center(&light_settings, (cx + 245.0) as i32, (cy - 385.0) as i32);
+            c.place_center(&dark_settings, (cx - 245.0) as i32, (cy - 290.0) as i32);
+            c.place_center(&light_settings, (cx + 245.0) as i32, (cy - 290.0) as i32);
         }),
     );
 

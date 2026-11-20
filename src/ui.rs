@@ -43,7 +43,43 @@ pub const CAPSULE_RADIUS: f32 = 34.0;
 pub const ROWS: usize = 27;
 pub const ROW_H: f32 = 26.0;
 pub const PAD: f32 = 12.0;
-pub const SETTINGS: (f32, f32) = (380.0, PAD * 2.0 + ROWS as f32 * ROW_H);
+pub const TAB_H: f32 = 36.0; // the tab bar over the rows
+pub const SETTINGS_W: f32 = 380.0;
+
+/// The settings' tabs and the rows each shows, in order: General, Media, Devices, Notifications.
+pub const TABS: [&[usize]; 4] = [
+    &[0, 3, ROW_STEP, 4, 6, 5, TOGGLE_AUTOSTART, TOGGLE_AUTO_UPDATE, ROW_LANG, ROW_THEME, ROW_UPDATE, ROW_QUIT],
+    &[1, 7, 8, 9, 10],
+    &[11, 2, TOGGLE_TASKBAR, TOGGLE_TRAY_BATTERY],
+    &[TOGGLE_DISCORD, ROW_TOPIC, ROW_TOPIC + 1, ROW_TOKEN, ROW_SOUND, ROW_VOLUME],
+];
+
+/// The tab on show (kept while the panel is closed: it opens where it was left).
+static TAB: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+pub fn tab() -> usize {
+    TAB.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub fn set_tab(t: usize) {
+    TAB.store(t.min(TABS.len() - 1), std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The panel, as big as its tab's rows.
+pub fn settings_size() -> (f32, f32) {
+    (SETTINGS_W, PAD * 2.0 + TAB_H + TABS[tab()].len() as f32 * ROW_H)
+}
+
+/// Top of a row's slot in the tab on show (off the panel when it is on another tab).
+pub fn row_top(row: usize) -> f32 {
+    PAD + TAB_H + TABS[tab()].iter().position(|&r| r == row).map_or(-1000.0, |i| i as f32 * ROW_H)
+}
+
+/// The tab whose name is under (tx, ty).
+pub fn tab_at(tx: f32, ty: f32) -> Option<usize> {
+    let w = (SETTINGS_W - PAD * 2.0) / TABS.len() as f32;
+    ((PAD..PAD + TAB_H).contains(&ty) && (PAD..SETTINGS_W - PAD).contains(&tx)).then(|| (((tx - PAD) / w) as usize).min(TABS.len() - 1))
+}
 
 pub const TOGGLES: usize = 17; // rows 0..16 are on/off switches
 pub const TOGGLE_TRAY_BATTERY: usize = 12;
@@ -68,7 +104,7 @@ pub const STEP_VALUE_X: f32 = 59.0;
 
 // text fields and the sound picker show their value in this box
 pub const VALUE_LEFT: f32 = 150.0;
-pub const VALUE_VIEW: f32 = SETTINGS.0 - VALUE_LEFT - 24.0;
+pub const VALUE_VIEW: f32 = SETTINGS_W - VALUE_LEFT - 24.0;
 pub const SOUND_RESET_W: f32 = 40.0; // the "x" at the sound row's right end
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -85,17 +121,24 @@ pub enum Hit {
     Theme,
     CheckUpdate,
     Quit,
+    Tab(usize),
 }
 
-/// Settings row under a vertical offset from the panel top.
+/// Settings row under a vertical offset from the panel top, in the tab on show.
 pub fn row_at(ty: f32) -> Option<usize> {
-    let r = ((ty - PAD) / ROW_H).floor();
-    (r >= 0.0 && (r as usize) < ROWS && ty < SETTINGS.1 - PAD + 0.1).then_some(r as usize)
+    let r = ((ty - PAD - TAB_H) / ROW_H).floor();
+    if r < 0.0 {
+        return None;
+    }
+    TABS[tab()].get(r as usize).copied()
 }
 
 pub fn hit(tx: f32, ty: f32) -> Option<Hit> {
+    if let Some(t) = tab_at(tx, ty) {
+        return Some(Hit::Tab(t));
+    }
     let row = row_at(ty)?;
-    let from_right = SETTINGS.0 - tx;
+    let from_right = SETTINGS_W - tx;
     Some(match row {
         r if r < TOGGLES => Hit::Toggle(r),
         ROW_STEP | ROW_VOLUME => {

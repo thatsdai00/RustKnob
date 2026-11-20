@@ -21,6 +21,7 @@ use crate::text::{raster_face, TextBmp};
 /// One device as the strip shows it.
 #[derive(Clone, PartialEq)]
 pub struct Item {
+    pub id: u32, // its card: a click posts tray::BATTERY_ID + id, as its tray icon does
     pub kind: Kind,
     pub bluetooth: bool,
     pub percent: Option<u8>,
@@ -36,6 +37,36 @@ struct Shared {
 }
 
 static SHARED: Mutex<Shared> = Mutex::new(Shared { items: Vec::new(), owner: 0, thread: 0 });
+/// Where each item is on the strip, as drawn last: (from, to) along the strip, its id.
+static SPANS: Mutex<Vec<(i32, i32, u32)>> = Mutex::new(Vec::new());
+
+/// The icon font: Segoe Fluent Icons (Windows 11), else Segoe MDL2 Assets (Windows 10), which share the glyphs
+/// used here. GDI would quietly draw another font for a missing one: the installed fonts are asked once.
+pub fn icon_face() -> &'static str {
+    static FACE: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+    FACE.get_or_init(|| {
+        use windows::Win32::System::Registry::*;
+        let fluent = unsafe { RegGetValueW(HKEY_LOCAL_MACHINE, w!(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts"), w!("Segoe Fluent Icons (TrueType)"), RRF_RT_REG_SZ, None, None, None).is_ok() };
+        if fluent {
+            "Segoe Fluent Icons"
+        } else {
+            "Segoe MDL2 Assets"
+        }
+    })
+}
+
+/// The glyph a kind of device is drawn with.
+pub fn glyph(kind: Kind, bluetooth: bool) -> char {
+    match kind {
+        Kind::Headset => '\u{E7F6}',
+        Kind::Mouse => '\u{E962}',
+        Kind::Keyboard => '\u{E765}',
+        Kind::Gamepad => '\u{E7FC}',
+        Kind::Phone => '\u{E8EA}',
+        Kind::Other if bluetooth => '\u{E702}',
+        Kind::Other => '\u{E772}',
+    }
+}
 const WM_REDRAW: u32 = WM_APP + 1;
 const TICK: usize = 1;
 
@@ -147,7 +178,7 @@ impl Strip {
         let _ = GetClientRect(self.bar, &mut rc);
         let vertical = rc.bottom - rc.top > rc.right - rc.left;
         let h_bar = rc.bottom - rc.top;
-        let face = if self.rebar.0.is_null() { "Segoe Fluent Icons" } else { "Segoe MDL2 Assets" };
+        let face = icon_face();
         let (icon_px, text_px, bolt_px) = (self.px(16), self.px(13), self.px(11));
         // every piece rasterized once: (bitmap, alpha 0..255, color)
         let fg: [u8; 3] = if self.light { [0, 0, 0] } else { [255, 255, 255] };
@@ -158,17 +189,8 @@ impl Strip {
         for it in items {
             let alpha = if it.dim { 120 } else { 255 };
             let low = it.percent.is_some_and(|p| p <= 15) && !it.charging;
-            let glyph = match it.kind {
-                Kind::Headset => '\u{E7F6}',
-                Kind::Mouse => '\u{E962}',
-                Kind::Keyboard => '\u{E765}',
-                Kind::Gamepad => '\u{E7FC}',
-                Kind::Phone => '\u{E8EA}',
-                Kind::Other if it.bluetooth => '\u{E702}',
-                Kind::Other => '\u{E772}',
-            };
             let mut g = Vec::new();
-            if let Some(b) = raster_face(&glyph.to_string(), -icon_px, 400, face) {
+            if let Some(b) = raster_face(&glyph(it.kind, it.bluetooth).to_string(), -icon_px, 400, face) {
                 g.push((b, alpha, fg));
             }
             let text = it.percent.map_or_else(|| "?".to_string(), |p| format!("{p}%"));
@@ -214,9 +236,11 @@ impl Strip {
                 }
             }
         };
+        let mut spans = Vec::new();
         if vertical {
             let mut y = self.px(6);
-            for g in &groups {
+            for (g, it) in groups.iter().zip(items) {
+                let top = y;
                 let row_h = g.iter().map(|b| b.0.h as i32).max().unwrap_or(0);
                 if let Some((icon, a, c)) = g.first() {
                     blit(icon, (w - icon.w as i32) / 2, y, *a, *c);
@@ -228,16 +252,22 @@ impl Strip {
                     x += b.w as i32;
                 }
                 y += row_h * 2 + self.px(2);
+                spans.push((top, y, it.id));
             }
         } else {
             let mut x = pad;
-            for g in &groups {
+            for (g, it) in groups.iter().zip(items) {
+                let from = x;
                 for (b, a, c) in g {
                     blit(b, x, (h - b.h as i32) / 2, *a, *c);
                     x += b.w as i32 + gap;
                 }
                 x += between - gap;
+                spans.push((from - between / 2, x - between / 2, it.id));
             }
+        }
+        if let Ok(mut s) = SPANS.lock() {
+            *s = spans;
         }
         present(self.hwnd, &px, w, h);
         self.width = w;
@@ -333,10 +363,20 @@ unsafe fn present(hwnd: HWND, px: &[u32], w: i32, h: i32) {
 unsafe extern "system" fn proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     match msg {
         WM_MOUSEACTIVATE => LRESULT(MA_NOACTIVATE as isize),
-        // a click is the tray icon's: left opens settings, right the menu
+        // left: the card of the device under the pointer (as a click on its tray icon); right: the tray menu
         WM_LBUTTONUP | WM_RBUTTONUP => {
             let owner = SHARED.lock().map(|s| s.owner).unwrap_or(0);
-            let _ = PostMessageW(HWND(owner as _), crate::tray::WM_TRAY, WPARAM(0), LPARAM(msg as isize));
+            let (x, y) = ((lp.0 & 0xffff) as i16 as i32, (lp.0 >> 16 & 0xffff) as i16 as i32);
+            let mut rc = RECT::default();
+            let _ = GetClientRect(hwnd, &mut rc);
+            let along = if rc.bottom > rc.right { y } else { x }; // a vertical strip lists them top to bottom
+            let id = SPANS.lock().ok().and_then(|s| s.iter().find(|(a, b, _)| along >= *a && along < *b).map(|s| s.2));
+            let wp = match (msg, id) {
+                (WM_LBUTTONUP, Some(id)) => crate::tray::BATTERY_ID + id,
+                (WM_LBUTTONUP, None) => return LRESULT(0), // between two devices: nothing
+                _ => 0,
+            };
+            let _ = PostMessageW(HWND(owner as _), crate::tray::WM_TRAY, WPARAM(wp as usize), LPARAM(msg as isize));
             LRESULT(0)
         }
         _ => DefWindowProcW(hwnd, msg, wp, lp),

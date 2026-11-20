@@ -39,6 +39,7 @@ pub struct MouseOther {
 
 pub struct MouseView<'a> {
     pub picture: Option<&'a Picture>,
+    pub glyph: Option<&'a TextBmp>, // a device with no picture: its kind's icon in its place
     pub others: &'a [MouseOther], // the other plugged-in mice, a row each under the card
     pub dpi: Option<&'a TextBmp>,     // the DPI now
     pub dpi_old: Option<&'a TextBmp>, // the one it rolls away from, while `roll` < 1
@@ -337,13 +338,20 @@ fn picture_at(p: &mut Px, pic: &Picture, x: f32, y: f32, h: f32, unit: f32, alph
 
 /// How wide the mouse's picture is at height `h`.
 fn art_width(m: &MouseView, h: f32) -> f32 {
-    h * m.picture.map_or(2.0, |pic| pic.aspect())
+    h * m.picture.map_or(if m.glyph.is_some() { 1.0 } else { 2.0 }, |pic| pic.aspect())
 }
 
-/// The mouse's picture, `h` tall, its left edge at x = 0 and centered on y = 0.
+/// The mouse's picture (or its kind's icon), `h` tall, its left edge at x = 0 and centered on y = 0.
 fn mouse_art(p: &mut Px, m: &MouseView, x: f32, y: f32, h: f32, unit: f32, alpha: f32, light: bool) {
-    let Some(pic) = m.picture else { return };
-    picture_at(p, pic, x - art_width(m, h) / 2.0, y, h, unit, alpha, light);
+    let x = x - art_width(m, h) / 2.0;
+    if let Some(pic) = m.picture {
+        picture_at(p, pic, x, y, h, unit, alpha, light);
+    } else if let Some(g) = m.glyph {
+        // the icon's line height fills `h`
+        let k = g.h as f32 / h;
+        let a = g.sample(x * k + g.w as f32 / 2.0, y * k + g.h as f32 / 2.0);
+        p.over(if light { [0.12, 0.12, 0.14] } else { [1.0, 1.0, 1.0] }, alpha * a);
+    }
 }
 
 /// A line of text `view` wide, centered on (x, y) = 0, that rolls: `dy` moves it, `a` fades it, and it is cut
@@ -790,9 +798,12 @@ fn row_spans(kind: Kind, s: &Scene, ty: f32) -> Option<Spans> {
         Kind::Settings => {
             let v = s.settings.as_ref()?;
             let mut sp = Spans::new();
+            if ty < ui::PAD + ui::TAB_H {
+                return None; // the tab bar: drawn whole
+            }
             let Some(row) = ui::row_at(ty) else { return Some(sp) };
-            let ry = (ty - ui::PAD - row as f32 * ui::ROW_H - ui::ROW_H / 2.0).abs(); // from the row center
-            let w = ui::SETTINGS.0;
+            let ry = (ty - ui::row_top(row) - ui::ROW_H / 2.0).abs(); // from the row center
+            let w = ui::SETTINGS_W;
             let field_row = ui::value_index(row).is_some();
             if v.hover == Some(row) {
                 sp.add(6.0, w - 6.0);
@@ -1058,6 +1069,26 @@ fn song_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32) {
     }
 }
 
+/// The settings' tab names, the one on show on a soft pill, a hairline under them.
+fn tab_bar(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, v: &SettingsView, ca: f32) {
+    let pal = &s.pal;
+    let n = ui::TABS.len();
+    let tw = (ui::SETTINGS_W - ui::PAD * 2.0) / n as f32;
+    let cy = ui::PAD + ui::TAB_H / 2.0 - 2.0;
+    let i = (((tx - ui::PAD) / tw).floor().max(0.0) as usize).min(n - 1);
+    let cx = ui::PAD + (i as f32 + 0.5) * tw;
+    let on = i == ui::tab();
+    if on {
+        p.over(pal.fg, ca * 0.13 * cov(rrect(tx - cx, ty - cy, tw / 2.0 - 3.0, ui::TAB_H / 2.0 - 6.0, 10.0), aa));
+    }
+    if let Some(label) = v.labels.get(ui::ROWS + i) {
+        let wl = label.size().0;
+        p.over(if on { pal.text } else { pal.dim }, ca * text_left(label, tx - (cx - wl / 2.0), ty - cy, tw, 0.0, 1.0 / aa));
+    }
+    let line = rrect(tx - ui::SETTINGS_W / 2.0, ty - (ui::PAD + ui::TAB_H - 1.0), ui::SETTINGS_W / 2.0 - 16.0, 0.5, 0.5);
+    p.over(pal.fg, ca * 0.10 * cov(line, aa));
+}
+
 /// Text that is wider than its box shows its end (where you are typing).
 fn text_tail(tb: &TextBmp, x: f32, ty: f32, view: f32, unit: f32) -> f32 {
     if x < 0.0 || x > view {
@@ -1069,10 +1100,15 @@ fn text_tail(tb: &TextBmp, x: f32, ty: f32, view: f32, unit: f32) -> f32 {
 
 fn settings_content(p: &mut Px, tx: f32, ty: f32, aa: f32, s: &Scene, ca: f32, steppers: &[Digits; 2]) {
     let pal = &s.pal;
-    let (Some(v), Some(row)) = (&s.settings, ui::row_at(ty)) else { return };
-    let ry = ty - ui::PAD - row as f32 * ui::ROW_H - ui::ROW_H / 2.0; // from the row center
-    let w = ui::SETTINGS.0;
+    let w = ui::SETTINGS_W;
     let unit = 1.0 / aa;
+    let Some(v) = &s.settings else { return };
+    if ty < ui::PAD + ui::TAB_H {
+        tab_bar(p, tx, ty, aa, s, v, ca);
+        return;
+    }
+    let Some(row) = ui::row_at(ty) else { return };
+    let ry = ty - ui::row_top(row) - ui::ROW_H / 2.0; // from the row center
     let field_row = ui::value_index(row).is_some();
 
     if v.hover == Some(row) {

@@ -62,7 +62,7 @@ fn segments() -> Vec<Seg> {
         Seg { fade: false, ..seg(32.5, Kind::Upload, ui::UPLOAD, U) },
         seg(34.0, Kind::Song, dot, U),
         seg(36.0, Kind::Song, ui::SONG, U),
-        Seg { radius: ui::CAPSULE_RADIUS, ..seg(38.0, Kind::Settings, ui::SETTINGS, 1.2) },
+        Seg { radius: ui::CAPSULE_RADIUS, ..seg(38.0, Kind::Settings, ui::settings_size(), 1.2) },
         seg(42.0, Kind::Settings, dot, U),
     ]
 }
@@ -288,7 +288,7 @@ pub fn video(dir: &str, ffmpeg: &str, out: &str) {
     let dpi_label = keep(raster("DPI", -48, 700));
     let dpi_at = [21.5, 22.5, 23.5];
 
-    let labels: &'static Vec<TextBmp> = keep(en.labels.iter().filter_map(|l| raster(l, -52, 400)).collect());
+    let labels: &'static Vec<TextBmp> = keep(en.labels.iter().chain(en.tabs.iter()).filter_map(|l| raster(l, -52, 400)).collect());
     let values: &'static Vec<(TextBmp, bool)> = keep(
         [("my-private-topic", false), ("https://ntfy.sh", false), ("click to type", true), ("notification.mp3", false), ("Auto", false), ("Auto", false)]
             .iter()
@@ -433,10 +433,11 @@ pub fn video(dir: &str, ffmpeg: &str, out: &str) {
         let dpi_i = dpi_at.iter().filter(|&&a| t >= a).count();
         let roll = if dpi_i == 0 { 1.0 } else { ease((t - dpi_at[dpi_i - 1]) / 0.35) };
         sc.mouse = Some(if t < 20.5 {
-            MouseView { picture: viper, others: &[], dpi: None, dpi_old: None, roll: 1.0, dpi_label: None, stage: 1.0, stages: 4, title: viper_name.as_ref(), sub: linked.as_ref(), warn: None, percent: pct.as_ref(), fill: 0.82, level: 0, charging: false, intro: ((t - 18.0) / 1.0).clamp(0.0, 1.0) }
+            MouseView { picture: viper, glyph: None, others: &[], dpi: None, dpi_old: None, roll: 1.0, dpi_label: None, stage: 1.0, stages: 4, title: viper_name.as_ref(), sub: linked.as_ref(), warn: None, percent: pct.as_ref(), fill: 0.82, level: 0, charging: false, intro: ((t - 18.0) / 1.0).clamp(0.0, 1.0) }
         } else {
             MouseView {
                 picture: light,
+                glyph: None,
                 others: &[],
                 dpi: dpis[dpi_i].as_ref(),
                 dpi_old: if dpi_i > 0 && roll < 1.0 { dpis[dpi_i - 1].as_ref() } else { None },

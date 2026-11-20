@@ -472,7 +472,7 @@ impl State {
         match self.kind {
             Kind::Volume => (ui::VOLUME_W, if self.sub().is_some() { ui::VOLUME_H_SUB } else { ui::VOLUME_H }),
             Kind::Song => ui::SONG,
-            Kind::Settings => ui::SETTINGS,
+            Kind::Settings => ui::settings_size(),
             Kind::Knob => ui::KNOB,
             Kind::Upload => ui::UPLOAD,
             Kind::Drop => ui::DROP,
@@ -1232,6 +1232,7 @@ struct MouseUi {
     battery_text: Option<(u8, bool)>, // what `percent` was made from
     others: Vec<render::MouseOther>, // the other plugged-in mice, a row each under the card
     others_from: Vec<mouse::Other>,  // what `others` was made from
+    glyph: Option<TextBmp>,          // a device of battery/ (no picture): its kind's icon
 }
 
 impl MouseUi {
@@ -1242,6 +1243,7 @@ impl MouseUi {
     fn view(&self) -> render::MouseView<'_> {
         render::MouseView {
             picture: self.model.and_then(mouse::picture),
+            glyph: self.glyph.as_ref(),
             others: &self.others,
             dpi: self.dpi.as_ref(),
             dpi_old: self.dpi_old.as_ref(),
@@ -1293,7 +1295,15 @@ impl MouseUi {
         if self.model != Some(model) {
             self.model = Some(model);
             self.title = text::raster(model.name(), -64, 700);
+            self.glyph = None;
         }
+    }
+
+    /// A device of battery/: its name, and its kind's icon where a mouse's picture goes.
+    fn set_device(&mut self, name: &str, kind: crate::battery::Kind, bluetooth: bool) {
+        self.model = None;
+        self.title = text::raster(name, -64, 700);
+        self.glyph = text::raster_face(&crate::taskbar::glyph(kind, bluetooth).to_string(), -200, 400, crate::taskbar::icon_face());
     }
 }
 
@@ -1546,18 +1556,39 @@ unsafe fn tray_refresh(hwnd: HWND) {
     if s.cfg.mouse {
         for o in followed().into_iter().chain(mouse::others()) {
             let kind = if o.model.is_headset() { Kind::Headset } else { Kind::Mouse };
-            icons.push(tray::Battery { id: o.model as u32, percent: o.battery, charging: o.charging, name: o.model.name().to_string() });
-            strip.push(crate::taskbar::Item { kind, bluetooth: false, percent: o.battery, charging: o.charging, full: false, dim: false });
+            let id = o.model as u32;
+            icons.push(tray::Battery { id, percent: o.battery, charging: o.charging, name: o.model.name().to_string() });
+            strip.push(crate::taskbar::Item { id, kind, bluetooth: false, percent: o.battery, charging: o.charging, full: false, dim: false });
         }
         for d in crate::battery::devices() {
-            // an id of its own, the same every time (16 and up: the cards' models are below)
-            let id = 16 + d.key.bytes().fold(2166136261u32, |h, b| (h ^ b as u32).wrapping_mul(16777619)) % 60000;
+            let id = battery_id(&d.key);
             icons.push(tray::Battery { id, percent: d.percent, charging: d.charging, name: d.name.clone() });
-            strip.push(crate::taskbar::Item { kind: d.kind, bluetooth: d.bluetooth, percent: d.percent, charging: d.charging, full: d.full, dim: d.dim });
+            strip.push(crate::taskbar::Item { id, kind: d.kind, bluetooth: d.bluetooth, percent: d.percent, charging: d.charging, full: d.full, dim: d.dim });
         }
     }
     tray::batteries(hwnd, if s.cfg.tray_battery { &icons } else { &[] }, s.strings().mouse_charging);
     crate::taskbar::show(hwnd, if s.cfg.taskbar_battery { strip } else { Vec::new() });
+}
+
+/// A device of battery/'s number for its tray icon and its card: the same every time, 16 and up (the cards'
+/// own models are below).
+fn battery_id(key: &str) -> u32 {
+    16 + key.bytes().fold(2166136261u32, |h, b| (h ^ b as u32).wrapping_mul(16777619)) % 60000
+}
+
+/// A click on a battery/ device (its tray icon, its place on the taskbar): its card, with its icon, name and
+/// battery right now.
+unsafe fn battery_card(hwnd: HWND, id: u32) {
+    let s = st();
+    let Some(d) = crate::battery::devices().into_iter().find(|d| battery_id(&d.key) == id) else { return };
+    let t = s.strings();
+    s.mouse.set_battery(t, d.percent, d.charging);
+    s.mouse.set_others(t, Vec::new());
+    s.mouse.set_device(&d.name, d.kind, d.bluetooth);
+    if s.live() && is_mouse(s.kind) {
+        s.apply_targets();
+    }
+    link_card(hwnd, if d.charging { t.mouse_charging } else { t.mouse_on_battery });
 }
 
 /// A click on a device's battery icon: its card, as when it connects, with its battery right now.
@@ -1796,7 +1827,9 @@ fn prepare_settings(s: &mut State) {
 fn load_settings(s: &mut State) {
     s.refresh_values();
     if s.labels.is_empty() {
-        s.labels = s.strings().labels.iter().filter_map(|l| text::raster(l, -52, 400)).collect();
+        // the rows' names, then the tabs' (after ui::ROWS)
+        let t = s.strings();
+        s.labels = t.labels.iter().chain(t.tabs.iter()).filter_map(|l| text::raster(l, -52, 400)).collect();
     }
     s.autostart = autostart::is_enabled();
     s.toggles = s.toggle_targets();
@@ -1829,6 +1862,15 @@ unsafe fn settings_click(hwnd: HWND, screen: POINT) {
     }
     let Some(hit) = hit else { return };
     match hit {
+        ui::Hit::Tab(t) => {
+            if t != ui::tab() {
+                ui::set_tab(t);
+                s.hover = None;
+                s.apply_targets(); // the panel takes the new tab's height
+                frames(hwnd);
+            }
+            return;
+        }
         ui::Hit::Text(field) => {
             start_edit(s, field);
             frames(hwnd);
@@ -2032,7 +2074,7 @@ unsafe fn panel_hover(hwnd: HWND) {
         Kind::Settings => {
             let hover = if inside { ui::row_at(ty) } else { None };
             let old = std::mem::replace(&mut s.hover, hover);
-            (old != hover).then_some((old, hover, (|i| (ui::PAD + i as f32 * ui::ROW_H, ui::ROW_H)) as fn(usize) -> (f32, f32)))
+            (old != hover).then_some((old, hover, (|i| (ui::row_top(i), ui::ROW_H)) as fn(usize) -> (f32, f32)))
         }
         Kind::History => {
             let hover = if inside { ui::hist_row_at(ty).filter(|&i| i < s.hist_rows.len()) } else { None };
@@ -2693,10 +2735,14 @@ pub unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPAR
                 begin_close(hwnd);
             }
         }
-        // a device's battery icon (its id is BATTERY_ID + the model): a click shows its card
-        tray::WM_TRAY if wp.0 as u32 >= tray::BATTERY_ID && wp.0 as u32 - tray::BATTERY_ID < 16 => {
+        // a device's battery icon or its place on the taskbar strip: its card (the cards' own models are
+        // below 16, battery/'s devices from 16)
+        tray::WM_TRAY if wp.0 as u32 >= tray::BATTERY_ID => {
             if (lp.0 & 0xFFFF) as u32 == WM_LBUTTONUP {
-                device_card(hwnd, wp.0 - tray::BATTERY_ID as usize);
+                match wp.0 - tray::BATTERY_ID as usize {
+                    id @ 0..16 => device_card(hwnd, id),
+                    id => battery_card(hwnd, id as u32),
+                }
             }
         }
         tray::WM_TRAY => match (lp.0 & 0xFFFF) as u32 {
