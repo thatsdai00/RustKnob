@@ -159,6 +159,9 @@ pub fn payload(report: &[u8]) -> &[u8] {
     }
 }
 
+// the handle and its event belong to whoever holds the HidIo: one thread at a time
+unsafe impl Send for HidIo {}
+
 impl Drop for HidIo {
     fn drop(&mut self) {
         unsafe {
@@ -204,6 +207,17 @@ impl HidIo {
             };
             Some(HidIo { handle, event, pid: info.pid, out_len: info.output_len as usize, in_len: info.input_len as usize, feat_len: info.feature_len as usize })
         }
+    }
+
+    /// (output, feature) report sizes, report id included.
+    pub fn lens(&self) -> (usize, usize) {
+        (self.out_len, self.feat_len)
+    }
+
+    /// Sends `report` (its id first) over the control pipe (SET_REPORT), padded.
+    pub fn set_output(&mut self, report: &[u8]) -> bool {
+        let out = self.padded(report);
+        unsafe { HidD_SetOutputReport(self.handle, out.as_ptr() as *const _, out.len() as u32) }.as_bool()
     }
 
     /// Forgets the input reports waiting in the driver's queue (so the next read is an answer, not an old report).

@@ -1,0 +1,30 @@
+{
+  "families": { "razer": 1, "rongyuan": 1 },
+  "order": ["razer", "rongyuan"],
+  "ids": {
+    "1532:*": "razer",
+    "0DB0:197E": "rongyuan", "0DB0:8E9A": "rongyuan", "145F:0376": "rongyuan", "145F:038D": "rongyuan",
+    "14A5:C045": "rongyuan", "25AA:2008": "rongyuan", "25AA:4008": "rongyuan", "25AA:4018": "rongyuan",
+    "3151:4011": "rongyuan", "3151:4014": "rongyuan", "3151:4017": "rongyuan", "3151:4021": "rongyuan",
+    "3151:4027": "rongyuan", "3151:402D": "rongyuan", "3151:4038": "rongyuan", "3151:5006": "rongyuan",
+    "3151:5007": "rongyuan", "3151:5008": "rongyuan", "3151:5020": "rongyuan", "3151:5026": "rongyuan",
+    "3151:502B": "rongyuan", "3151:5031": "rongyuan", "3151:5037": "rongyuan", "3151:5038": "rongyuan",
+    "3151:503D": "rongyuan", "3151:503F": "rongyuan", "3151:5040": "rongyuan", "3151:5042": "rongyuan",
+    "3151:5045": "rongyuan", "3151:504B": "rongyuan", "3151:504E": "rongyuan", "3151:5050": "rongyuan",
+    "3151:5052": "rongyuan", "3151:5055": "rongyuan", "3151:505A": "rongyuan",
+    "342D:E3E0": "rongyuan", "342D:E3E1": "rongyuan", "342D:E3E2": "rongyuan", "342D:E3E6": "rongyuan",
+    "342D:E3E7": "rongyuan", "342D:E3E8": "rongyuan", "342D:E3F5": "rongyuan", "342D:E3F6": "rongyuan",
+    "342D:E3F7": "rongyuan", "342D:E3FB": "rongyuan", "342D:E3FC": "rongyuan", "342D:E3FD": "rongyuan",
+    "347A:A302": "rongyuan", "347A:A305": "rongyuan",
+    "374A:A205": "rongyuan", "374A:A217": "rongyuan", "374A:A220": "rongyuan", "374A:A223": "rongyuan",
+    "374A:A226": "rongyuan", "374A:A229": "rongyuan", "374A:A234": "rongyuan", "374A:A237": "rongyuan",
+    "374A:A251": "rongyuan", "374A:A263": "rongyuan", "374A:A268": "rongyuan", "374A:A311": "rongyuan",
+    "374A:A314": "rongyuan", "374A:A319": "rongyuan", "374A:A322": "rongyuan", "374A:A329": "rongyuan",
+    "374A:A355": "rongyuan",
+    "379A:1804": "rongyuan", "379A:1807": "rongyuan", "38A9:0002": "rongyuan",
+    "38EE:0000": "rongyuan", "38EE:0002": "rongyuan", "38EE:0039": "rongyuan",
+    "391D:1A04": "rongyuan", "391D:1A08": "rongyuan", "391D:1A0E": "rongyuan", "391D:1A13": "rongyuan",
+    "391D:1A25": "rongyuan", "391D:1A2B": "rongyuan", "391D:1A34": "rongyuan", "391D:2017": "rongyuan",
+    "391D:2A05": "rongyuan"
+  }
+}

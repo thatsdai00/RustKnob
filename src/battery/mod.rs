@@ -23,8 +23,10 @@ use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 use crate::hid::HidInfo;
 
 mod bt;
+mod catalog;
 mod generic;
 mod pnp;
+mod script;
 
 /// What a device is, for its icon.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -185,7 +187,7 @@ impl Scan {
 type Driver = fn(&mut Scan, &mut Vec<Box<dyn Source>>);
 
 /// Every driver, in the order they get to claim (vendor protocols first, the generic ways last).
-const DRIVERS: &[Driver] = &[bt::driver, generic::driver];
+const DRIVERS: &[Driver] = &[catalog::driver, bt::driver, generic::driver];
 
 // ---- the thread ----------------------------------------------------------------
 
@@ -352,6 +354,7 @@ mod tests {
     #[ignore]
     fn read_all() {
         let t = std::time::Instant::now();
+        // the repository's devices folder: a test runs from targeteleasedeps, two levels too deep for Store
         let mut sources = super::find_sources(Vec::new());
         println!("{} sources in {:?}", sources.len(), t.elapsed());
         for s in &mut sources {
@@ -369,4 +372,34 @@ mod tests {
 /// Percent on a lithium cell's curve: `curve` falling, (millivolts, percent), straight lines in between.
 pub fn on_curve(curve: &[(u16, u8)], mv: u16) -> u8 {
     crate::hid::percent_on(curve, mv)
+}
+
+#[cfg(test)]
+mod raw {
+    /// Raw answers of the two devices on this PC: `cargo test --release raw_dump -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn raw_dump() {
+        let cols = unsafe { crate::hid::hid_list("") };
+        for c in cols.iter().filter(|c| (c.vid == 0x3151 && c.feature_len >= 7 && c.interface == Some(2)) || (c.vid == 0x1532 && c.feature_len == 91)) {
+            let Some(mut io) = crate::hid::HidIo::open_feature(c) else { continue };
+            println!("{:04X}:{:04X} mi {:?} page {:04X}:{:04X} feat {}", c.vid, c.pid, c.interface, c.usage_page, c.usage, c.feature_len);
+            for _ in 0..3 {
+                if c.vid == 0x3151 {
+                    io.set_feature(&[0, 0xf7]);
+                } else {
+                    let mut f = [0u8; 91];
+                    f[2] = 0x1f;
+                    f[6] = 2;
+                    f[7] = 7;
+                    f[8] = 0x80;
+                    f[89] = f[3..89].iter().fold(0, |a, &b| a ^ b);
+                    io.set_feature(&f);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(30));
+                let r = io.get_feature(0).unwrap_or_default();
+                println!("  {:02X?}", &r[..r.len().min(12)]);
+            }
+        }
+    }
 }
