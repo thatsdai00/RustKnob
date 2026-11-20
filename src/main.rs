@@ -1,6 +1,7 @@
 #![windows_subsystem = "windows"]
 
 mod audio;
+mod battery;
 mod autostart;
 mod clipboard;
 mod config;
@@ -10,6 +11,7 @@ mod device;
 mod dragsrc;
 mod dropzone;
 mod gfx;
+mod hid;
 mod history;
 mod hook;
 mod install;
