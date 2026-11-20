@@ -1,43 +1,52 @@
-// HKCU Run entry that starts the knob at login.
+// Starting at login, the two ways Windows itself offers and shows under Task Manager > Startup apps: the HKCU Run
+// entry and a shortcut in the Startup folder. Explorer goes through them apart, so when one is skipped at a login
+// the other still starts it (a second start finds the first one running and exits). Nothing hidden: no
+// scheduled task, no PowerShell. Earlier builds also made a logon task through PowerShell; that is removed.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use windows::core::w;
 use windows::Win32::System::Registry::*;
 
 const RUN_KEY: windows::core::PCWSTR = w!(r"Software\Microsoft\Windows\CurrentVersion\Run");
 
+/// The shortcut in the user's Startup folder.
+fn startup_link() -> PathBuf {
+    crate::install::env_path("APPDATA").join(r"Microsoft\Windows\Start Menu\Programs\Startup\RustKnob.lnk")
+}
+
 pub fn is_enabled() -> bool {
     unsafe {
         let mut key = HKEY::default();
-        if RegOpenKeyExW(HKEY_CURRENT_USER, RUN_KEY, 0, KEY_QUERY_VALUE, &mut key).is_err() {
-            return false;
-        }
-        let found = RegQueryValueExW(key, w!("RustKnob"), None, None, None, None).is_ok();
-        let _ = RegCloseKey(key);
-        found
+        let run = RegOpenKeyExW(HKEY_CURRENT_USER, RUN_KEY, 0, KEY_QUERY_VALUE, &mut key).is_ok() && {
+            let found = RegQueryValueExW(key, w!("RustKnob"), None, None, None, None).is_ok();
+            let _ = RegCloseKey(key);
+            found
+        };
+        run || startup_link().exists()
     }
 }
 
-/// Starts this exe at login (or stops doing so). For the settings switch: the logon task, which takes
-/// PowerShell a second or two, is made on a thread of its own (the UI thread also runs the input hooks).
+/// Starts this exe at login (or stops doing so): the settings switch.
 pub fn set(on: bool) {
-    let exe = std::env::current_exe().ok();
-    let on = on && exe.is_some();
-    let exe = exe.unwrap_or_default();
-    set_entry(on, &exe);
-    std::thread::spawn(move || {
-        // one at a time, and always the latest choice: a quick on-off must not leave the task behind
-        static ONE: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let _one = ONE.lock().unwrap_or_else(|e| e.into_inner());
-        set_task(is_enabled(), &exe);
-    });
+    match std::env::current_exe() {
+        Ok(exe) => set_for(on, &exe),
+        Err(_) => set_for(false, Path::new("")),
+    }
 }
 
-/// Starts `exe` at login (or removes the entry), and waits until it is done (the installer exits right after).
+/// Starts `exe` at login (or removes both entries).
 pub fn set_for(on: bool, exe: &Path) {
     set_entry(on, exe);
-    set_task(on, exe);
+    let link = startup_link();
+    if on {
+        unsafe {
+            let _ = crate::install::create_shortcut(exe, &link);
+        }
+    } else {
+        let _ = std::fs::remove_file(link);
+    }
+    remove_task();
 }
 
 /// The Run entry.
@@ -58,22 +67,38 @@ fn set_entry(on: bool, exe: &Path) {
     }
 }
 
-/// Windows did not always run the Run entry at login, so a logon task starts it too
-/// (a second start just finds the first one and exits).
-fn set_task(on: bool, exe: &Path) {
-    // PowerShell also ends a '...' string at the typographic single quotes: double them all
-    let exe = exe.to_string_lossy().replace(['\'', '\u{2018}', '\u{2019}', '\u{201A}', '\u{201B}'], "''");
-    let script = if on {
-        format!(
-            "$a = New-ScheduledTaskAction -Execute '{exe}';              $t = New-ScheduledTaskTrigger -AtLogOn -User ([Security.Principal.WindowsIdentity]::GetCurrent().Name);              $s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew;              Register-ScheduledTask -TaskName RustKnob -Action $a -Trigger $t -Settings $s -Force | Out-Null"
-        )
-    } else {
-        "Unregister-ScheduledTask -TaskName RustKnob -Confirm:$false -ErrorAction SilentlyContinue".to_string()
+/// The logon task earlier builds made, when it is still there (a look at the registry first: Windows' own
+/// schtasks only runs when there is something to remove).
+pub fn remove_task() {
+    let there = unsafe {
+        let mut key = HKEY::default();
+        let open = RegOpenKeyExW(HKEY_LOCAL_MACHINE, w!(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tree\RustKnob"), 0, KEY_QUERY_VALUE, &mut key).is_ok();
+        if open {
+            let _ = RegCloseKey(key);
+        }
+        open
     };
-    powershell(&script);
+    if there {
+        let schtasks = crate::install::system_exe(r"System32\schtasks.exe");
+        crate::install::start(&schtasks, &["/Delete", "/TN", "RustKnob", "/F"], false, true);
+    }
 }
 
-/// Runs `script` in a hidden PowerShell and waits for it.
-pub fn powershell(script: &str) {
-    crate::install::start(&crate::install::powershell(), &["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-Command", script], true, true);
+#[cfg(test)]
+mod tests {
+    /// On, then off, on this PC's real Run key and Startup folder: `cargo test autostart -- --ignored`
+    #[test]
+    #[ignore]
+    fn on_and_off() {
+        unsafe {
+            let _ = windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_APARTMENTTHREADED);
+        }
+        let exe = std::env::temp_dir().join("rustknob-autostart-test.exe");
+        super::set_for(true, &exe);
+        assert!(super::is_enabled());
+        assert!(super::startup_link().exists(), "startup shortcut");
+        super::set_for(false, &exe);
+        assert!(!super::is_enabled());
+        assert!(!super::startup_link().exists());
+    }
 }

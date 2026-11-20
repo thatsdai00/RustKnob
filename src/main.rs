@@ -134,8 +134,10 @@ fn main() {
 
         let _single_instance = CreateMutexW(None, true, w!("RustKnobSingleInstance"));
         if GetLastError() == ERROR_ALREADY_EXISTS {
+            log_start("already running, this start exits");
             return;
         }
+        log_start("started");
 
         efficiency_mode(true);
         let _ = OleInitialize(None); // COM (single-threaded apartment) plus drag and drop
@@ -197,6 +199,26 @@ fn main() {
             let _ = UnhookWindowsHookEx(h);
         }
     }
+}
+
+/// A line in %LOCALAPPDATA%\RustKnob\start.txt for every start (with its arguments): when it did not come up
+/// at a login, this tells whether Windows started it at all. Kept to its last 4 KB.
+fn log_start(what: &str) {
+    let dir = std::path::PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_default()).join("RustKnob");
+    if !dir.is_absolute() {
+        return;
+    }
+    let file = dir.join("start.txt");
+    let mut text = std::fs::read_to_string(&file).unwrap_or_default();
+    if text.len() > 4096 {
+        let cut = text.len() - 3072;
+        text = text[text[cut..].find('\n').map_or(cut, |i| cut + i + 1)..].to_string();
+    }
+    let t = unsafe { windows::Win32::System::SystemInformation::GetLocalTime() };
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    text.push_str(&format!("{}-{:02}-{:02} {:02}:{:02}:{:02}  {what}  {}\n", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond, args.join(" ")));
+    let _ = std::fs::create_dir_all(&dir);
+    let _ = std::fs::write(file, text);
 }
 
 /// Idle: low priority + EcoQoS, so the capsule never competes with a game. While it is on screen (`on` false)

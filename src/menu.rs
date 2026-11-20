@@ -22,7 +22,7 @@ pub fn remove_old_entries() {
         let _ = RegDeleteKeyW(HKEY_CURRENT_USER, OLD_VERB);
     }
     if package_registered() {
-        crate::autostart::powershell(&format!("Get-AppxPackage -Name '{PACKAGE_NAME}' | Remove-AppxPackage"));
+        crate::install::run_powershell(&format!("Get-AppxPackage -Name '{PACKAGE_NAME}' | Remove-AppxPackage"));
     }
     notify_shell();
 }

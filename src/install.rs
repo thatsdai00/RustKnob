@@ -154,7 +154,7 @@ pub fn install(opts: Options, _t: &Strings) -> std::io::Result<PathBuf> {
     autostart::set_for(opts.autostart, &target);
     menu::remove_old_entries(); // the Explorer right-click entry of earlier builds is gone (drag and drop replaced it)
     unsafe {
-        let _ = create_shortcut(&target);
+        let _ = create_shortcut(&target, &shortcut_path());
         register_uninstall(&target);
     }
     Ok(target)
@@ -176,6 +176,11 @@ pub fn system_exe(relative: &str) -> PathBuf {
 
 pub fn powershell() -> PathBuf {
     system_exe(r"System32\WindowsPowerShell\v1.0\powershell.exe")
+}
+
+/// Runs `script` in a hidden PowerShell and waits for it (only to take away what earlier builds left).
+pub fn run_powershell(script: &str) {
+    start(&powershell(), &["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-Command", script], true, true);
 }
 
 /// Starts `exe` with `args` (quoted the way programs split their command line); `wait` until it ends, `hidden`
@@ -243,13 +248,16 @@ pub fn launch_installed() {
     launch(&installed_exe());
 }
 
-unsafe fn create_shortcut(target: &Path) -> windows::core::Result<()> {
+/// A shortcut at `at` that starts `target` (the Start menu's, the Startup folder's).
+pub unsafe fn create_shortcut(target: &Path, at: &Path) -> windows::core::Result<()> {
     let link: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)?;
     link.SetPath(&HSTRING::from(target.as_os_str()))?;
-    link.SetWorkingDirectory(&HSTRING::from(install_dir().as_os_str()))?;
+    if let Some(dir) = target.parent() {
+        link.SetWorkingDirectory(&HSTRING::from(dir.as_os_str()))?;
+    }
     link.SetDescription(w!("RustKnob"))?;
     let file: IPersistFile = link.cast()?;
-    file.Save(&HSTRING::from(shortcut_path().as_os_str()), true)
+    file.Save(&HSTRING::from(at.as_os_str()), true)
 }
 
 unsafe fn set_str(key: HKEY, name: PCWSTR, value: &str) {
