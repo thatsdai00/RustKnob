@@ -19,7 +19,6 @@ mod json;
 mod lyrics;
 mod discord;
 mod mouse;
-mod menu;
 mod i18n;
 mod island;
 mod media;
@@ -62,7 +61,6 @@ fn main() {
                 }
                 return;
             }
-            Some("--remove-ffuploader") => return menu::remove_ffuploader(),
             #[cfg(feature = "demo")]
             Some("--demo") => {
                 demo::run(&std::env::args().nth(2).unwrap_or_else(|| "docs/img".into()));

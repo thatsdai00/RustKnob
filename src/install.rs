@@ -12,7 +12,7 @@ use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use crate::i18n::Strings;
-use crate::{autostart, menu, CLASS};
+use crate::{autostart, CLASS};
 
 const UNINSTALL_KEY: PCWSTR = w!(r"Software\Microsoft\Windows\CurrentVersion\Uninstall\RustKnob");
 
@@ -80,7 +80,7 @@ pub fn running_installed() -> bool {
 /// "don't install" once before.
 pub fn portable() -> bool {
     let dir = exe_dir();
-    dir.join("rustknob.ini").exists() || dir.join("digitalknob.ini").exists() || dir.join("portable.flag").exists()
+    dir.join("rustknob.ini").exists() || dir.join("portable.flag").exists()
 }
 
 pub fn remember_portable() {
@@ -141,18 +141,13 @@ pub fn install(opts: Options, _t: &Strings) -> std::io::Result<PathBuf> {
             copied = std::fs::copy(&me, &target);
         }
         copied?;
-        // settings travel with it (the project's old file name counts too), but never replace the ones of an
-        // installed copy that is being updated
-        let kept = dir.join("rustknob.ini");
-        if !kept.exists() {
-            if let Some(ini) = ["rustknob.ini", "digitalknob.ini"].iter().map(|n| exe_dir().join(n)).find(|p| p.exists()) {
-                let _ = std::fs::copy(ini, kept);
-            }
+        // settings travel with it, but never replace the ones of an installed copy that is being updated
+        let (ini, kept) = (exe_dir().join("rustknob.ini"), dir.join("rustknob.ini"));
+        if !kept.exists() && ini.exists() {
+            let _ = std::fs::copy(ini, kept);
         }
     }
-    remove_legacy();
     autostart::set_for(opts.autostart, &target);
-    menu::remove_old_entries(); // the Explorer right-click entry of earlier builds is gone (drag and drop replaced it)
     unsafe {
         let _ = create_shortcut(&target, &shortcut_path());
         register_uninstall(&target);
@@ -169,19 +164,11 @@ pub fn launch_with(exe: &Path, arg: &str) {
     start(exe, &[arg], false, false);
 }
 
-/// A program in Windows' own folder (powershell, cmd): never one that happens to sit in the current folder.
+/// A program in Windows' own folder (cmd, schtasks): never one that happens to sit in the current folder.
 pub fn system_exe(relative: &str) -> PathBuf {
     PathBuf::from(std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into())).join(relative)
 }
 
-pub fn powershell() -> PathBuf {
-    system_exe(r"System32\WindowsPowerShell\v1.0\powershell.exe")
-}
-
-/// Runs `script` in a hidden PowerShell and waits for it (only to take away what earlier builds left).
-pub fn run_powershell(script: &str) {
-    start(&powershell(), &["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-Command", script], true, true);
-}
 
 /// Starts `exe` with `args` (quoted the way programs split their command line); `wait` until it ends, `hidden`
 /// without a console window. A small stand-in for std::process::Command, which adds ~40 KB to the exe.
@@ -295,37 +282,12 @@ pub fn uninstall(t: &Strings, ask: bool) {
         }
         close_running();
         autostart::set_for(false, Path::new(""));
-        menu::remove_old_entries();
         let _ = std::fs::remove_file(shortcut_path());
         let _ = RegDeleteKeyW(HKEY_CURRENT_USER, UNINSTALL_KEY);
     }
     // a running exe cannot delete itself: a detached shell does it a few seconds later
     delete_later(&install_dir());
     info(t.uninstalled);
-}
-
-/// Removes what the project left behind under its old name (DigitalKnob): the running copy,
-/// autostart entry, shortcut, Apps entry, right-click verb and install folder.
-fn remove_legacy() {
-    unsafe {
-        if let Ok(h) = FindWindowW(w!("DigitalKnobWnd"), PCWSTR::null()) {
-            let _ = PostMessageW(h, WM_CLOSE, WPARAM(0), LPARAM(0));
-            std::thread::sleep(std::time::Duration::from_millis(1200));
-        }
-        let mut run = HKEY::default();
-        if RegOpenKeyExW(HKEY_CURRENT_USER, w!(r"Software\Microsoft\Windows\CurrentVersion\Run"), 0, KEY_SET_VALUE, &mut run).is_ok() {
-            let _ = RegDeleteValueW(run, w!("DigitalKnob"));
-            let _ = RegCloseKey(run);
-        }
-        let _ = RegDeleteKeyW(HKEY_CURRENT_USER, w!(r"Software\Microsoft\Windows\CurrentVersion\Uninstall\DigitalKnob"));
-        let _ = RegDeleteKeyW(HKEY_CURRENT_USER, w!(r"Software\Classes\*\shell\DigitalKnobUpload\command"));
-        let _ = RegDeleteKeyW(HKEY_CURRENT_USER, w!(r"Software\Classes\*\shell\DigitalKnobUpload"));
-    }
-    let _ = std::fs::remove_file(env_path("APPDATA").join(r"Microsoft\Windows\Start Menu\Programs\DigitalKnob.lnk"));
-    let old_dir = env_path("LOCALAPPDATA").join("Programs").join("DigitalKnob");
-    if old_dir.exists() && std::fs::remove_dir_all(&old_dir).is_err() {
-        delete_later(&old_dir); // still locked
-    }
 }
 
 /// Deletes a folder a few seconds from now, from a detached shell (a running exe cannot delete itself).

@@ -221,28 +221,10 @@ fn appdata_dir() -> PathBuf {
     env_path("APPDATA").join("RustKnob")
 }
 
-/// Next to the exe (portable / installed copy), two levels up (cargo's target/release during
-/// development), or in %APPDATA%. A settings file from the project's old name is renamed on the way.
+/// Next to the exe (portable / installed copy), two levels up (cargo's target/release during development), or
+/// in %APPDATA%.
 fn find_ini() -> Option<PathBuf> {
     let dir = exe_dir();
     let up2 = dir.parent().and_then(|p| p.parent()).map(|p| p.to_path_buf());
-    for d in [Some(dir), up2, Some(appdata_dir())].into_iter().flatten() {
-        let (new, old) = (d.join("rustknob.ini"), d.join("digitalknob.ini"));
-        if new.exists() {
-            return Some(new);
-        }
-        if old.exists() && std::fs::rename(&old, &new).is_ok() {
-            return Some(new);
-        }
-    }
-    // %APPDATA%\DigitalKnob\digitalknob.ini from before the rename
-    let legacy = env_path("APPDATA").join("DigitalKnob").join("digitalknob.ini");
-    if legacy.exists() {
-        let target = appdata_dir().join("rustknob.ini");
-        let _ = std::fs::create_dir_all(appdata_dir());
-        if std::fs::copy(&legacy, &target).is_ok() {
-            return Some(target);
-        }
-    }
-    None
+    [Some(dir), up2, Some(appdata_dir())].into_iter().flatten().map(|d| d.join("rustknob.ini")).find(|p| p.exists())
 }

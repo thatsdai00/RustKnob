@@ -1,11 +1,9 @@
-// Upload link history. Same file format as FFUploader's linkler.txt ("time<TAB>name<TAB>link" per
-// line), so its old links show up too. New ones go to %LOCALAPPDATA%\FFUploader\linkler.txt.
+// Upload link history: %LOCALAPPDATA%\RustKnob\linkler.txt, "time<TAB>name<TAB>link" per line.
 
 use std::path::PathBuf;
 use std::sync::Mutex;
 
 use crate::install::env_path;
-use crate::menu;
 
 #[derive(Clone)]
 pub struct Entry {
@@ -39,16 +37,9 @@ fn append_own(text: &str) {
         .and_then(|mut f| std::io::Write::write_all(&mut f, text.as_bytes()));
 }
 
-/// Every list that exists: ours and the old FFUploader's.
+/// The list, when there is one.
 fn files() -> Vec<PathBuf> {
-    let mut all = vec![own_file(), env_path("LOCALAPPDATA").join("FFUploader").join("linkler.txt")];
-    if let Some(dir) = menu::ffuploader_dir() {
-        all.push(dir.join("linkler.txt"));
-    }
-    all.push(PathBuf::from(r"C:\ffinstaller\linkler.txt"));
-    all.retain(|p| p.exists());
-    all.dedup();
-    all
+    Some(own_file()).filter(|p| p.exists()).into_iter().collect()
 }
 
 /// Newest first, each link once.
@@ -106,16 +97,4 @@ unsafe fn stamp_now() -> String {
 /// "fuckingfast.net/abc123" from a full link.
 pub fn short(link: &str) -> &str {
     link.trim_start_matches("https://").trim_start_matches("http://")
-}
-
-/// Copies the lines of another link list into ours (links we do not have yet).
-pub fn import_from(path: &std::path::Path) {
-    let _lock = FILES.lock();
-    let Ok(text) = std::fs::read_to_string(path) else { return };
-    let own = std::fs::read_to_string(own_file()).unwrap_or_default();
-    let known: Vec<&str> = own.lines().filter_map(link_of).collect();
-    let fresh: String = text.lines().filter(|l| link_of(l).is_some_and(|link| !known.contains(&link))).map(|l| format!("{l}\n")).collect();
-    if !fresh.is_empty() {
-        append_own(&fresh);
-    }
 }
